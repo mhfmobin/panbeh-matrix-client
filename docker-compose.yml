@@ -1,0 +1,5 @@
+services:
+  panbeh:
+    build: .
+    ports: ["2222:80"]
+    restart: unless-stopped
