@@ -40,6 +40,7 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
   const mentions = useRef<Mention[]>([]); // people picked from the @ list; turned into links on send
 
   useEffect(() => { drafts.set(draftKey, editing.current ? stash.current : text); }, [draftKey, text]);
+  const mounted = useRef(false);
   useEffect(() => { // autosize
     const el = ta.current;
     if (!el) return;
@@ -56,7 +57,9 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
       mentions.current = (c["m.mentions"]?.user_ids ?? []).map((id: string) => ({ id, name: room.getMember(id)?.name ?? id }));
     } else if (editing.current) setText(stash.current); // edit sent/cancelled, or switched to reply
     editing.current = edit;
-    ta.current?.focus();
+    // opening a chat must not pop the keyboard on touch devices; reply/edit always focuses
+    if (!mounted.current && !matchMedia("(pointer: fine)").matches) mounted.current = true;
+    else { mounted.current = true; ta.current?.focus(); }
   }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => () => { // left the room mid-typing

@@ -5,6 +5,7 @@ import { cancelAdd, client, finishOAuth, isAdding, isOAuthCallback, logout, reco
 import { useTick } from "./hooks.ts";
 import { startNotifications } from "./notify.ts";
 import { isHeadless, isNative, onOpenRoom, requestNotifyPermission, setBackgroundService } from "./native.ts";
+import { startBackButton } from "./back.ts";
 import { isMarkedUnread, setMarkedUnread } from "./chats.ts";
 import { Login } from "./ui/Login.tsx";
 import { Sidebar } from "./ui/Sidebar.tsx";
@@ -60,6 +61,7 @@ function Shell() {
   const synced = client.isInitialSyncComplete();
   useEffect(() => { if (synced) refreshSecurity(); }, [synced]);
   useEffect(startNotifications, []);
+  useEffect(startBackButton, []);
   useEffect(() => onOpenRoom((id) => { location.hash = id; }), []);
   useEffect(() => { // Android: first start asks for notification permission, then keeps syncing in the background
     if (!isNative || !loadPrefs().notify) return;
