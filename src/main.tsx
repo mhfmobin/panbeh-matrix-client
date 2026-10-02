@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ClientEvent, SyncState } from "matrix-js-sdk";
 import { cancelAdd, client, finishOAuth, isAdding, isOAuthCallback, logout, recoveryState, savedSession, start } from "./matrix.ts";
@@ -57,6 +57,17 @@ function Shell() {
   const [security, setSecurity] = useState<string>("ok");
   const refreshSecurity = () => recoveryState().then(setSecurity, () => {});
 
+  // phones: the chat slides out over ~0.3s on back, so keep rendering it until then
+  const [leaving, setLeaving] = useState<string>();
+  const lastRoom = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (roomId) { lastRoom.current = roomId; setLeaving(undefined); return; }
+    if (!lastRoom.current || !matchMedia("(max-width: 700px)").matches) return;
+    setLeaving(lastRoom.current);
+    const t = setTimeout(() => setLeaving(undefined), 350);
+    return () => clearTimeout(t);
+  }, [roomId]);
+
   const sync = client.getSyncState();
   const synced = client.isInitialSyncComplete();
   useEffect(() => { if (synced) refreshSecurity(); }, [synced]);
@@ -79,12 +90,12 @@ function Shell() {
 
   if (!synced) return <Splash text="در حال همگام‌سازی گفتگوها…" />;
   // left/declined/kicked rooms linger in the SDK; treat them as closed. Joined spaces are folders, not chats.
-  const found = roomId ? client.getRoom(roomId) : null;
+  const found = roomId || leaving ? client.getRoom((roomId ?? leaving)!) : null;
   const room = found && ["join", "invite"].includes(found.getMyMembership()) && !(found.isSpaceRoom() && found.getMyMembership() === "join") ? found : null;
   const open = (id?: string) => { location.hash = id ?? ""; };
 
   return (
-    <div className={"app" + (room ? " room-open" : "")}>
+    <div className={"app" + (room && roomId ? " room-open" : "")}>
       <Sidebar selected={roomId} onSelect={open} onSettings={() => setSettings(true)}
         banner={<>
           {(sync === SyncState.Error || sync === SyncState.Reconnecting) && <div className="banner warn">در حال اتصال…</div>}
@@ -93,7 +104,7 @@ function Shell() {
               <Icon name="lock" size={16} /> {security === "unlock" ? "برای خواندن پیام‌های رمزنگاری‌شده‌ی قبلی، این دستگاه را تأیید کنید" : "بازیابی رمزنگاری را راه‌اندازی کنید"}
             </button>
           )}
-          {!room && <NowPlaying />}
+          {!roomId && <NowPlaying />}
         </>} />
       <main className="main wallpaper">
         {room ? <Room key={room.roomId} room={room} onBack={() => open()} /> : <div className="pill center">برای شروع پیام‌رسانی یک گفتگو را انتخاب کنید</div>}

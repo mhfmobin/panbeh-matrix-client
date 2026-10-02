@@ -10,18 +10,19 @@ import { decryptKeyFile, encryptKeyFile } from "../keyfile.ts";
 import { showVerification } from "./Verify.tsx";
 import { isNative, nativeCancelAll, nativeStatus, requestBatteryExemption, requestNotifyPermission, setBackgroundService } from "../native.ts";
 
-type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; previews: boolean; shareLastSeen: boolean };
+type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; previews: boolean; shareLastSeen: boolean; animations: boolean };
 const ACCENTS = ["#3390ec", "#8774e1", "#40a7a0", "#e5864a", "#e0578b", "#4fae4e"];
 const WALLPAPERS = { doodle: "طرح‌دار", gradient: "گرادیان", plain: "ساده" };
 const THEMES = { system: "سیستم", light: "روشن", dark: "تیره" };
 
 // the Android app defaults to notifying: it asks for permission on first start
-export const loadPrefs = (): Prefs => ({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative, notifyDMs: true, notifyGroups: true, previews: true, shareLastSeen: true, ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
+export const loadPrefs = (): Prefs => ({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative, notifyDMs: true, notifyGroups: true, previews: true, shareLastSeen: true, animations: true, ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
 
 export function applyPrefs(p = loadPrefs()) {
   const root = document.documentElement;
   if (p.theme === "system") delete root.dataset.theme; else root.dataset.theme = p.theme;
   root.dataset.wallpaper = p.wallpaper;
+  if (p.animations) delete root.dataset.motion; else root.dataset.motion = "off";
   root.style.setProperty("--accent", p.accent);
 }
 
@@ -85,6 +86,9 @@ export function Settings({ onClose, onSecurityChange }: { onClose: () => void; o
       </div>
       <label className="switch-row"><span>پیش‌نمایش پیوندها<small>سرور شما پیوندها را برای ساختن پیش‌نمایش باز می‌کند</small></span>
         <input type="checkbox" role="switch" checked={prefs.previews} onChange={(e) => set({ previews: e.target.checked })} /></label>
+
+      <label className="switch-row"><span>انیمیشن‌ها<small>حرکت‌های نرم هنگام باز و بسته شدن گفتگو، منوها و پیام‌ها</small></span>
+        <input type="checkbox" role="switch" checked={prefs.animations} onChange={(e) => set({ animations: e.target.checked })} /></label>
 
       <h3>حریم خصوصی</h3>
       <label className="switch-row"><span>نمایش آخرین بازدید<small>فقط وضعیت خودتان پنهان می‌شود؛ وضعیت دیگران را همچنان می‌بینید</small></span>

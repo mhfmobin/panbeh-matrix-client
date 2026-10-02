@@ -135,10 +135,14 @@ button:disabled { opacity: 0.6; cursor: default; }
 .main > .pill.center { margin: auto; }
 
 @media (max-width: 700px) {
-  /* minmax(0, …): a plain 1fr would grow to the tab row's full width and push the page off-screen */
+  /* minmax(0, …): a plain 1fr would grow to the tab row's full width and push the page off-screen.
+     Phones stack the list and the chat in one cell; the chat slides over the list (see "motion" at the end). */
   .app { grid-template-columns: minmax(0, 1fr); }
-  .app.room-open .sidebar { display: none; }
-  .app:not(.room-open) .main { display: none; }
+  .sidebar, .main { grid-area: 1 / 1; }
+  .main { z-index: 2; transform: translateX(calc(var(--dir) * 100%)); visibility: hidden; transition: transform var(--t-page) var(--ease), visibility 0s linear var(--t-page); }
+  .app.room-open .main { transform: none; visibility: visible; transition-delay: 0s; }
+  .sidebar { transition: transform var(--t-page) var(--ease), opacity var(--t-page) var(--ease), visibility 0s linear var(--t-page); }
+  .app.room-open .sidebar { transform: translateX(calc(var(--dir) * -22%)); opacity: 0.5; visibility: hidden; }
 }
 
 /* ---------- sidebar ---------- */
@@ -891,4 +895,89 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
   .composer-row textarea { min-height: 46px; padding: 12px 14px; font-size: 15px; line-height: 1.45; border-radius: 23px; }
   .send-btn { width: 46px; height: 46px; }
   .composer-row label.icon-btn { margin-bottom: 3px; }
+}
+
+/* ---------- motion ---------- */
+:root {
+  --dir: 1; --ease: cubic-bezier(0.2, 0.8, 0.2, 1); --t-page: 0.28s;
+  /* a damped spring (slight overshoot), as a CSS easing */
+  --spring: linear(0, 0.009, 0.035 2.1%, 0.141 4.4%, 0.723 12.9%, 0.938 16.7%, 1.017 19.4%, 1.077 22.4%, 1.121 25.8%, 1.149 29.7%, 1.159 34.4%, 1.148 39.4%, 1.108 45.7%, 1.046 53.3%, 0.99 60.9%, 0.971 66.8%, 0.977 73%, 0.994 81%, 1);
+}
+:root[dir="rtl"] { --dir: -1; }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes sheet-out { to { transform: translateX(100%); } }
+@keyframes sheet-down { to { transform: translateY(100%); } }
+@keyframes pop-out { to { opacity: 0; transform: scale(0.92); } }
+@keyframes pop-in { from { opacity: 0; transform: scale(0.5); } }
+@keyframes msg-in { from { opacity: 0; transform: translateY(14px) scale(0.85); } }
+@keyframes bump { 40% { transform: scale(1.35); } }
+@keyframes dot { 0%, 60%, 100% { transform: translateY(0); opacity: 0.45; } 30% { transform: translateY(-3px); opacity: 1; } }
+@keyframes mode-in { from { opacity: 0; transform: translateY(10px); } }
+@keyframes toast-out { to { opacity: 0; transform: translate(-50%, 10px); } }
+
+.out { pointer-events: none; }
+.sheet-backdrop.out { animation: fade-out 0.2s ease-in forwards; }
+.sheet-backdrop.out .sheet { animation: sheet-out 0.22s var(--ease) forwards; }
+.sheet { animation-timing-function: var(--ease); }
+.msg-menu-backdrop.out .msg-menu { animation: pop-out 0.12s ease-in forwards; }
+@media (max-width: 700px) {
+  .msg-menu { animation: sheet-up 0.38s var(--spring); }
+  .msg-menu-backdrop.out .msg-menu { animation: sheet-down 0.18s ease-in forwards; }
+}
+.msg-menu-backdrop { animation: fade 0.18s; }
+.msg-menu-backdrop.out { animation: fade-out 0.15s forwards; }
+.msg-menu .quick-react button { animation: pop-in 0.3s var(--spring) both; }
+.msg-menu .quick-react button:nth-child(2) { animation-delay: 25ms; }
+.msg-menu .quick-react button:nth-child(3) { animation-delay: 50ms; }
+.msg-menu .quick-react button:nth-child(4) { animation-delay: 75ms; }
+.msg-menu .quick-react button:nth-child(5) { animation-delay: 100ms; }
+.msg-menu .quick-react button:nth-child(6) { animation-delay: 125ms; }
+.msg-menu .quick-react button:nth-child(7) { animation-delay: 150ms; }
+.msg-menu .quick-react button:nth-child(n+8) { animation-delay: 175ms; }
+.toast { animation: pop 0.2s var(--spring); }
+.toast.out { animation: toast-out 0.16s ease-in forwards; }
+
+/* messages */
+.msg.enter .bubble { animation: msg-in 0.3s var(--ease) both; transform-origin: 0 100%; }
+.msg.enter.mine .bubble { transform-origin: 100% 100%; }
+.tick.bump svg { animation: bump 0.35s var(--ease); }
+.tick svg { transition: color 0.25s; }
+.reactions button.fresh { animation: pop-in 0.3s var(--spring); }
+.reactions button.bump span { display: inline-block; animation: bump 0.3s var(--ease); }
+.msg.snap > :not(.swipe-ico):not(.sel-check) { transition: transform 0.35s var(--spring); }
+.jump-bottom { animation: pop-in 0.25s var(--spring); }
+.date-float { transition: opacity 0.3s, transform 0.3s var(--ease); }
+.date-float:not(.show) { transform: translate(-50%, -8px); }
+
+/* typing dots */
+.dots { display: inline-flex; gap: 2px; margin-inline-start: 3px; vertical-align: baseline; }
+.dots i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; animation: dot 1.2s infinite; }
+.dots i:nth-child(2) { animation-delay: 0.15s; }
+.dots i:nth-child(3) { animation-delay: 0.3s; }
+
+/* composer */
+.composer-mode { animation: mode-in 0.22s var(--ease); }
+.send-btn.ready svg { animation: pop-in 0.3s var(--spring); }
+.send-btn { transition: background 0.2s, color 0.2s, transform 0.2s var(--spring); }
+.send-btn:active { transform: scale(0.88); }
+.emoji-panel { animation: sheet-up 0.25s var(--ease); }
+
+/* touch feedback */
+.room-item:active:not(.active) { background: var(--hover); transform: scale(0.985); }
+.room-item { transition: background 0.12s, transform 0.15s var(--ease); }
+.badge.bump { animation: bump 0.35s var(--ease); }
+.icon-btn:active { transform: scale(0.9); }
+
+/* "Animations" off in Settings, or the OS asks for reduced motion: everything is instant (spinners keep spinning) */
+:root[data-motion="off"] *, :root[data-motion="off"] *::before, :root[data-motion="off"] *::after {
+  animation-duration: 0.001ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important; transition-delay: 0s !important;
+}
+:root[data-motion="off"] .spinner { animation-duration: 0.8s !important; animation-iteration-count: infinite !important; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important; transition-delay: 0s !important;
+  }
+  .spinner { animation-duration: 0.8s !important; animation-iteration-count: infinite !important; }
 }

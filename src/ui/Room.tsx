@@ -4,7 +4,7 @@ import { addDirect, client, dmPeer, isDirect, loadEvent } from "../matrix.ts";
 import { usePresence, useTick } from "../hooks.ts";
 import { Icon } from "../icons.tsx";
 import { num, stamp } from "../logic.ts";
-import { bdi, errText, me, RoomAvatar, senderName } from "./common.tsx";
+import { bdi, errText, me, RoomAvatar, senderName, TypingDots } from "./common.tsx";
 import { Timeline, type Jumper } from "./Timeline.tsx";
 import { PinnedBar } from "./Pinned.tsx";
 import { NowPlaying } from "./Voice.tsx";
@@ -85,7 +85,7 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
 
   const typing = room.getMembers().filter((m) => m.typing && m.userId !== me()).map((m) => bdi(m.name.split(" ")[0]));
   const subtitle = typing.length
-    ? `${typing.length > 2 ? `${typing.slice(0, 2).join("، ")} و ${num(typing.length - 2)} نفر دیگر` : typing.join(" و ")} در حال نوشتن…`
+    ? `${typing.length > 2 ? `${typing.slice(0, 2).join("، ")} و ${num(typing.length - 2)} نفر دیگر` : typing.join(" و ")} در حال نوشتن`
     : room.getMyMembership() === KnownMembership.Invite ? "دعوت‌نامه" // invites carry no member counts
     : seen.text ?? `${num(room.getJoinedMemberCount())} عضو`;
   const thread = threadId ? room.getThread(threadId) : null;
@@ -137,7 +137,7 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
             <RoomAvatar room={room} size={40} />
             <div className="room-head-text">
               <b>{room.name}</b>
-              <span className={typing.length || seen.online ? "typing" : ""}>{subtitle}</span>
+              <span className={typing.length || seen.online ? "typing" : ""}>{subtitle}{typing.length > 0 && <TypingDots />}</span>
             </div>
           </button>
           {room.getMyMembership() !== KnownMembership.Invite && (

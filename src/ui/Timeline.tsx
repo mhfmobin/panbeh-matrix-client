@@ -157,6 +157,17 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
     setTarget(id);
     return true;
   };
+  // messages that arrive while the chat is open pop in; rows Virtuoso merely re-mounts while scrolling don't
+  const mountedAt = useRef(Date.now()), entering = useRef(new Map<string, number>());
+  const isEntering = (ev: MatrixEvent) => {
+    const id = ev.getTxnId() ?? ev.getId() ?? ""; // txn id is stable across local echo → sent
+    let until = entering.current.get(id);
+    if (until === undefined) {
+      until = ev.getTs() >= mountedAt.current - 2000 && Date.now() - ev.getTs() < 5000 ? Date.now() + 450 : 0;
+      entering.current.set(id, until);
+    }
+    return Date.now() < until;
+  };
   const latest = useRef({ rows, byId });
   latest.current = { rows, byId };
   const indexOf = (id: string) => latest.current.rows.findIndex((r) => r.type === "msg" && latest.current.byId.get(r.id)?.getId() === id);
@@ -220,7 +231,7 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
         r.type === "day" ? <div className="pill day">{r.label}</div>
         : r.type === "notice" ? <div className="pill">{noticeText(byId.get(r.id)!)}</div>
         : r.type === "unread" ? <div className="unread-divider">پیام‌های خوانده‌نشده</div>
-        : <Message ev={byId.get(r.id)!} room={room} first={r.first} last={r.last} actions={actions} flash={flash === byId.get(r.id)!.getId()} />}</div>}
+        : <Message ev={byId.get(r.id)!} room={room} first={r.first} last={r.last} actions={actions} flash={flash === byId.get(r.id)!.getId()} enter={isEntering(byId.get(r.id)!)} />}</div>}
     />
     </div>
   );

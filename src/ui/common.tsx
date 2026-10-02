@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type AnimationEvent, type ReactNode } from "react";
 import { EventType, M_POLL_START, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { PollStartEvent } from "matrix-js-sdk/lib/extensible_events_v1/PollStartEvent.js";
 import { avatarUrl, client, isDirect } from "../matrix.ts";
@@ -37,7 +37,40 @@ export function toast(text: string) {
   const el = Object.assign(document.createElement("div"), { className: "toast", textContent: text });
   el.setAttribute("role", "status");
   document.body.append(el);
-  setTimeout(() => el.remove(), 1800);
+  setTimeout(() => { el.classList.add("out"); setTimeout(() => el.remove(), 160); }, 1800);
+}
+
+/** true for `ms` after `value` changes (not on first render): drives one-shot "bump" animations on live updates. */
+export function useChanged(value: unknown, ms = 400) {
+  const prev = useRef(value);
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    if (prev.current === value) return;
+    prev.current = value;
+    setOn(true);
+    const t = setTimeout(() => setOn(false), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return on;
+}
+
+/** Three bouncing dots after "در حال نوشتن". */
+export const TypingDots = () => <span className="dots" aria-hidden><i /><i /><i /></span>;
+
+/** Plays the CSS exit animation (`.out`) before calling onClose, so overlays leave as smoothly as they arrive.
+ *  Spread `exit` on the element that carries the animation. With motion off there is no animation, so close at once. */
+export function useExit(onClose: () => void) {
+  const [out, setOut] = useState(false);
+  const done = useRef(false);
+  const finish = () => { if (!done.current) { done.current = true; onClose(); } };
+  const close = () => {
+    if (done.current) return;
+    if (document.documentElement.dataset.motion === "off" || matchMedia("(prefers-reduced-motion: reduce)").matches) return finish();
+    setOut(true);
+    setTimeout(finish, 400); // safety net if animationend never fires (hidden tab)
+  };
+  const exit = { onAnimationEnd: (e: AnimationEvent) => { if (out && e.target === e.currentTarget) finish(); } };
+  return { out, close, exit };
 }
 
 /** Clipboard write; the textarea fallback covers insecure origins and WebViews without the async API. */
@@ -165,12 +198,13 @@ export function formatSize(n: number) {
 
 /** Side sheet: settings, chat info, new chat, seen-by. */
 export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const { out, close, exit } = useExit(onClose);
   return (
-    <div className="sheet-backdrop" onClick={onClose} onKeyDown={(e) => e.key === "Escape" && onClose()}>
-      <div className="sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={title}>
+    <div className={"sheet-backdrop" + (out ? " out" : "")} onClick={close} onKeyDown={(e) => e.key === "Escape" && close()}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={title} {...exit}>
         <header className="sheet-head">
           <h2>{title}</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="بستن"><Icon name="close" /></button>
+          <button className="icon-btn" onClick={close} aria-label="بستن"><Icon name="close" /></button>
         </header>
         {children}
       </div>

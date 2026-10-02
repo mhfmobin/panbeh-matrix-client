@@ -9,7 +9,7 @@ import { ARCHIVED, leaveAndForget, markRead, PINNED, setMarkedUnread, setTag } f
 import { BASE_FOLDERS, inFolder, isUnread, listTime, num } from "../logic.ts";
 import { pushBack } from "../back.ts";
 import { Icon } from "../icons.tsx";
-import { bdi, errText, me, previewText, RoomAvatar, senderName } from "./common.tsx";
+import { bdi, errText, me, previewText, RoomAvatar, senderName, TypingDots, useChanged } from "./common.tsx";
 import { NewChat } from "./NewChat.tsx";
 import { RoomInfo } from "./RoomInfo.tsx";
 import { MessageResults, requestJump } from "./Search.tsx";
@@ -194,12 +194,12 @@ function SwipeRow({ row, open, onOpen, children }: { row: RoomRow; open: boolean
   const sign = () => (getComputedStyle(fg.current!).direction === "rtl" ? 1 : -1); // translate direction that reveals
   const set = (px: number, anim: boolean) => {
     const el = fg.current!, a = acts.current!;
-    el.style.transition = anim ? "transform 0.2s" : "none";
+    el.style.transition = anim ? "transform 0.35s var(--spring, ease-out)" : "none";
     el.style.transform = px ? `translateX(${px}px)` : "";
     // the buttons sit behind the row: at rest they must be invisible, or a sub-pixel gap lets them peek out
     clearTimeout(hide.current);
     if (px) a.style.visibility = "visible";
-    else if (anim) hide.current = window.setTimeout(() => { a.style.visibility = ""; }, 220);
+    else if (anim) hide.current = window.setTimeout(() => { a.style.visibility = ""; }, 350);
     else a.style.visibility = "";
   };
   useLayoutEffect(() => { if (!g.current) set(open ? sign() * REVEAL : 0, true); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -271,9 +271,10 @@ function RoomItem({ row, active, onClick, onMenu }: { row: RoomRow; active: bool
     preview = (who ? who + ": " : "") + previewText(last);
   }
   const typing = row.invite ? [] : room.getMembers().filter((m) => m.typing && m.userId !== me());
-  if (typing.length) preview = (row.isDM ? "" : bdi(typing[0].name.split(" ")[0]) + " ") + "در حال نوشتن…";
+  if (typing.length) preview = (row.isDM ? "" : bdi(typing[0].name.split(" ")[0]) + " ") + "در حال نوشتن";
   const muted = !!row.muted;
   const mentioned = row.unread > 0 && room.getUnreadNotificationCount(NotificationCountType.Highlight) > 0;
+  const bump = useChanged(row.unread);
   const cancel = () => { if (press.current) clearTimeout(press.current.timer); };
   return (
     <button className={"room-item" + (active ? " active" : "")}
@@ -294,9 +295,9 @@ function RoomItem({ row, active, onClick, onMenu }: { row: RoomRow; active: bool
           <span className="room-time">{listTime(row.ts)}</span>
         </div>
         <div className="room-item-bottom">
-          <span className={"room-preview" + (typing.length ? " typing" : "")}>{preview}</span>
+          <span className={"room-preview" + (typing.length ? " typing" : "")}>{preview}{typing.length > 0 && <TypingDots />}</span>
           {mentioned && <span className="badge">@</span>}
-          {(row.unread > 0 || row.invite) ? <span className={"badge" + (muted ? " muted" : "")}>{row.invite ? "!" : num(row.unread)}</span>
+          {(row.unread > 0 || row.invite) ? <span className={"badge" + (muted ? " muted" : "") + (bump ? " bump" : "")}>{row.invite ? "!" : num(row.unread)}</span>
             : row.marked ? <span className={"badge dot" + (muted ? " muted" : "")} aria-label="خوانده‌نشده" />
             : row.pinned && <span className="room-pin" aria-label="سنجاق‌شده"><Icon name="pin" size={16} /></span>}
         </div>
