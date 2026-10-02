@@ -253,9 +253,33 @@ function MsgMenu({ x, y, items, onReact, onMore, onClose }: { x: number; y: numb
     return () => removeEventListener("keydown", onKey);
   }, [onClose]);
   const act = (fn: () => unknown) => { onClose(); fn(); };
+  // holding a finger on another message (above or below the menu) closes this one and opens that message's menu
+  const hold = useRef<{ timer: number; fired: boolean; x: number; y: number } | null>(null);
+  const reopenAt = (x: number, y: number) => {
+    onClose();
+    setTimeout(() => { // once our backdrop is gone
+      const el = document.elementsFromPoint(x, y).find((n) => n.closest(".msg"));
+      el?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+    }, 0);
+  };
+  const cancelHold = () => { if (hold.current) clearTimeout(hold.current.timer); };
   return createPortal(
     // the finger that opened the menu is still down: its release mustn't count as an outside tap
-    <div className="chat-menu-backdrop msg-menu-backdrop" onClick={() => Date.now() - born.current > 350 && onClose()} onContextMenu={(e) => { e.preventDefault(); onClose(); }}>
+    <div className="chat-menu-backdrop msg-menu-backdrop" onClick={() => Date.now() - born.current > 350 && onClose()}
+      onPointerDown={(e) => {
+        if (e.pointerType !== "touch") return;
+        cancelHold();
+        const { clientX: x, clientY: y } = e;
+        hold.current = { x, y, fired: false, timer: window.setTimeout(() => { hold.current!.fired = true; navigator.vibrate?.(15); reopenAt(x, y); }, LONG_PRESS) };
+      }}
+      onPointerMove={(e) => { const h = hold.current; if (h && Math.hypot(e.clientX - h.x, e.clientY - h.y) > 10) cancelHold(); }}
+      onPointerUp={cancelHold} onPointerCancel={cancelHold}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        if (hold.current?.fired || Date.now() - born.current < 350) return; // our own long-press (or the one that opened us) already handled it
+        cancelHold();
+        reopenAt(e.clientX, e.clientY);
+      }}>
       <div className="chat-menu msg-menu" role="menu" aria-label="گزینه‌های پیام" tabIndex={-1} ref={ref} style={pos ?? { left: x, top: y, visibility: "hidden" }} onClick={(e) => e.stopPropagation()}>
         <div className="quick-react">
           {QUICK.map((k) => <button key={k} role="menuitem" onClick={() => act(() => onReact(k))}>{k}</button>)}

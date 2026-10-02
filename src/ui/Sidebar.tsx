@@ -185,11 +185,22 @@ function chatOps(row: RoomRow) {
  *  isn't ours, so it still reaches the list's folder swipe; a horizontal drag we own never does (see touchend). */
 function SwipeRow({ row, open, onOpen, children }: { row: RoomRow; open: boolean; onOpen: (o: boolean) => void; children: ReactNode }) {
   const fg = useRef<HTMLDivElement>(null);
+  const acts = useRef<HTMLDivElement>(null);
+  const hide = useRef(0);
   const g = useRef<{ x: number; y: number; base: number; lock: "" | "row" | "pass"; crossed: boolean; dx: number; wasOpen: boolean } | null>(null);
   const swallow = useRef(false); // a swipe (or the tap that closes) must not open the chat
   const ops = chatOps(row);
   const sign = () => (getComputedStyle(fg.current!).direction === "rtl" ? 1 : -1); // translate direction that reveals
-  const set = (px: number, anim: boolean) => { const el = fg.current!; el.style.transition = anim ? "transform 0.2s" : "none"; el.style.transform = px ? `translateX(${px}px)` : ""; };
+  const set = (px: number, anim: boolean) => {
+    const el = fg.current!, a = acts.current!;
+    el.style.transition = anim ? "transform 0.2s" : "none";
+    el.style.transform = px ? `translateX(${px}px)` : "";
+    // the buttons sit behind the row: at rest they must be invisible, or a sub-pixel gap lets them peek out
+    clearTimeout(hide.current);
+    if (px) a.style.visibility = "visible";
+    else if (anim) hide.current = window.setTimeout(() => { a.style.visibility = ""; }, 220);
+    else a.style.visibility = "";
+  };
   useLayoutEffect(() => { if (!g.current) set(open ? sign() * REVEAL : 0, true); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   const end = () => {
     const s = g.current;
@@ -203,7 +214,7 @@ function SwipeRow({ row, open, onOpen, children }: { row: RoomRow; open: boolean
   const run = (fn: () => Promise<unknown>) => { onOpen(false); fn().catch((e) => alert(errText(e))); };
   return (
     <div className={"swipe-row" + (open ? " open" : "")}>
-      <div className="swipe-actions" style={{ width: REVEAL }}>
+      <div className="swipe-actions" ref={acts} style={{ width: REVEAL }}>
         <button className="sa-pin" onClick={() => run(ops.pin)} aria-label={row.pinned ? "برداشتن سنجاق" : "سنجاق"} tabIndex={open ? 0 : -1}>
           <Icon name="pin" /><small>{row.pinned ? "برداشتن" : "سنجاق"}</small></button>
         <button className="sa-read" onClick={() => run(ops.read)} aria-label={ops.unread ? "علامت خوانده‌شده" : "علامت خوانده‌نشده"} tabIndex={open ? 0 : -1}>
