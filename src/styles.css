@@ -346,7 +346,7 @@ div.msg-text blockquote { margin: 4px 0; padding-inline-start: 10px; border-inli
 .msg.failed .msg-actions { opacity: 1; pointer-events: auto; }
 @media (hover: none) {
   .msg-actions { display: none; }
-  .msg.show-actions .msg-actions, .msg.failed .msg-actions { display: flex; opacity: 1; pointer-events: auto; }
+  .msg.failed .msg-actions { display: flex; opacity: 1; pointer-events: auto; }
 }
 .tick.failed { color: #e53935; font-weight: 700; }
 .thread-link .badge { margin-inline-start: 4px; }
