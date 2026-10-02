@@ -1,12 +1,12 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">پنبه</string>
-    <string name="title_activity_main">پنبه</string>
+    <string name="app_name">Panbeh</string>
+    <string name="title_activity_main">Panbeh</string>
     <string name="package_name">ir.panbeh.app</string>
     <string name="custom_url_scheme">ir.panbeh.app</string>
     <string name="channel_messages">پیام‌ها</string>
     <string name="channel_quiet">پیام‌های بی‌صدا</string>
     <string name="channel_service">اتصال پس‌زمینه</string>
-    <string name="service_title">پنبه متصل است</string>
+    <string name="service_title">Panbeh متصل است</string>
     <string name="service_text">برای دریافت پیام‌های تازه</string>
 </resources>

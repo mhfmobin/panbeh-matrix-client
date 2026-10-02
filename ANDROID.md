@@ -14,7 +14,7 @@ Android notifications. Since our own client sees the messages, encrypted ones sh
 - After the app is swiped away, killed, or the phone restarts, the service runs the same web bundle in
   an invisible WebView (`/?headless=1`) that only syncs and notifies. When you open the app again,
   that one is stopped first, so there are never two clients on the same device.
-- Android requires a permanent "پنبه متصل است" notification for this. You can hide it under
+- Android requires a permanent "Panbeh متصل است" notification for this. You can hide it under
   App info → Notifications → «اتصال پس‌زمینه».
 - In Settings → اعلان‌ها, tap «اجرای بدون محدودیت در پس‌زمینه» so Doze doesn't delay messages.
   Some phones (Xiaomi, Huawei, Samsung, …) have their own extra battery killers. If notifications stop
