@@ -727,6 +727,7 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .archive-row .badge { margin-inline-start: auto; }
 .archive-title { margin: 4px 20px 6px; font-size: 17px; }
 .chat-menu-backdrop { position: fixed; inset: 0; z-index: 45; touch-action: none; }
+.chat-menu-backdrop, .chat-menu-backdrop * { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .chat-menu {
   position: fixed; min-width: 200px; padding: 6px; border-radius: 14px; background: var(--panel);
   box-shadow: 0 6px 30px rgba(0, 0, 0, 0.22); animation: pop 0.14s ease-out;
