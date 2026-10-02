@@ -32,6 +32,29 @@ export const RoomAvatar = ({ room, size }: { room: Room; size?: number }) => (
 export const senderMember = (ev: MatrixEvent) => client.getRoom(ev.getRoomId())?.getMember(ev.getSender()!) ?? ev.sender;
 export const senderName = (ev: MatrixEvent) => senderMember(ev)?.name ?? ev.getSender() ?? "";
 
+/** Small transient message at the bottom of the screen. */
+export function toast(text: string) {
+  const el = Object.assign(document.createElement("div"), { className: "toast", textContent: text });
+  el.setAttribute("role", "status");
+  document.body.append(el);
+  setTimeout(() => el.remove(), 1800);
+}
+
+/** Clipboard write; the textarea fallback covers insecure origins and WebViews without the async API. */
+export async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const t = Object.assign(document.createElement("textarea"), { value: text });
+    t.style.cssText = "position:fixed;opacity:0";
+    document.body.append(t);
+    t.select();
+    const ok = document.execCommand("copy");
+    t.remove();
+    if (!ok) throw new Error("copy failed");
+  }
+}
+
 /** Bidi-isolate a name inside a Farsi sentence so Latin names/punctuation don't reorder it. */
 export const bdi = (s: string) => "\u2068" + s + "\u2069";
 

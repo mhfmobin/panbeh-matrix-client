@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import DOMPurify from "dompurify";
 import { EventStatus, EventType, M_POLL_START, RelationType, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { avatarUrl, client, mediaUrl, pinnedIds, seenBy, togglePin } from "../matrix.ts";
 import { usePromise } from "../hooks.ts";
 import { clock, num, osmUrl, parseGeoUri, stamp } from "../logic.ts";
-import { Icon } from "../icons.tsx";
-import { Avatar, colorFor, errText, formatSize, isGroupChat, me, previewText, senderMember, senderName, stripReplyFallback } from "./common.tsx";
+import { Icon, type IconName } from "../icons.tsx";
+import { Avatar, colorFor, copyText, errText, formatSize, isGroupChat, me, previewText, senderMember, senderName, stripReplyFallback, toast } from "./common.tsx";
 import { AudioPlayer, trackFor } from "./Voice.tsx";
 import { PollBody } from "./Poll.tsx";
 import { EmojiPanel } from "./Emoji.tsx";
@@ -22,9 +22,24 @@ export type Actions = {
   profile: (userId: string) => void;
   forward: (ev: MatrixEvent) => void;
   jump?: (eventId: string) => void; // reply quote → the original
+  select?: (ev: MatrixEvent) => void; // toggles multi-select membership; absent inside a thread
+  selection?: ReadonlySet<string>; // event ids; present = selecting
 };
 
 const QUICK = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
+
+const LONG_PRESS = 450, SWIPE_AT = 60, SWIPE_MAX = 80;
+
+/** Text a copy should give: body without the reply fallback; media only their caption. */
+export function copyTextOf(ev: MatrixEvent): string {
+  if (ev.isDecryptionFailure() || ev.getType() === EventType.RoomMessageEncrypted || M_POLL_START.matches(ev.getType())) return "";
+  const c = ev.getContent();
+  if (c.msgtype === "m.audio") return "";
+  if (c.msgtype === "m.image" || c.msgtype === "m.video" || c.msgtype === "m.file" || ev.getType() === EventType.Sticker) return captionOf(c);
+  return stripReplyFallback(String(c.body ?? ""));
+}
+
+export const copyMessages = (text: string) => copyText(text).then(() => toast("کپی شد"), (e) => alert(errText(e)));
 
 let pillRoom: Room | null = null; // the room being rendered; sanitize() is synchronous
 
@@ -58,7 +73,10 @@ type Props = { ev: MatrixEvent; room: Room; first: boolean; last: boolean; actio
 export function Message({ ev, room, first, last, actions, flash }: Props) {
   const [picker, setPicker] = useState(false);
   const [fullPicker, setFullPicker] = useState(false);
-  const [tapped, setTapped] = useState(false); // touch screens have no hover: a tap on the bubble shows the actions
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null); // touch screens have no hover: long-press (or right-click) opens this
+  const row = useRef<HTMLDivElement>(null);
+  const g = useRef<{ id: number; x: number; y: number; timer: number; lock: boolean; px: number; crossed: boolean } | null>(null);
+  const swallow = useRef(false); // the click that follows a swipe / long-press
   const mine = ev.getSender() === me();
   const failed = ev.status === EventStatus.NOT_SENT;
   const group = isGroupChat(room);
@@ -70,10 +88,71 @@ export function Message({ ev, room, first, last, actions, flash }: Props) {
   const canPin = !!ev.getId() && room.currentState.maySendStateEvent(EventType.RoomPinnedEvents, me());
   const pinned = pinnedIds(room).includes(ev.getId()!);
   const fwd = content["app.panbeh.forwarded"] as { sender: string; name?: string } | undefined;
+  const selecting = !!actions.selection;
+  const selected = !!actions.selection?.has(ev.getId()!);
+  const live = !failed && !ev.isDecryptionFailure() && ev.status == null && !!ev.getId(); // same bar as the action bar
+  const swipeOk = live && !selecting;
+  const text = copyTextOf(ev);
   const mentioned = !mine && !!client.getPushActionsForEvent(ev)?.tweaks?.highlight;
 
+  const setX = (px: number) => { row.current!.style.setProperty("--sx", `${-px}px`); row.current!.style.setProperty("--sp", String(Math.min(1, px / SWIPE_AT))); };
+  const end = (cancel: boolean) => {
+    const s = g.current;
+    g.current = null;
+    if (!s) return;
+    clearTimeout(s.timer);
+    if (s.lock) {
+      setTimeout(() => { swallow.current = false; }, 350);
+      row.current!.classList.add("snap"); // animate back
+      setX(0);
+      setTimeout(() => row.current?.classList.remove("snap", "swiping"), 220);
+      if (!cancel && s.px >= SWIPE_AT) actions.reply(ev);
+    }
+  };
+  // swipe LEFT to reply (Telegram's direction) for both own and others' messages; rows stay physically LTR so -x is left
+  const inside = (e: { target: EventTarget }) => row.current!.contains(e.target as Node); // portals (menu, picker) bubble through React
+  const down = (e: PointerEvent) => {
+    if (!inside(e) || e.pointerType !== "touch" || !live || selecting || (e.target as HTMLElement).closest("input,video,audio")) return;
+    const { clientX: x, clientY: y } = e;
+    clearTimeout(g.current?.timer);
+    g.current = { id: e.pointerId, x, y, lock: false, px: 0, crossed: false, timer: window.setTimeout(() => {
+      swallow.current = true;
+      setTimeout(() => { swallow.current = false; }, 1500); // the click normally follows at finger-up; don't eat a later tap if it doesn't
+      navigator.vibrate?.(15);
+      setMenu({ x, y });
+    }, LONG_PRESS) };
+  };
+  const move = (e: PointerEvent) => {
+    const s = g.current;
+    if (!s || s.id !== e.pointerId) return;
+    const dx = e.clientX - s.x, dy = e.clientY - s.y;
+    if (!s.lock) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 10) return;
+      clearTimeout(s.timer);
+      if (dx < 0 && -dx > Math.abs(dy)) {
+        s.lock = true;
+        swallow.current = true;
+        row.current!.classList.add("swiping");
+        row.current!.setPointerCapture?.(e.pointerId);
+      } else { g.current = null; return; } // vertical: let the list scroll
+    }
+    const raw = Math.max(0, -dx);
+    s.px = raw;
+    setX(raw <= SWIPE_MAX ? raw : Math.min(SWIPE_MAX + 30, SWIPE_MAX + (raw - SWIPE_MAX) * 0.25));
+    if (raw >= SWIPE_AT !== s.crossed) { s.crossed = !s.crossed; if (s.crossed) navigator.vibrate?.(10); }
+  };
+
   return (
-    <div className={`msg ${mine ? "mine" : "theirs"}${first ? " first" : ""}${last ? " last" : ""}${tapped ? " show-actions" : ""}${failed ? " failed" : ""}${flash ? " flash" : ""}`}>
+    <div ref={row} className={`msg ${mine ? "mine" : "theirs"}${first ? " first" : ""}${last ? " last" : ""}${failed ? " failed" : ""}${flash ? " flash" : ""}${selecting ? " selecting" : ""}${selected ? " selected" : ""}`}
+      onPointerDown={down} onPointerMove={move} onPointerUp={() => end(false)} onPointerCancel={() => end(true)}
+      onContextMenu={(e) => { if (!live || selecting || !inside(e)) return; e.preventDefault(); setMenu((m) => m ?? { x: e.clientX, y: e.clientY }); }}
+      onClickCapture={(e) => {
+        if (!inside(e)) return;
+        if (selecting) { e.preventDefault(); e.stopPropagation(); if (ev.getId()) actions.select!(ev); } // taps only toggle while selecting
+        else if (swallow.current) { e.preventDefault(); e.stopPropagation(); swallow.current = false; }
+      }}>
+      {selecting && <span className="sel-check" aria-hidden>{selected && <Icon name="check" size={14} />}</span>}
+      {swipeOk && <span className="swipe-ico" aria-hidden><Icon name="reply" size={20} /></span>}
       {!mine && group && (
         <div className="msg-avatar">{last && (
           <button className="plain" aria-label={senderName(ev)} onClick={(e) => { e.stopPropagation(); actions.profile(ev.getSender()!); }}>
@@ -83,7 +162,7 @@ export function Message({ ev, room, first, last, actions, flash }: Props) {
       )}
       <div className="msg-col">
         {/* dir=auto: direction comes from the body; children with their own dir are skipped */}
-        <div className={"bubble" + (media ? " media" : "") + (ev.replacingEvent() ? " edited" : "") + (mentioned ? " mentioned" : "")} dir="auto" onClick={() => setTapped((t) => !t)}>
+        <div className={"bubble" + (media ? " media" : "") + (ev.replacingEvent() ? " edited" : "") + (mentioned ? " mentioned" : "")} dir="auto">
           {!mine && group && first && <button className="msg-sender" dir="auto" style={{ color: colorFor(ev.getSender()!) }}
             onClick={(e) => { e.stopPropagation(); actions.profile(ev.getSender()!); }}>{senderName(ev)}</button>}
           {fwd && (
@@ -116,9 +195,8 @@ export function Message({ ev, room, first, last, actions, flash }: Props) {
         </div>
       )}
       {!ev.isDecryptionFailure() && ev.status == null && (
-        // any action except opening the reaction picker closes the tapped-open bar
-        <div className="msg-actions" onClick={(e) => (e.target as HTMLElement).closest("[data-keep]") || setTapped(false)}>
-          <button data-keep title="واکنش" aria-label="واکنش" onClick={() => setPicker((p) => !p)}><Icon name="smile" size={17} /></button>
+        <div className="msg-actions">
+          <button title="واکنش" aria-label="واکنش" onClick={() => setPicker((p) => !p)}><Icon name="smile" size={17} /></button>
           <button title="پاسخ" aria-label="پاسخ" onClick={() => actions.reply(ev)}><Icon name="reply" size={17} /></button>
           {ev.getId() && !M_POLL_START.matches(ev.getType()) && <button title="هدایت" aria-label="هدایت" onClick={() => actions.forward(ev)}><Icon name="forward" size={17} /></button>}
           {actions.thread && <button title="پاسخ در رشته" aria-label="پاسخ در رشته" onClick={() => actions.thread!(ev)}><Icon name="thread" size={17} /></button>}
@@ -135,12 +213,60 @@ export function Message({ ev, room, first, last, actions, flash }: Props) {
           )}
         </div>
       )}
+      {menu && (
+        <MsgMenu {...menu} onClose={() => setMenu(null)} onReact={(k) => toggleReaction(room, ev, k)} onMore={() => setFullPicker(true)} items={[
+          { icon: "reply", label: "پاسخ", run: () => actions.reply(ev) },
+          text && { icon: "copy", label: "کپی", run: () => void copyMessages(text) },
+          !M_POLL_START.matches(ev.getType()) && { icon: "forward", label: "هدایت", run: () => actions.forward(ev) },
+          actions.thread && { icon: "thread", label: "پاسخ در رشته", run: () => actions.thread!(ev) },
+          canPin && { icon: "pin", label: pinned ? "برداشتن سنجاق" : "سنجاق", run: () => togglePin(room, ev.getId()!).catch((e) => alert(errText(e))) },
+          mine && EDITABLE.includes(content.msgtype ?? "") && { icon: "edit", label: "ویرایش", run: () => actions.edit(ev) },
+          mine && { icon: "info", label: "دیده‌شده توسط", run: () => actions.info(ev) },
+          actions.select && { icon: "select", label: "انتخاب", run: () => actions.select!(ev) },
+          canDelete && { icon: "trash", label: "حذف", danger: true, run: () => confirm("این پیام برای همه حذف شود؟") && client.redactEvent(room.roomId, ev.getId()!) },
+        ]} />
+      )}
       {/* portal: .msg-actions fades out when the pointer leaves the message */}
       {fullPicker && createPortal(
         <div className="react-picker"><EmojiPanel onEmoji={(k) => { toggleReaction(room, ev, k); setFullPicker(false); }} onClose={() => setFullPicker(false)} /></div>,
         document.body)}
     </div>
   );
+}
+
+type MenuItem = { icon: IconName; label: string; run: () => unknown; danger?: boolean };
+
+/** Telegram-style message menu: quick reactions + actions. A popup at the touch point, a bottom sheet on narrow screens (CSS). */
+function MsgMenu({ x, y, items, onReact, onMore, onClose }: { x: number; y: number; items: (MenuItem | false | "" | undefined)[];
+  onReact: (k: string) => void; onMore: () => void; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number }>();
+  const born = useRef(Date.now());
+  useEffect(() => { // keep it on screen
+    const r = ref.current!.getBoundingClientRect();
+    setPos({ left: Math.max(8, Math.min(x - r.width / 2, innerWidth - r.width - 8)), top: Math.max(8, Math.min(y, innerHeight - r.height - 8)) });
+    ref.current!.focus({ preventScroll: true });
+  }, [x, y]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } };
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const act = (fn: () => unknown) => { onClose(); fn(); };
+  return createPortal(
+    // the finger that opened the menu is still down: its release mustn't count as an outside tap
+    <div className="chat-menu-backdrop msg-menu-backdrop" onClick={() => Date.now() - born.current > 350 && onClose()} onContextMenu={(e) => { e.preventDefault(); onClose(); }}>
+      <div className="chat-menu msg-menu" role="menu" aria-label="گزینه‌های پیام" tabIndex={-1} ref={ref} style={pos ?? { left: x, top: y, visibility: "hidden" }} onClick={(e) => e.stopPropagation()}>
+        <div className="quick-react">
+          {QUICK.map((k) => <button key={k} role="menuitem" onClick={() => act(() => onReact(k))}>{k}</button>)}
+          <button className="more" role="menuitem" title="اموجی‌های بیشتر" aria-label="اموجی‌های بیشتر" onClick={() => act(onMore)}><Icon name="plus" size={18} /></button>
+        </div>
+        {items.map((it) => it && (
+          <button key={it.label} role="menuitem" className={it.danger ? "danger-item" : undefined} onClick={() => act(it.run)}><Icon name={it.icon} /> {it.label}</button>
+        ))}
+      </div>
+    </div>,
+    document.body);
 }
 
 function Body({ ev, room, onView, onUser }: { ev: MatrixEvent; room: Room; onView: (ev: MatrixEvent) => void; onUser: (id: string) => void }) {

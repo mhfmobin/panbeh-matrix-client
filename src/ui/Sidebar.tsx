@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type TouchEvent } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { NotificationCountType, UserEvent, type Room } from "matrix-js-sdk";
 import { client, dmPeer } from "../matrix.ts";
@@ -6,6 +6,7 @@ import { setMuted } from "../notify.ts";
 import { useRooms, useTick, type RoomRow } from "../hooks.ts";
 import { ARCHIVED, leaveAndForget, markRead, PINNED, setMarkedUnread, setTag } from "../chats.ts";
 import { BASE_FOLDERS, inFolder, isUnread, listTime, num } from "../logic.ts";
+import { pushBack } from "../back.ts";
 import { Icon } from "../icons.tsx";
 import { bdi, errText, me, previewText, RoomAvatar, senderName } from "./common.tsx";
 import { NewChat } from "./NewChat.tsx";
@@ -80,7 +81,26 @@ export function Sidebar({ selected, onSelect, onSettings, banner }: Props) {
       if (next) pick(next.id);
     },
   };
-  const item = (r: RoomRow) => <RoomItem row={r} active={r.id === selected} onClick={() => onSelect(r.id)} onMenu={(x, y) => setMenu({ row: r, x, y })} />;
+  // Android back, last resort: leave the archive, then return to the first folder
+  const backState = useRef({ archive, active, pick });
+  backState.current = { archive, active, pick };
+  useEffect(() => pushBack(() => {
+    const b = backState.current;
+    if (b.archive) { setArchive(false); return true; }
+    if (b.active !== BASE_FOLDERS[0].id) { b.pick(BASE_FOLDERS[0].id); return true; }
+    return false;
+  }, { low: true }), []);
+  const [opened, setOpened] = useState<string | null>(null); // chat whose swipe actions are showing
+  useEffect(() => { // a touch anywhere else closes them
+    if (!opened) return;
+    const f = (e: Event) => { if (!(e.target as Element).closest?.(".swipe-actions, .swipe-row.open")) setOpened(null); };
+    addEventListener("pointerdown", f, true);
+    return () => removeEventListener("pointerdown", f, true);
+  }, [opened]);
+  const item = (r: RoomRow) => {
+    const it = <RoomItem row={r} active={r.id === selected} onClick={() => onSelect(r.id)} onMenu={(x, y) => setMenu({ row: r, x, y })} />;
+    return r.invite ? it : <SwipeRow row={r} open={opened === r.id} onOpen={(o) => setOpened(o ? r.id : (c) => (c === r.id ? null : c))}>{it}</SwipeRow>;
+  };
 
   return (
     <aside className="sidebar">
@@ -141,12 +161,87 @@ export function Sidebar({ selected, onSelect, onSettings, banner }: Props) {
 
 /** Esc belongs to whatever is open on top (sheets, menus, mention list, reply/edit bar) or to a field being typed in. */
 function busyEsc(e: KeyboardEvent) {
-  if (document.querySelector("[role=dialog], [role=menu], [role=listbox], .composer-mode")) return true;
+  if (document.querySelector("[role=dialog], [role=menu], [role=listbox], .composer-mode, .select-bar")) return true;
   const t = e.target as HTMLInputElement | null;
   return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA") && t.value !== "";
 }
 
 const LONG_PRESS = 500;
+const ACT_W = 64, ACTS = 3, REVEAL = ACT_W * ACTS; // action buttons' width, count, and total reveal distance
+
+/** The actions shared by the context menu and the swipe buttons. */
+function chatOps(row: RoomRow) {
+  const { room } = row, unread = isUnread(row);
+  return {
+    unread,
+    pin: () => setTag(room, PINNED, !row.pinned),
+    archive: () => setTag(room, ARCHIVED, !row.archived),
+    read: () => (unread ? markRead(room) : setMarkedUnread(room, true)),
+  };
+}
+
+/** Swipe a chat row to reveal pin / read / archive behind it, like Telegram. The actions sit on the inline-end side
+ *  (left in RTL, right in LTR) and the row slides toward it: RTL swipe right, LTR swipe left. The other direction
+ *  isn't ours, so it still reaches the list's folder swipe; a horizontal drag we own never does (see touchend). */
+function SwipeRow({ row, open, onOpen, children }: { row: RoomRow; open: boolean; onOpen: (o: boolean) => void; children: ReactNode }) {
+  const fg = useRef<HTMLDivElement>(null);
+  const g = useRef<{ x: number; y: number; base: number; lock: "" | "row" | "pass"; crossed: boolean; dx: number; wasOpen: boolean } | null>(null);
+  const swallow = useRef(false); // a swipe (or the tap that closes) must not open the chat
+  const ops = chatOps(row);
+  const sign = () => (getComputedStyle(fg.current!).direction === "rtl" ? 1 : -1); // translate direction that reveals
+  const set = (px: number, anim: boolean) => { const el = fg.current!; el.style.transition = anim ? "transform 0.2s" : "none"; el.style.transform = px ? `translateX(${px}px)` : ""; };
+  useLayoutEffect(() => { if (!g.current) set(open ? sign() * REVEAL : 0, true); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  const end = () => {
+    const s = g.current;
+    g.current = null;
+    if (!s || s.lock !== "row") return;
+    swallow.current = true;
+    const o = s.base + s.dx > REVEAL / 2;
+    set(o ? sign() * REVEAL : 0, true);
+    onOpen(o);
+  };
+  const run = (fn: () => Promise<unknown>) => { onOpen(false); fn().catch((e) => alert(errText(e))); };
+  return (
+    <div className={"swipe-row" + (open ? " open" : "")}>
+      <div className="swipe-actions" style={{ width: REVEAL }}>
+        <button className="sa-pin" onClick={() => run(ops.pin)} aria-label={row.pinned ? "برداشتن سنجاق" : "سنجاق"} tabIndex={open ? 0 : -1}>
+          <Icon name="pin" /><small>{row.pinned ? "برداشتن" : "سنجاق"}</small></button>
+        <button className="sa-read" onClick={() => run(ops.read)} aria-label={ops.unread ? "علامت خوانده‌شده" : "علامت خوانده‌نشده"} tabIndex={open ? 0 : -1}>
+          <Icon name={ops.unread ? "checks" : "unread"} /><small>{ops.unread ? "خوانده" : "نخوانده"}</small></button>
+        <button className="sa-archive" onClick={() => run(ops.archive)} aria-label={row.archived ? "خروج از بایگانی" : "بایگانی"} tabIndex={open ? 0 : -1}>
+          <Icon name="archive" /><small>{row.archived ? "خروج" : "بایگانی"}</small></button>
+      </div>
+      <div className="swipe-fg" ref={fg}
+        onClickCapture={(e) => { if (swallow.current || open) { swallow.current = false; e.stopPropagation(); e.preventDefault(); if (open) onOpen(false); } }}
+        onTouchStart={(e) => {
+          swallow.current = false;
+          const t = e.touches[0];
+          g.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY, base: open ? REVEAL : 0, lock: "", crossed: open, dx: 0, wasOpen: open } : null;
+        }}
+        onTouchMove={(e) => {
+          const s = g.current;
+          if (!s || s.lock === "pass") return;
+          const t = e.touches[0], dx = (t.clientX - s.x) * sign(), dy = t.clientY - s.y;
+          if (!s.lock) {
+            if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+            // vertical: leave it to the scroller. Horizontal: ours if it opens (or closes an open row)
+            s.lock = Math.abs(dx) > Math.abs(dy) && (dx > 0 || s.wasOpen) ? "row" : "pass";
+            if (s.lock === "pass") return;
+          }
+          s.dx = dx;
+          const p = Math.max(0, Math.min(REVEAL * 1.15, s.base + dx));
+          set(sign() * p, false);
+          const c = p > REVEAL / 2;
+          if (c !== s.crossed) { s.crossed = c; navigator.vibrate?.(10); }
+        }}
+        // our horizontal drags must not also change folder (the list's own touchend handler)
+        onTouchEnd={(e) => { if (g.current?.lock === "row") e.stopPropagation(); end(); }}
+        onTouchCancel={end}>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 function OnlineDot({ room }: { room: Room }) {
   const peer = dmPeer(room);
@@ -213,15 +308,15 @@ function ChatMenu({ row, x, y, onClose }: Menu & { onClose: () => void }) {
     return () => removeEventListener("keydown", onKey);
   }, [onClose]);
   const run = (fn: () => Promise<unknown>) => { onClose(); fn().catch((e) => alert(errText(e))); };
-  const unread = isUnread(row);
+  const ops = chatOps(row), unread = ops.unread;
   return (
     <div className="chat-menu-backdrop" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }}>
       <div className="chat-menu" role="menu" ref={ref} style={pos} onClick={(e) => e.stopPropagation()}>
-        <button role="menuitem" onClick={() => run(() => setTag(room, PINNED, !row.pinned))}>
+        <button role="menuitem" onClick={() => run(ops.pin)}>
           <Icon name="pin" /> {row.pinned ? "برداشتن سنجاق" : "سنجاق"}</button>
-        <button role="menuitem" onClick={() => run(() => setTag(room, ARCHIVED, !row.archived))}>
+        <button role="menuitem" onClick={() => run(ops.archive)}>
           <Icon name="archive" /> {row.archived ? "خروج از بایگانی" : "بایگانی"}</button>
-        <button role="menuitem" onClick={() => run(() => (unread ? markRead(room) : setMarkedUnread(room, true)))}>
+        <button role="menuitem" onClick={() => run(ops.read)}>
           <Icon name={unread ? "checks" : "unread"} /> {unread ? "علامت خوانده‌شده" : "علامت خوانده‌نشده"}</button>
         <button role="menuitem" onClick={() => run(() => setMuted(room, !row.muted))}>
           <Icon name={row.muted ? "bell" : "bellOff"} /> {row.muted ? "صدادار" : "بی‌صدا"}</button>

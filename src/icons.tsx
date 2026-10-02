@@ -37,6 +37,8 @@ const P = {
   download: "M12 4v11M7 10l5 5 5-5M5 20h14",
   chevron: "M9 5l7 7-7 7",
   archive: "M3 4h18v4H3zM5 8v12h14V8M10 12h4",
+  copy: "M9 9h11v11H9zM5 15V4h11",
+  select: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM8 12.5l3 3 5-6",
   unread: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 12h.01",
 };
 
