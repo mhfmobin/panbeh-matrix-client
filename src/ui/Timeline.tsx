@@ -4,7 +4,7 @@ import { ClientEvent, EventTimeline, RoomEvent, RoomStateEvent, ThreadEvent, typ
 import { cancelUpload, client, type Upload } from "../matrix.ts";
 import { isMessage, useTick, useUploads } from "../hooks.ts";
 import { Icon } from "../icons.tsx";
-import { buildRows, num, type Msg, type Row } from "../logic.ts";
+import { buildRows, dayLabel, num, type Msg, type Row } from "../logic.ts";
 import { Message, type Actions } from "./Message.tsx";
 import { bdi, formatSize, me, noticeText } from "./common.tsx";
 
@@ -54,8 +54,25 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   // thread summaries) must not unpin us, which is what Virtuoso's own atBottom would do.
   const stuck = useRef(!unreadAfter);
   const jumpingUntil = useRef(0); // while a jump settles, passing the bottom mustn't re-pin us there
+  // floating date: label of the topmost visible row while scrolling, hidden 1.2s after it stops
+  const [floating, setFloating] = useState<{ label: string; show: boolean }>({ label: "", show: false });
   const scrollerRef = useCallback((el: HTMLElement | Window | null) => {
     if (!(el instanceof HTMLElement)) return;
+    let hideT = 0, raf = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        if (el.scrollHeight - el.scrollTop - el.clientHeight < 40) return; // at the very bottom (incl. new-message follow): nothing to show
+        const top = el.getBoundingClientRect().top;
+        const r = [...el.querySelectorAll<HTMLElement>(".row[data-ts],.row[data-label]")].find((x) => x.getBoundingClientRect().bottom > top + 1);
+        if (!r) return;
+        const label = r.dataset.label ?? dayLabel(Number(r.dataset.ts));
+        setFloating((f) => (f.show && f.label === label ? f : { label, show: true }));
+        clearTimeout(hideT);
+        hideT = window.setTimeout(() => setFloating((f) => ({ ...f, show: false })), 1200);
+      });
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
     const unpin = () => { stuck.current = false; };
     el.addEventListener("wheel", (e) => { if (e.deltaY < 0) unpin(); }, { passive: true });
     el.addEventListener("touchstart", unpin, { passive: true });
@@ -179,6 +196,7 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
         {unread > 0 && <span className="badge">{num(unread)}</span>}
       </button>
     )}
+    {floating.label && <div className={"pill date-float" + (floating.show ? " show" : "")} aria-hidden>{floating.label}</div>}
     <Virtuoso
       className="timeline"
       data={rows}
@@ -197,7 +215,8 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
       computeItemKey={(_, r) => r.key}
       components={COMPONENTS}
       context={{ roomId: room.roomId, threadId: thread?.id ?? null }}
-      itemContent={(_, r: Row) => <div className="row">{
+      itemContent={(_, r: Row) => <div className="row" data-label={r.type === "day" ? r.label : undefined}
+        data-ts={r.type === "msg" || r.type === "notice" ? byId.get(r.id)?.getTs() : undefined}>{
         r.type === "day" ? <div className="pill day">{r.label}</div>
         : r.type === "notice" ? <div className="pill">{noticeText(byId.get(r.id)!)}</div>
         : r.type === "unread" ? <div className="unread-divider">پیام‌های خوانده‌نشده</div>

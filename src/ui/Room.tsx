@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { KnownMembership, RoomMemberEvent, type MatrixEvent, type Room as SdkRoom } from "matrix-js-sdk";
 import { addDirect, client, dmPeer, isDirect, loadEvent } from "../matrix.ts";
 import { usePresence, useTick } from "../hooks.ts";
 import { Icon } from "../icons.tsx";
-import { num } from "../logic.ts";
-import { bdi, errText, me, RoomAvatar } from "./common.tsx";
+import { num, stamp } from "../logic.ts";
+import { bdi, errText, me, RoomAvatar, senderName } from "./common.tsx";
 import { Timeline, type Jumper } from "./Timeline.tsx";
 import { PinnedBar } from "./Pinned.tsx";
 import { NowPlaying } from "./Voice.tsx";
 import { Composer, DropZone, type Mode } from "./Composer.tsx";
-import type { Actions } from "./Message.tsx";
+import { copyMessages, copyTextOf, type Actions } from "./Message.tsx";
 import { RoomInfo, SeenBy } from "./RoomInfo.tsx";
 import { UserProfile } from "./Profile.tsx";
 import { ForwardSheet } from "./Forward.tsx";
@@ -30,7 +30,9 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
   const [info, setInfo] = useState(false);
   const [seenFor, setSeenFor] = useState<MatrixEvent | null>(null);
   const [profile, setProfile] = useState<string | null>(null);
-  const [forwarding, setForwarding] = useState<MatrixEvent | null>(null);
+  const [forwarding, setForwarding] = useState<MatrixEvent[] | null>(null);
+  const [sel, setSel] = useState<ReadonlySet<string> | null>(null); // multi-select: event ids of the main timeline
+  const forward1 = useCallback((ev: MatrixEvent) => setForwarding([ev]), []);
   const [search, setSearch] = useState(false);
 
   const jumper = useRef<Jumper>(null);
@@ -39,6 +41,13 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
     addEventListener("panbeh-search", open);
     return () => removeEventListener("panbeh-search", open);
   }, [room]);
+
+  useEffect(() => { // Escape leaves selection mode (not while the forward sheet is open: that closes first)
+    if (!sel || forwarding) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); setSel(null); } };
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, [!!sel, !!forwarding]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const actions: Actions = useMemo(() => ({
     reply: (ev: MatrixEvent) => setMode({ kind: "reply", ev }),
@@ -50,9 +59,29 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
     view: setViewing,
     info: setSeenFor,
     profile: setProfile,
-    forward: setForwarding,
+    forward: forward1,
     jump: (id: string) => void searchJump(id),
-  }), [room]); // eslint-disable-line react-hooks/exhaustive-deps
+    select: (ev: MatrixEvent) => setSel((s) => { // toggle; empty = leave selection mode
+      const n = new Set(s);
+      if (!n.delete(ev.getId()!)) n.add(ev.getId()!);
+      return n.size ? n : null;
+    }),
+    selection: sel ?? undefined,
+  }), [room, sel]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const picked = sel ? room.getLiveTimeline().getEvents().filter((e) => sel.has(e.getId()!)) : []; // timeline order
+  const copySel = () => {
+    const text = picked.map((e) => [e, copyTextOf(e)] as const).filter(([, t]) => t)
+      .map(([e, t]) => (picked.length === 1 ? t : `${senderName(e)}, [${stamp(e.getTs())}]:\n${t}`)).join("\n\n");
+    if (text) void copyMessages(text);
+    setSel(null);
+  };
+  const canDel = picked.length > 0 && picked.every((e) => e.getSender() === me() || room.currentState.maySendRedactionForEvent(e, me()));
+  const delSel = () => {
+    if (!confirm(`${num(picked.length)} پیام برای همه حذف شود؟`)) return;
+    Promise.all(picked.map((e) => client.redactEvent(room.roomId, e.getId()!))).catch((e) => alert(errText(e)));
+    setSel(null);
+  };
 
   const typing = room.getMembers().filter((m) => m.typing && m.userId !== me()).map((m) => bdi(m.name.split(" ")[0]));
   const subtitle = typing.length
@@ -91,8 +120,17 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
   }, [room.roomId]);
 
   return (
-    <section className={"room" + (thread ? " with-thread" : "")}>
+    <section className={"room" + (thread ? " with-thread" : "") + (sel ? " selecting" : "")}>
       <div className="room-main">
+        {sel ? (
+          <header className="room-head select-bar" role="toolbar" aria-label="انتخاب پیام‌ها">
+            <button className="icon-btn" onClick={() => setSel(null)} title="لغو انتخاب" aria-label="لغو انتخاب"><Icon name="close" /></button>
+            <b className="select-count">{num(sel.size)} پیام انتخاب شد</b>
+            <button className="icon-btn" onClick={copySel} title="کپی" aria-label="کپی"><Icon name="copy" /></button>
+            <button className="icon-btn" onClick={() => setForwarding(picked)} title="هدایت" aria-label="هدایت"><Icon name="forward" /></button>
+            <button className="icon-btn" disabled={!canDel} onClick={delSel} title="حذف" aria-label="حذف"><Icon name="trash" /></button>
+          </header>
+        ) : (
         <header className="room-head">
           <button className="icon-btn back" onClick={onBack} aria-label="بازگشت"><Icon name="back" /></button>
           <button className="room-head-info" onClick={() => setInfo(true)} aria-label="اطلاعات گفتگو">
@@ -106,6 +144,7 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
             <button className="icon-btn" onClick={() => setSearch(true)} title="جستجو" aria-label="جستجو"><Icon name="search" /></button>
           )}
         </header>
+        )}
         <NowPlaying onJump={(id) => jump(id)} />
         {room.getMyMembership() === KnownMembership.Invite ? (
           <Invite room={room} />
@@ -124,14 +163,14 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
             <div className="room-head-text"><b>رشته‌ی گفتگو</b><span>{num(thread.length)} پاسخ</span></div>
             <button className="icon-btn" onClick={() => setThreadId(null)} aria-label="بستن رشته"><Icon name="close" /></button>
           </header>
-          <ThreadView key={thread.id} room={room} threadId={thread.id} view={setViewing} info={setSeenFor} profile={setProfile} forward={setForwarding} />
+          <ThreadView key={thread.id} room={room} threadId={thread.id} view={setViewing} info={setSeenFor} profile={setProfile} forward={forward1} />
         </aside>
       )}
       {search && <SearchSheet room={room} onJump={(id, server) => searchJump(id, server ? 50 : undefined)} onClose={() => setSearch(false)} />}
       {info && <RoomInfo room={room} onClose={() => setInfo(false)} />}
       {seenFor && <SeenBy room={room} ev={seenFor} onClose={() => setSeenFor(null)} />}
       {profile && <UserProfile userId={profile} room={room} onClose={() => setProfile(null)} />}
-      {forwarding && <ForwardSheet ev={forwarding} onClose={() => setForwarding(null)} />}
+      {forwarding && <ForwardSheet evs={forwarding} onClose={() => setForwarding(null)} onSent={() => setSel(null)} />}
       {viewing && <MediaViewer items={timelineMedia(room, viewing)} start={viewing} onClose={() => setViewing(null)} onJump={(ev) => jump(ev.getId()!)} />}
     </section>
   );

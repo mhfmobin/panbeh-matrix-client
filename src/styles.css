@@ -831,3 +831,43 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .sa-pin { background: #f5a623; }
 .sa-read { background: var(--accent); }
 .sa-archive { background: #8e949a; }
+/* --- message gestures --- */
+.msg { touch-action: pan-y; }
+.msg > :not(.swipe-ico):not(.sel-check) { transform: translateX(var(--sx, 0)); }
+.msg.snap > :not(.swipe-ico):not(.sel-check) { transition: transform 0.2s ease-out; }
+.msg.swiping { user-select: none; }
+.swipe-ico {
+  position: absolute; right: 16px; top: 50%; width: 34px; height: 34px; margin-top: -17px; display: grid; place-items: center;
+  border-radius: 50%; background: var(--pill); color: #fff; pointer-events: none;
+  opacity: var(--sp, 0); transform: scale(calc(0.5 + 0.5 * var(--sp, 0)));
+}
+.msg.snap .swipe-ico { transition: opacity 0.2s, transform 0.2s; }
+@media (hover: none) {
+  .bubble { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  .bubble a, .bubble img { -webkit-touch-callout: none; }
+}
+.msg-menu { z-index: 46; min-width: 220px; max-width: calc(100vw - 16px); padding: 6px; }
+.msg-menu:focus { outline: none; }
+.msg-menu .quick-react { position: static; margin-bottom: 4px; padding: 2px; box-shadow: none; background: transparent; animation: none; justify-content: space-between; }
+.msg-menu .quick-react button { width: 38px; height: 38px; }
+.msg-menu-backdrop { z-index: 45; background: rgba(0, 0, 0, 0.25); }
+@media (max-width: 700px) { /* bottom sheet */
+  .msg-menu { left: 0 !important; right: 0; top: auto !important; bottom: 0; width: 100%; max-width: none; border-radius: 18px 18px 0 0; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); animation: sheet-up 0.2s ease-out; }
+  .msg-menu button[role="menuitem"]:not(.more) { padding: 12px; }
+}
+@keyframes sheet-up { from { transform: translateY(40px); opacity: 0; } }
+.msg.selecting { padding-inline-start: 44px; cursor: pointer; }
+.msg.selected { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.sel-check {
+  position: absolute; left: 12px; top: 50%; width: 22px; height: 22px; margin-top: -11px; display: grid; place-items: center;
+  border: 2px solid var(--muted); border-radius: 50%; color: #fff;
+}
+.msg.selected .sel-check { background: var(--accent); border-color: var(--accent); }
+.select-bar .select-count { flex: 1; min-width: 0; }
+.select-bar .icon-btn:disabled { opacity: 0.4; pointer-events: none; }
+.toast {
+  position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom)); z-index: 60; transform: translateX(-50%);
+  padding: 8px 16px; border-radius: 18px; background: var(--pill); color: #fff; font-size: 14px; pointer-events: none; animation: pop 0.15s ease-out;
+}
+.date-float { position: absolute; top: 8px; left: 50%; z-index: 3; margin: 0; transform: translateX(-50%); opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+.date-float.show { opacity: 1; }
