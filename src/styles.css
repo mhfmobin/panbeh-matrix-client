@@ -891,4 +891,8 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
   .composer-row textarea { min-height: 46px; padding: 12px 14px; font-size: 15px; line-height: 1.45; border-radius: 23px; }
   .send-btn { width: 46px; height: 46px; }
   .composer-row label.icon-btn { margin-bottom: 3px; }
+  .composer-row .icon-btn { width: 46px; height: 46px; }
+  .composer-row .attach, .composer-row .emoji-toggle { margin-bottom: 0; }
+  .room-head { gap: 4px; padding: 0 6px; }
+  .room-head-info { gap: 10px; padding: 0 4px; }
 }
