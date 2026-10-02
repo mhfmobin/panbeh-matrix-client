@@ -23,7 +23,7 @@ export function NewChat({ activeSpace, onOpen }: { activeSpace?: string; onOpen:
   return (
     <>
       {menu && (
-        <div className="fab-backdrop" onClick={() => setMenu(false)}>
+        <div className="fab-backdrop" onClick={() => setMenu(false)} onKeyDown={(e) => e.key === "Escape" && setMenu(false)}>
           <div className="fab-menu" role="menu">
             {MENU.map(([k, icon, label]) => (
               <button key={k} role="menuitem" onClick={() => { setKind(k); setMenu(false); }}><Icon name={icon} /> {label}</button>
