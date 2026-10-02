@@ -871,3 +871,23 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 }
 .date-float { position: absolute; top: 8px; left: 50%; z-index: 3; margin: 0; transform: translateX(-50%); opacity: 0; transition: opacity 0.3s; pointer-events: none; }
 .date-float.show { opacity: 1; }
+
+/* ---------- phones: slightly smaller messages, composer sized to its text ---------- */
+@media (max-width: 700px) {
+  .msg { padding-inline: 8px; }
+  .msg-col { max-width: min(520px, 84%); }
+  .bubble { padding: 5px 9px 6px; border-radius: 14px; font-size: 14px; line-height: 1.4; }
+  .msg-sender { font-size: 13px; }
+  .fwd-from, .reply-quote { font-size: 12.5px; }
+  .msg-meta { font-size: 11px; }
+  .msg-text::after { width: 46px; }
+  .msg.mine .msg-text::after { width: 62px; }
+  .bubble.edited .msg-text::after { width: 104px; }
+  .msg.mine .bubble.edited .msg-text::after { width: 120px; }
+  .msg-text.jumbo { font-size: 40px; }
+  .composer { padding: 4px 8px 8px; }
+  .composer-row { gap: 6px; }
+  .composer-row textarea { min-height: 46px; padding: 12px 14px; font-size: 15px; line-height: 1.45; border-radius: 23px; }
+  .send-btn { width: 46px; height: 46px; }
+  .composer-row label.icon-btn { margin-bottom: 3px; }
+}
