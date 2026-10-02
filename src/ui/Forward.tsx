@@ -1,12 +1,13 @@
 import { useState } from "react";
-import type { MatrixEvent } from "matrix-js-sdk";
+import { M_POLL_START, type MatrixEvent } from "matrix-js-sdk";
 import { forwardTo } from "../matrix.ts";
 import { useRooms } from "../hooks.ts";
 import { num } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 import { errText, RoomAvatar, Sheet } from "./common.tsx";
 
-export function ForwardSheet({ ev, onClose }: { ev: MatrixEvent; onClose: () => void }) {
+/** `evs` in timeline order; onSent runs after a successful send (the caller leaves selection mode). */
+export function ForwardSheet({ evs, onClose, onSent }: { evs: MatrixEvent[]; onClose: () => void; onSent?: () => void }) {
   const { rows } = useRooms();
   const [q, setQ] = useState("");
   const [sel, setSel] = useState<string[]>([]);
@@ -16,7 +17,9 @@ export function ForwardSheet({ ev, onClose }: { ev: MatrixEvent; onClose: () => 
   const send = async () => {
     setBusy(true);
     try {
-      await Promise.all(sel.map((id) => forwardTo(id, ev)));
+      const list = evs.filter((e) => !M_POLL_START.matches(e.getType())); // polls can't be forwarded
+      await Promise.all(sel.map(async (id) => { for (const e of list) await forwardTo(id, e); })); // rooms in parallel, messages in order
+      onSent?.();
       onClose();
       if (sel.length === 1) location.hash = sel[0];
     } catch (e) {
