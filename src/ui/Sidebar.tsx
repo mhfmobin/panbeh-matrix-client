@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { NotificationCountType, UserEvent, type Room } from "matrix-js-sdk";
 import { client, dmPeer } from "../matrix.ts";
@@ -65,6 +65,21 @@ export function Sidebar({ selected, onSelect, onSettings, banner }: Props) {
 
   const activeSpace = spaces.find((s) => s.roomId === active);
   const pick = (id: string) => { setFolder(id); localStorage.setItem(FOLDER_KEY(), id); setArchive(false); };
+  // touch: swipe the chat list sideways to change folder, like Telegram. RTL: the next tab sits to the left,
+  // so a swipe to the right brings it in
+  const touch = useRef<{ x: number; y: number } | null>(null);
+  const swipe = {
+    onTouchStart: (e: TouchEvent) => { const t = e.touches[0]; touch.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null; },
+    onTouchEnd: (e: TouchEvent) => {
+      const s = touch.current, t = e.changedTouches[0];
+      touch.current = null;
+      if (!s || q) return;
+      const dx = t.clientX - s.x, dy = t.clientY - s.y;
+      if (Math.abs(dx) < 70 || Math.abs(dx) < 2 * Math.abs(dy)) return;
+      const next = folders[folders.findIndex((f) => f.id === active) + (dx > 0 ? 1 : -1)];
+      if (next) pick(next.id);
+    },
+  };
   const item = (r: RoomRow) => <RoomItem row={r} active={r.id === selected} onClick={() => onSelect(r.id)} onMenu={(x, y) => setMenu({ row: r, x, y })} />;
 
   return (
@@ -109,10 +124,12 @@ export function Sidebar({ selected, onSelect, onSettings, banner }: Props) {
           {shown.length === 0 ? <p className="empty-list">گفتگویی پیدا نشد</p> : shown.map((r) => <div key={r.id}>{item(r)}</div>)}
           <MessageResults term={query} onPick={(roomId, eventId) => { requestJump(roomId, eventId); onSelect(roomId); setQuery(""); }} />
         </div>
-      ) : shown.length === 0 ? (
-        <p className="empty-list">هنوز چیزی اینجا نیست</p>
       ) : (
-        <Virtuoso className="room-list" data={shown} computeItemKey={(_, r) => r.id} itemContent={(_, r) => item(r)} />
+        <div className="list-swipe" {...(inArchiveView ? {} : swipe)}>
+          {shown.length === 0
+            ? <p className="empty-list">هنوز چیزی اینجا نیست</p>
+            : <Virtuoso className="room-list" data={shown} computeItemKey={(_, r) => r.id} itemContent={(_, r) => item(r)} />}
+        </div>
       )}
       <NewChat activeSpace={activeSpace?.roomId} onOpen={(id, space) => (space ? pick(id) : onSelect(id))} />
       {spaceInfo && activeSpace && <RoomInfo room={activeSpace} onClose={() => setSpaceInfo(false)} />}

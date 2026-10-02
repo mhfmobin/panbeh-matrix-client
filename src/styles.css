@@ -135,13 +135,14 @@ button:disabled { opacity: 0.6; cursor: default; }
 .main > .pill.center { margin: auto; }
 
 @media (max-width: 700px) {
-  .app { grid-template-columns: 1fr; }
+  /* minmax(0, …): a plain 1fr would grow to the tab row's full width and push the page off-screen */
+  .app { grid-template-columns: minmax(0, 1fr); }
   .app.room-open .sidebar { display: none; }
   .app:not(.room-open) .main { display: none; }
 }
 
 /* ---------- sidebar ---------- */
-.sidebar { position: relative; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-inline-end: 1px solid var(--border); }
+.sidebar { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--panel); border-inline-end: 1px solid var(--border); }
 .sidebar-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
 .search {
   flex: 1; display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 14px;
@@ -156,7 +157,13 @@ button:disabled { opacity: 0.6; cursor: default; }
 }
 .banner.warn { background: color-mix(in srgb, #f5a623 18%, transparent); color: #c77700; }
 
-.folders { display: flex; gap: 4px; padding: 0 8px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; flex: none; }
+.folders {
+  display: flex; gap: 4px; padding: 0 8px; border-bottom: 1px solid var(--border); flex: none;
+  overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; touch-action: pan-x; -webkit-overflow-scrolling: touch;
+}
+.folders::-webkit-scrollbar { display: none; }
+.folders button { flex: none; }
+.list-swipe { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 /* fade the end edge so overflowing tabs read as scrollable; the end padding keeps the last tab clear of it when scrolled */
 .folders { padding-inline-end: 28px; mask-image: linear-gradient(to right, transparent, #000 28px); }
 .folders button {
