@@ -161,7 +161,7 @@ export function Sidebar({ selected, onSelect, onSettings, banner }: Props) {
 
 /** Esc belongs to whatever is open on top (sheets, menus, mention list, reply/edit bar) or to a field being typed in. */
 function busyEsc(e: KeyboardEvent) {
-  if (document.querySelector("[role=dialog], [role=menu], [role=listbox], .composer-mode")) return true;
+  if (document.querySelector("[role=dialog], [role=menu], [role=listbox], .composer-mode, .select-bar")) return true;
   const t = e.target as HTMLInputElement | null;
   return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA") && t.value !== "";
 }
