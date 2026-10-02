@@ -16,6 +16,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(PanbehPlugin.class);
         super.onCreate(savedInstanceState);
         WebView w = bridge.getWebView();
+        // the app's own sizes are the source of truth; don't let the system font scale inflate the UI
+        w.getSettings().setTextZoom(100);
         // keep the renderer at full priority while hidden, so the sync loop isn't starved in the background
         if (Build.VERSION.SDK_INT >= 26) w.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
         if (SyncService.isEnabled(this)) SyncService.start(this);

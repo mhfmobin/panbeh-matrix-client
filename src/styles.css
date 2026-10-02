@@ -726,7 +726,8 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .archive-row small { color: var(--muted); font-weight: 400; }
 .archive-row .badge { margin-inline-start: auto; }
 .archive-title { margin: 4px 20px 6px; font-size: 17px; }
-.chat-menu-backdrop { position: fixed; inset: 0; z-index: 45; }
+.chat-menu-backdrop { position: fixed; inset: 0; z-index: 45; touch-action: none; }
+.chat-menu-backdrop, .chat-menu-backdrop * { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .chat-menu {
   position: fixed; min-width: 200px; padding: 6px; border-radius: 14px; background: var(--panel);
   box-shadow: 0 6px 30px rgba(0, 0, 0, 0.22); animation: pop 0.14s ease-out;
@@ -826,7 +827,7 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 /* --- chat list swipe actions --- */
 .swipe-row { position: relative; overflow: hidden; }
 .swipe-fg { position: relative; background: var(--panel); touch-action: pan-y; will-change: transform; }
-.swipe-actions { position: absolute; inset-block: 0; inset-inline-end: 0; display: flex; }
+.swipe-actions { position: absolute; inset-block: 0; inset-inline-end: 0; display: flex; visibility: hidden; }
 .swipe-actions button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #fff; font-size: 11px; }
 .sa-pin { background: #f5a623; }
 .sa-read { background: var(--accent); }
@@ -850,7 +851,7 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .msg-menu:focus { outline: none; }
 .msg-menu .quick-react { position: static; margin-bottom: 4px; padding: 2px; box-shadow: none; background: transparent; animation: none; justify-content: space-between; }
 .msg-menu .quick-react button { width: 38px; height: 38px; }
-.msg-menu-backdrop { z-index: 45; background: rgba(0, 0, 0, 0.25); }
+.msg-menu-backdrop { z-index: 45; background: rgba(0, 0, 0, 0.25); touch-action: none; }
 @media (max-width: 700px) { /* bottom sheet */
   .msg-menu { left: 0 !important; right: 0; top: auto !important; bottom: 0; width: 100%; max-width: none; border-radius: 18px 18px 0 0; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); animation: sheet-up 0.2s ease-out; }
   .msg-menu button[role="menuitem"]:not(.more) { padding: 12px; }
@@ -871,3 +872,23 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 }
 .date-float { position: absolute; top: 8px; left: 50%; z-index: 3; margin: 0; transform: translateX(-50%); opacity: 0; transition: opacity 0.3s; pointer-events: none; }
 .date-float.show { opacity: 1; }
+
+/* ---------- phones: slightly smaller messages, composer sized to its text ---------- */
+@media (max-width: 700px) {
+  .msg { padding-inline: 8px; }
+  .msg-col { max-width: min(520px, 84%); }
+  .bubble { padding: 5px 9px 6px; border-radius: 14px; font-size: 14px; line-height: 1.4; }
+  .msg-sender { font-size: 13px; }
+  .fwd-from, .reply-quote { font-size: 12.5px; }
+  .msg-meta { font-size: 11px; }
+  .msg-text::after { width: 46px; }
+  .msg.mine .msg-text::after { width: 62px; }
+  .bubble.edited .msg-text::after { width: 104px; }
+  .msg.mine .bubble.edited .msg-text::after { width: 120px; }
+  .msg-text.jumbo { font-size: 40px; }
+  .composer { padding: 4px 8px 8px; }
+  .composer-row { gap: 6px; }
+  .composer-row textarea { min-height: 46px; padding: 12px 14px; font-size: 15px; line-height: 1.45; border-radius: 23px; }
+  .send-btn { width: 46px; height: 46px; }
+  .composer-row label.icon-btn { margin-bottom: 3px; }
+}

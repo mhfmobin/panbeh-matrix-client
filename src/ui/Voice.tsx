@@ -165,7 +165,9 @@ export function VoiceRecorder({ onDone }: { onDone: (v?: Voice) => void }) {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       } catch {
-        alert("دسترسی به میکروفون ممکن نشد. اجازه‌ی میکروفون را در مرورگر بدهید (فقط روی https یا localhost کار می‌کند).");
+        alert(window.isSecureContext
+          ? "دسترسی به میکروفون ممکن نشد. اجازه‌ی میکروفون را در تنظیمات مرورگر یا برنامه بدهید."
+          : "دسترسی به میکروفون ممکن نشد. ضبط صدا فقط روی https یا localhost کار می‌کند.");
         return onDone();
       }
       if (!live) return release();
