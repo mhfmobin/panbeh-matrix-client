@@ -54,6 +54,7 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   // thread summaries) must not unpin us, which is what Virtuoso's own atBottom would do.
   const stuck = useRef(!unreadAfter);
   const jumpingUntil = useRef(0); // while a jump settles, passing the bottom mustn't re-pin us there
+  const pagingUntil = useRef(0); // while older history loads/settles, height changes mustn't drag us to the bottom
   // floating date: label of the topmost visible row while scrolling, hidden 1.2s after it stops
   const [floating, setFloating] = useState<{ label: string; show: boolean }>({ label: "", show: false });
   const scrollerRef = useCallback((el: HTMLElement | Window | null) => {
@@ -109,8 +110,12 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   const loadOlder = useCallback(async () => {
     if (loading || !timeline.getPaginationToken(EventTimeline.BACKWARDS)) return;
     setLoading(true);
+    pagingUntil.current = Infinity;
     await client.paginateEventTimeline(timeline, { backwards: true, limit: 40 }).catch(console.warn);
+    pagingUntil.current = Date.now() + 400; // Virtuoso re-anchors the prepended rows over the next frames
     setLoading(false);
+    // opened with few messages (still pinned): settle at the bottom once the page is in
+    setTimeout(() => { if (stuck.current) list.current?.scrollToIndex({ index: "LAST", align: "end" }); }, 420);
   }, [timeline, loading]);
 
   // fill the screen if we have only a handful of messages. Keep paging while pages bring only hidden
@@ -206,11 +211,11 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
       followOutput={() => (stuck.current || lastIsMine ? "smooth" : false)}
       ref={list}
       scrollerRef={scrollerRef}
-      atBottomStateChange={(b) => { if (b && Date.now() > jumpingUntil.current) stuck.current = true; setAtBottom(b); }}
+      atBottomStateChange={(b) => { if (b && Date.now() > jumpingUntil.current && Date.now() > pagingUntil.current) stuck.current = true; setAtBottom(b); }}
       // panel opening / images loading change heights; stay pinned if we were at the bottom
-      totalListHeightChanged={() => stuck.current && list.current?.scrollToIndex({ index: "LAST", align: "end" })}
+      totalListHeightChanged={() => stuck.current && Date.now() > pagingUntil.current && list.current?.scrollToIndex({ index: "LAST", align: "end" })}
       atBottomThreshold={80}
-      startReached={loadOlder}
+      startReached={() => { stuck.current = false; loadOlder(); }} // at the top we're reading history, not following the bottom
       increaseViewportBy={{ top: 600, bottom: 200 }}
       computeItemKey={(_, r) => r.key}
       components={COMPONENTS}
