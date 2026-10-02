@@ -12,6 +12,7 @@ import { PollBody } from "./Poll.tsx";
 import { EmojiPanel } from "./Emoji.tsx";
 import { LinkPreview } from "./LinkPreview.tsx";
 import { captionOf, EDITABLE } from "./Composer.tsx";
+import { useBackdropHold } from "./useBackdropHold.ts";
 
 export type Actions = {
   reply: (ev: MatrixEvent) => void;
@@ -28,7 +29,9 @@ export type Actions = {
 
 const QUICK = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 
-const LONG_PRESS = 450, SWIPE_AT = 60, SWIPE_MAX = 80;
+const SWIPE_AT = 60, SWIPE_MAX = 80;
+// a tap on these does its own thing; a tap anywhere else on the message opens its menu
+const INTERACTIVE = "a, button, input, textarea, label, video, audio, [role=button], .poll, .voice, .reply-quote";
 
 /** Text a copy should give: body without the reply fallback; media only their caption. */
 export function copyTextOf(ev: MatrixEvent): string {
@@ -73,9 +76,9 @@ type Props = { ev: MatrixEvent; room: Room; first: boolean; last: boolean; actio
 export function Message({ ev, room, first, last, actions, flash }: Props) {
   const [picker, setPicker] = useState(false);
   const [fullPicker, setFullPicker] = useState(false);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null); // touch screens have no hover: long-press (or right-click) opens this
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null); // touch screens have no hover: a tap (or right-click) opens this
   const row = useRef<HTMLDivElement>(null);
-  const g = useRef<{ id: number; x: number; y: number; timer: number; lock: boolean; px: number; crossed: boolean } | null>(null);
+  const g = useRef<{ id: number; x: number; y: number; tap: boolean; lock: boolean; px: number; crossed: boolean } | null>(null);
   const swallow = useRef(false); // the click that follows a swipe / long-press
   const mine = ev.getSender() === me();
   const failed = ev.status === EventStatus.NOT_SENT;
@@ -100,7 +103,6 @@ export function Message({ ev, room, first, last, actions, flash }: Props) {
     const s = g.current;
     g.current = null;
     if (!s) return;
-    clearTimeout(s.timer);
     if (s.lock) {
       setTimeout(() => { swallow.current = false; }, 350);
       row.current!.classList.add("snap"); // animate back
@@ -113,14 +115,13 @@ export function Message({ ev, room, first, last, actions, flash }: Props) {
   const inside = (e: { target: EventTarget }) => row.current!.contains(e.target as Node); // portals (menu, picker) bubble through React
   const down = (e: PointerEvent) => {
     if (!inside(e) || e.pointerType !== "touch" || !live || selecting || (e.target as HTMLElement).closest("input,video,audio")) return;
-    const { clientX: x, clientY: y } = e;
-    clearTimeout(g.current?.timer);
-    g.current = { id: e.pointerId, x, y, lock: false, px: 0, crossed: false, timer: window.setTimeout(() => {
-      swallow.current = true;
-      setTimeout(() => { swallow.current = false; }, 1500); // the click normally follows at finger-up; don't eat a later tap if it doesn't
-      navigator.vibrate?.(15);
-      setMenu({ x, y });
-    }, LONG_PRESS) };
+    g.current = { id: e.pointerId, x: e.clientX, y: e.clientY, tap: !(e.target as HTMLElement).closest(INTERACTIVE), lock: false, px: 0, crossed: false };
+  };
+  const up = (e: PointerEvent) => {
+    const s = g.current;
+    const tap = !!s && s.tap && !s.lock && Math.hypot(e.clientX - s.x, e.clientY - s.y) < 10 && inside(e);
+    end(false);
+    if (tap) { navigator.vibrate?.(10); setMenu({ x: e.clientX, y: e.clientY }); }
   };
   const move = (e: PointerEvent) => {
     const s = g.current;
@@ -128,7 +129,6 @@ export function Message({ ev, room, first, last, actions, flash }: Props) {
     const dx = e.clientX - s.x, dy = e.clientY - s.y;
     if (!s.lock) {
       if (Math.max(Math.abs(dx), Math.abs(dy)) < 10) return;
-      clearTimeout(s.timer);
       if (dx < 0 && -dx > Math.abs(dy)) {
         s.lock = true;
         swallow.current = true;
@@ -144,7 +144,7 @@ export function Message({ ev, room, first, last, actions, flash }: Props) {
 
   return (
     <div ref={row} className={`msg ${mine ? "mine" : "theirs"}${first ? " first" : ""}${last ? " last" : ""}${failed ? " failed" : ""}${flash ? " flash" : ""}${selecting ? " selecting" : ""}${selected ? " selected" : ""}`}
-      onPointerDown={down} onPointerMove={move} onPointerUp={() => end(false)} onPointerCancel={() => end(true)}
+      onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => end(true)}
       onContextMenu={(e) => { if (!live || selecting || !inside(e)) return; e.preventDefault(); setMenu((m) => m ?? { x: e.clientX, y: e.clientY }); }}
       onClickCapture={(e) => {
         if (!inside(e)) return;
@@ -241,7 +241,6 @@ function MsgMenu({ x, y, items, onReact, onMore, onClose }: { x: number; y: numb
   onReact: (k: string) => void; onMore: () => void; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number }>();
-  const born = useRef(Date.now());
   useEffect(() => { // keep it on screen
     const r = ref.current!.getBoundingClientRect();
     setPos({ left: Math.max(8, Math.min(x - r.width / 2, innerWidth - r.width - 8)), top: Math.max(8, Math.min(y, innerHeight - r.height - 8)) });
@@ -253,33 +252,9 @@ function MsgMenu({ x, y, items, onReact, onMore, onClose }: { x: number; y: numb
     return () => removeEventListener("keydown", onKey);
   }, [onClose]);
   const act = (fn: () => unknown) => { onClose(); fn(); };
-  // holding a finger on another message (above or below the menu) closes this one and opens that message's menu
-  const hold = useRef<{ timer: number; fired: boolean; x: number; y: number } | null>(null);
-  const reopenAt = (x: number, y: number) => {
-    onClose();
-    setTimeout(() => { // once our backdrop is gone
-      const el = document.elementsFromPoint(x, y).find((n) => n.closest(".msg"));
-      el?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y }));
-    }, 0);
-  };
-  const cancelHold = () => { if (hold.current) clearTimeout(hold.current.timer); };
+  const backdrop = useBackdropHold(onClose, ".msg"); // holding another message switches the menu to it
   return createPortal(
-    // the finger that opened the menu is still down: its release mustn't count as an outside tap
-    <div className="chat-menu-backdrop msg-menu-backdrop" onClick={() => Date.now() - born.current > 350 && onClose()}
-      onPointerDown={(e) => {
-        if (e.pointerType !== "touch") return;
-        cancelHold();
-        const { clientX: x, clientY: y } = e;
-        hold.current = { x, y, fired: false, timer: window.setTimeout(() => { hold.current!.fired = true; navigator.vibrate?.(15); reopenAt(x, y); }, LONG_PRESS) };
-      }}
-      onPointerMove={(e) => { const h = hold.current; if (h && Math.hypot(e.clientX - h.x, e.clientY - h.y) > 10) cancelHold(); }}
-      onPointerUp={cancelHold} onPointerCancel={cancelHold}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        if (hold.current?.fired || Date.now() - born.current < 350) return; // our own long-press (or the one that opened us) already handled it
-        cancelHold();
-        reopenAt(e.clientX, e.clientY);
-      }}>
+    <div className="chat-menu-backdrop msg-menu-backdrop" {...backdrop}>
       <div className="chat-menu msg-menu" role="menu" aria-label="گزینه‌های پیام" tabIndex={-1} ref={ref} style={pos ?? { left: x, top: y, visibility: "hidden" }} onClick={(e) => e.stopPropagation()}>
         <div className="quick-react">
           {QUICK.map((k) => <button key={k} role="menuitem" onClick={() => act(() => onReact(k))}>{k}</button>)}

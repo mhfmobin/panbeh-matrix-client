@@ -1,3 +1,4 @@
+import { useBackdropHold } from "./useBackdropHold.ts";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type TouchEvent } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { NotificationCountType, UserEvent, type Room } from "matrix-js-sdk";
@@ -320,8 +321,9 @@ function ChatMenu({ row, x, y, onClose }: Menu & { onClose: () => void }) {
   }, [onClose]);
   const run = (fn: () => Promise<unknown>) => { onClose(); fn().catch((e) => alert(errText(e))); };
   const ops = chatOps(row), unread = ops.unread;
+  const backdrop = useBackdropHold(onClose, ".room-item"); // holding another chat switches the menu to it
   return (
-    <div className="chat-menu-backdrop" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }}>
+    <div className="chat-menu-backdrop" {...backdrop}>
       <div className="chat-menu" role="menu" ref={ref} style={pos} onClick={(e) => e.stopPropagation()}>
         <button role="menuitem" onClick={() => run(ops.pin)}>
           <Icon name="pin" /> {row.pinned ? "برداشتن سنجاق" : "سنجاق"}</button>
