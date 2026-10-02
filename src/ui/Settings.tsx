@@ -8,13 +8,15 @@ import { Avatar, errText, me, Sheet } from "./common.tsx";
 import { num, stamp } from "../logic.ts";
 import { decryptKeyFile, encryptKeyFile } from "../keyfile.ts";
 import { showVerification } from "./Verify.tsx";
+import { isNative, nativeCancelAll, nativeStatus, requestBatteryExemption, requestNotifyPermission, setBackgroundService } from "../native.ts";
 
 type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; previews: boolean; shareLastSeen: boolean };
 const ACCENTS = ["#3390ec", "#8774e1", "#40a7a0", "#e5864a", "#e0578b", "#4fae4e"];
 const WALLPAPERS = { doodle: "طرح‌دار", gradient: "گرادیان", plain: "ساده" };
 const THEMES = { system: "سیستم", light: "روشن", dark: "تیره" };
 
-export const loadPrefs = (): Prefs => ({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: false, notifyDMs: true, notifyGroups: true, previews: true, shareLastSeen: true, ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
+// the Android app defaults to notifying: it asks for permission on first start
+export const loadPrefs = (): Prefs => ({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative, notifyDMs: true, notifyGroups: true, previews: true, shareLastSeen: true, ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
 
 export function applyPrefs(p = loadPrefs()) {
   const root = document.documentElement;
@@ -112,7 +114,56 @@ export function Settings({ onClose, onSecurityChange }: { onClose: () => void; o
   );
 }
 
-function Notifications({ prefs, set }: { prefs: Prefs; set: (p: Partial<Prefs>) => void }) {
+function Notifications(props: { prefs: Prefs; set: (p: Partial<Prefs>) => void }) {
+  return isNative ? <AndroidNotifications {...props} /> : <WebNotifications {...props} />;
+}
+
+const KindSwitches = ({ prefs, set }: { prefs: Prefs; set: (p: Partial<Prefs>) => void }) => (
+  <>
+    <label className="switch-row"><span>گفتگوهای شخصی</span>
+      <input type="checkbox" role="switch" checked={prefs.notifyDMs} onChange={(e) => set({ notifyDMs: e.target.checked })} /></label>
+    <label className="switch-row"><span>گروه‌ها<small>نام‌بردن از شما همیشه اعلان می‌شود</small></span>
+      <input type="checkbox" role="switch" checked={prefs.notifyGroups} onChange={(e) => set({ notifyGroups: e.target.checked })} /></label>
+  </>
+);
+
+/** In the app: Android notifications, delivered by a background service that keeps the client syncing. */
+function AndroidNotifications({ prefs, set }: { prefs: Prefs; set: (p: Partial<Prefs>) => void }) {
+  const [st, setSt] = useState<Awaited<ReturnType<typeof nativeStatus>>>();
+  useEffect(() => { // re-read after coming back from Android's settings screens
+    const refresh = () => { if (document.visibilityState === "visible") nativeStatus().then(setSt, () => {}); };
+    refresh();
+    document.addEventListener("visibilitychange", refresh);
+    return () => document.removeEventListener("visibilitychange", refresh);
+  }, []);
+  if (!st) return null;
+  const toggle = async (want: boolean) => {
+    if (want) {
+      const p = await requestNotifyPermission();
+      setSt({ ...st, permission: p });
+      if (p !== "granted") return;
+    } else nativeCancelAll();
+    set({ notify: want });
+    setBackgroundService(want);
+  };
+  const on = prefs.notify && st.permission === "granted";
+  return (
+    <>
+      <label className="switch-row"><span>اعلان پیام‌های تازه<small>پنبه در پس‌زمینه متصل می‌ماند، حتی وقتی بسته است</small></span>
+        <input type="checkbox" role="switch" checked={on} onChange={(e) => toggle(e.target.checked)} /></label>
+      {on && <KindSwitches prefs={prefs} set={set} />}
+      {on && st.batteryOptimized && (
+        <button className="user-row" onClick={() => requestBatteryExemption()}>
+          <span className="device-box"><Icon name="bell" /></span>
+          <span><b>اجرای بدون محدودیت در پس‌زمینه</b><small>بهینه‌سازی باتری اندروید ممکن است اعلان‌ها را دیر برساند</small></span>
+        </button>
+      )}
+      {st.permission === "denied" && <p className="muted">اجازه‌ی اعلان رد شده است؛ از تنظیمات اندروید، بخش برنامه‌ها، آن را برای پنبه باز کنید.</p>}
+    </>
+  );
+}
+
+function WebNotifications({ prefs, set }: { prefs: Prefs; set: (p: Partial<Prefs>) => void }) {
   const supported = "Notification" in window;
   const [perm, setPerm] = useState(supported ? Notification.permission : "denied");
   if (!supported) return <p className="muted">این مرورگر اعلان را پشتیبانی نمی‌کند.</p>;
@@ -130,12 +181,7 @@ function Notifications({ prefs, set }: { prefs: Prefs; set: (p: Partial<Prefs>) 
       <label className="switch-row"><span>اعلان پیام‌های تازه<small>تا وقتی پنبه در یک زبانه باز است</small></span>
         <input type="checkbox" role="switch" checked={on} onChange={(e) => toggle(e.target.checked)} /></label>
       {/* local only: turning the server's message rules off would also zero the unread badges */}
-      {on && <>
-        <label className="switch-row"><span>گفتگوهای شخصی</span>
-          <input type="checkbox" role="switch" checked={prefs.notifyDMs} onChange={(e) => set({ notifyDMs: e.target.checked })} /></label>
-        <label className="switch-row"><span>گروه‌ها<small>نام‌بردن از شما همیشه اعلان می‌شود</small></span>
-          <input type="checkbox" role="switch" checked={prefs.notifyGroups} onChange={(e) => set({ notifyGroups: e.target.checked })} /></label>
-      </>}
+      {on && <KindSwitches prefs={prefs} set={set} />}
       {perm === "denied" && <p className="muted">اجازه‌ی اعلان در مرورگر رد شده است؛ از تنظیمات سایت در مرورگر آن را باز کنید.</p>}
     </>
   );

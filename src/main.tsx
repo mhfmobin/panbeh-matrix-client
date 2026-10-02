@@ -4,12 +4,13 @@ import { ClientEvent, SyncState } from "matrix-js-sdk";
 import { cancelAdd, client, finishOAuth, isAdding, isOAuthCallback, logout, recoveryState, savedSession, start } from "./matrix.ts";
 import { useTick } from "./hooks.ts";
 import { startNotifications } from "./notify.ts";
+import { isHeadless, isNative, onOpenRoom, requestNotifyPermission, setBackgroundService } from "./native.ts";
 import { isMarkedUnread, setMarkedUnread } from "./chats.ts";
 import { Login } from "./ui/Login.tsx";
 import { Sidebar } from "./ui/Sidebar.tsx";
 import { Room } from "./ui/Room.tsx";
 import { NowPlaying } from "./ui/Voice.tsx";
-import { Settings, applyPrefs } from "./ui/Settings.tsx";
+import { Settings, applyPrefs, loadPrefs } from "./ui/Settings.tsx";
 import { VerificationListener } from "./ui/Verify.tsx";
 import { Icon } from "./icons.tsx";
 import "@fontsource-variable/vazirmatn";
@@ -59,6 +60,11 @@ function Shell() {
   const synced = client.isInitialSyncComplete();
   useEffect(() => { if (synced) refreshSecurity(); }, [synced]);
   useEffect(startNotifications, []);
+  useEffect(() => onOpenRoom((id) => { location.hash = id; }), []);
+  useEffect(() => { // Android: first start asks for notification permission, then keeps syncing in the background
+    if (!isNative || !loadPrefs().notify) return;
+    requestNotifyPermission().then((p) => setBackgroundService(p === "granted"), () => {});
+  }, []);
   useEffect(() => { // opening a chat clears its "mark as unread"
     const r = roomId && synced ? client.getRoom(roomId) : null;
     if (r && isMarkedUnread(r)) setMarkedUnread(r, false).catch(() => {});
@@ -100,4 +106,12 @@ const Splash = ({ text }: { text: string }) => (
   <div className="splash wallpaper"><div className="login-logo">✦</div><span className="spinner inline" /> {text}</div>
 );
 
-createRoot(document.getElementById("root")!).render(<App />);
+/** The background service's copy of the app (Android, app closed): sync and notify, nothing on screen. */
+function headless() {
+  const s = savedSession();
+  if (!s || !loadPrefs().notify) return setBackgroundService(false);
+  start(s).then(startNotifications, (e) => console.error("headless start failed", e));
+}
+
+if (isHeadless) headless();
+else createRoot(document.getElementById("root")!).render(<App />);
