@@ -9,4 +9,8 @@
     <string name="channel_service">اتصال پس‌زمینه</string>
     <string name="service_title">پنبه متصل است</string>
     <string name="service_text">برای دریافت پیام‌های تازه</string>
+    <string name="channel_calls">تماس‌ها</string>
+    <string name="call_voice">تماس صوتی ورودی</string>
+    <string name="call_video">تماس تصویری ورودی</string>
+    <string name="call_ongoing">تماس در جریان است</string>
 </resources>

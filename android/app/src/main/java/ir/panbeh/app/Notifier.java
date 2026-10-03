@@ -1,6 +1,7 @@
 package ir.panbeh.app;
 
 import android.annotation.SuppressLint;
+import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -8,16 +9,25 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.media.AudioAttributes;
+import android.media.AudioManager;
+import android.media.RingtoneManager;
 import android.os.Build;
 import android.util.Base64;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
+import androidx.core.app.Person;
+import androidx.core.graphics.drawable.IconCompat;
 import androidx.core.graphics.drawable.RoundedBitmapDrawable;
 
 /** Message notifications, shared by the app's WebView (plugin) and the headless one (JS interface). */
 final class Notifier {
-    static final String CH_MESSAGES = "messages", CH_QUIET = "messages_quiet", CH_SERVICE = "service";
+    static final String CH_MESSAGES = "messages", CH_QUIET = "messages_quiet", CH_SERVICE = "service", CH_CALLS = "calls";
     static final String EXTRA_ROOM = "roomId";
+    /** Incoming-call intents: "open" | "answer" | "decline", plus the ring's event id and whether it's a video call. */
+    static final String EXTRA_CALL = "callAction", EXTRA_EVENT = "eventId", EXTRA_VIDEO = "video";
+    /** Notification id of an incoming call (tag = room id); messages use 1. */
+    static final int CALL_ID = 2;
     private static final String GROUP = "ir.panbeh.app.MESSAGES";
 
     private Notifier() {}
@@ -33,6 +43,63 @@ final class Notifier {
         NotificationChannel svc = new NotificationChannel(CH_SERVICE, ctx.getString(R.string.channel_service), NotificationManager.IMPORTANCE_MIN);
         svc.setShowBadge(false);
         nm.createNotificationChannel(svc);
+        NotificationChannel calls = new NotificationChannel(CH_CALLS, ctx.getString(R.string.channel_calls), NotificationManager.IMPORTANCE_HIGH);
+        calls.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), new AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+        calls.enableVibration(true);
+        calls.setVibrationPattern(new long[] { 0, 1000, 1000 });
+        nm.createNotificationChannel(calls);
+    }
+
+    /** Rings until answered, declined or timed out; full screen over the lock screen (where Android allows it). */
+    @SuppressLint("MissingPermission") // SecurityException caught
+    static void showCall(Context ctx, String roomId, String eventId, String caller, boolean video, String iconDataUrl, long timeoutMs) {
+        createChannels(ctx);
+        if (caller == null || caller.isEmpty()) caller = ctx.getString(R.string.app_name); // CallStyle throws on an unnamed caller
+        Person.Builder who = new Person.Builder().setName(caller).setImportant(true);
+        Bitmap icon = decode(iconDataUrl);
+        if (icon != null) who.setIcon(IconCompat.createWithBitmap(circle(ctx, icon)));
+        PendingIntent open = callIntent(ctx, "open", roomId, eventId, video);
+        Notification n = new NotificationCompat.Builder(ctx, CH_CALLS)
+            .setSmallIcon(R.drawable.ic_stat_panbeh)
+            .setColor(0xFF3390EC)
+            .setContentTitle(caller)
+            .setContentText(ctx.getString(video ? R.string.call_video : R.string.call_voice))
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), AudioManager.STREAM_RING) // before Android 8 (no channels)
+            .setOngoing(true)
+            .setTimeoutAfter(Math.max(1000, timeoutMs))
+            .setContentIntent(open)
+            .setFullScreenIntent(open, true)
+            .setStyle(NotificationCompat.CallStyle.forIncomingCall(who.build(),
+                callIntent(ctx, "decline", roomId, eventId, video), callIntent(ctx, "answer", roomId, eventId, video)))
+            .build();
+        n.flags |= Notification.FLAG_INSISTENT; // keep ringing, like a phone
+        try {
+            NotificationManagerCompat.from(ctx).notify(roomId, CALL_ID, n);
+        } catch (SecurityException e) {
+            // POST_NOTIFICATIONS revoked meanwhile
+        }
+    }
+
+    static void cancelCall(Context ctx, String roomId) {
+        NotificationManagerCompat.from(ctx).cancel(roomId, CALL_ID);
+    }
+
+    /** "decline" goes to CallReceiver (no UI); the others open the app. */
+    private static PendingIntent callIntent(Context ctx, String action, String roomId, String eventId, boolean video) {
+        int code = (roomId + action).hashCode();
+        if (action.equals("decline")) {
+            Intent i = new Intent(ctx, CallReceiver.class)
+                .putExtra(EXTRA_CALL, action).putExtra(EXTRA_ROOM, roomId).putExtra(EXTRA_EVENT, eventId).putExtra(EXTRA_VIDEO, video);
+            return PendingIntent.getBroadcast(ctx, code, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        }
+        Intent i = new Intent(ctx, MainActivity.class)
+            .setAction(Intent.ACTION_VIEW)
+            .putExtra(EXTRA_CALL, action).putExtra(EXTRA_ROOM, roomId).putExtra(EXTRA_EVENT, eventId).putExtra(EXTRA_VIDEO, video)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        return PendingIntent.getActivity(ctx, code, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 
     /** One notification per room (tag = room id): the newest message replaces the previous one. */

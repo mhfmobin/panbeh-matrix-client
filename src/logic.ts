@@ -298,3 +298,8 @@ export function textDir(s: string): "rtl" | "ltr" {
   const letter = /\p{L}/u.exec(s)?.[0];
   return letter && /[\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}]/u.test(letter) ? "rtl" : "ltr";
 }
+
+type RingContent = { notification_type?: string; "m.mentions"?: { room?: boolean; user_ids?: string[] } };
+/** An m.rtc.notification (MSC4075) that should ring `me` now: a "ring" (not a group "notification"), aimed at us or the room, before `until`. */
+export const isRing = (c: RingContent, until: number, me: string, now = Date.now()) =>
+  c.notification_type === "ring" && !!(c["m.mentions"]?.room || c["m.mentions"]?.user_ids?.includes(me)) && until > now; // NaN until = no

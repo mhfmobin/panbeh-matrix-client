@@ -40,11 +40,21 @@ const P = {
   copy: "M9 9h11v11H9zM5 15V4h11",
   select: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM8 12.5l3 3 5-6",
   unread: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 12h.01",
+  phone: "M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z",
+  hangup: "M2.5 14.5c5.3-5 13.7-5 19 0l-2.5 3-4-1.5v-3a11 11 0 0 0-6 0v3l-4 1.5z",
+  video: "M3 7h12v10H3zM15 10.5 21 7v10l-6-3.5",
+  videoOff: "M3 7h12v10H3zM15 10.5 21 7v10l-6-3.5M3 3l18 18",
+  micOff: "M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zM5 11a7 7 0 0 0 14 0M12 18v3M3 3l18 18",
+  screen: "M3 4h18v12H3zM8 20h8M12 16v4",
+  flip: "M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M18 3v4h-4M6 21v-4h4",
+  speaker: "M4 9h4l5-4v14l-5-4H4zM16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11",
+  expand: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5",
+  shrink: "M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5",
 };
 
 export type IconName = keyof typeof P;
 const FLIP = new Set<IconName>(["back", "send", "reply", "forward", "chevron"]); // directional, mirrored for RTL
-const FILLED = new Set<IconName>(["send", "play", "pause", "stop"]);
+const FILLED = new Set<IconName>(["send", "play", "pause", "stop", "hangup"]);
 
 export const Icon = ({ name, size = 20 }: { name: IconName; size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}

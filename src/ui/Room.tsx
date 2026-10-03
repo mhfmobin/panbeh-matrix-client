@@ -8,6 +8,7 @@ import { bdi, errText, me, RoomAvatar, senderName } from "./common.tsx";
 import { Timeline, type Jumper } from "./Timeline.tsx";
 import { PinnedBar } from "./Pinned.tsx";
 import { NowPlaying } from "./Voice.tsx";
+import { CallBar, CallButtons } from "./Call.tsx";
 import { Composer, DropZone, type Mode } from "./Composer.tsx";
 import { copyMessages, copyTextOf, type Actions } from "./Message.tsx";
 import { RoomInfo, SeenBy } from "./RoomInfo.tsx";
@@ -141,12 +142,14 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
               <span className={typing.length || seen.online ? "typing" : ""}>{subtitle}</span>
             </div>
           </button>
-          {room.getMyMembership() !== KnownMembership.Invite && (
+          {room.getMyMembership() !== KnownMembership.Invite && <>
+            <CallButtons room={room} />
             <button className="icon-btn" onClick={() => setSearch(true)} title="جستجو" aria-label="جستجو"><Icon name="search" /></button>
-          )}
+          </>}
         </header>
         )}
         <NowPlaying onJump={(id) => jump(id)} />
+        {room.getMyMembership() !== KnownMembership.Invite && <CallBar room={room} />}
         {room.getMyMembership() === KnownMembership.Invite ? (
           <Invite room={room} />
         ) : (

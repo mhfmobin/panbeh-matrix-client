@@ -1,7 +1,11 @@
 package ir.panbeh.app;
 
 import android.Manifest;
+import android.app.NotificationManager;
+import android.content.Context;
 import android.content.Intent;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.PowerManager;
@@ -19,6 +23,10 @@ import com.getcapacitor.annotation.PermissionCallback;
 /** Native side of src/native.ts for the app's own WebView. */
 @CapacitorPlugin(name = "Panbeh", permissions = @Permission(strings = { Manifest.permission.POST_NOTIFICATIONS }, alias = "notifications"))
 public class PanbehPlugin extends Plugin {
+    /** The app's WebView, for call actions from CallReceiver. */
+    static PanbehPlugin instance;
+    /** Call notification button that arrived before the page was listening (cold start). */
+    private JSObject launchCall;
     /** Room from a notification tap that arrived before the page was listening. */
     private String launchRoom;
     /** matrix.to / matrix: link that arrived before the page was listening. */
@@ -39,19 +47,53 @@ public class PanbehPlugin extends Plugin {
         else launchLink = link;
     }
 
+    static JSObject callAction(Intent i) {
+        return new JSObject()
+            .put("action", i.getStringExtra(Notifier.EXTRA_CALL))
+            .put("roomId", i.getStringExtra(Notifier.EXTRA_ROOM))
+            .put("eventId", i.getStringExtra(Notifier.EXTRA_EVENT))
+            .put("video", i.getBooleanExtra(Notifier.EXTRA_VIDEO, false));
+    }
+
+    /** Hands a call action to the app's page if it's running and listening. */
+    static boolean deliverCall(JSObject a) {
+        PanbehPlugin p = instance;
+        if (p == null || !SyncService.activityAlive || !p.hasListeners("callAction")) return false;
+        p.notifyListeners("callAction", a);
+        return true;
+    }
+
+    /** Answer / open from the call notification: stop the native ring, the page takes over. */
+    private boolean dispatchCall(Intent intent) {
+        if (intent == null || intent.getStringExtra(Notifier.EXTRA_CALL) == null) return false;
+        Notifier.cancelCall(getContext(), intent.getStringExtra(Notifier.EXTRA_ROOM));
+        JSObject a = callAction(intent);
+        if (!deliverCall(a)) launchCall = a;
+        return true;
+    }
+
     @Override
     public void load() {
+        instance = this;
         // cold start: the launch intent never goes through handleOnNewIntent
         Intent launch = getActivity().getIntent();
         dispatchLink(launch);
-        if (launch != null && launch.getData() != null && isMatrixLink(launch.getData())) // don't replay it if recreated
+        boolean call = dispatchCall(launch);
+        if (call || (launch != null && launch.getData() != null && isMatrixLink(launch.getData()))) // don't replay it if recreated
             getActivity().setIntent(new Intent(getContext(), MainActivity.class));
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        if (instance == this) instance = null;
+        super.handleOnDestroy();
     }
 
     @Override
     protected void handleOnNewIntent(Intent intent) {
         super.handleOnNewIntent(intent);
         String room = intent.getStringExtra(Notifier.EXTRA_ROOM);
+        if (dispatchCall(intent)) room = null; // the call opens its own screen
         if (room != null) {
             if (hasListeners("openRoom")) notifyListeners("openRoom", new JSObject().put("roomId", room));
             else launchRoom = room;
@@ -81,6 +123,70 @@ public class PanbehPlugin extends Plugin {
         r.put("link", launchLink);
         launchLink = null;
         call.resolve(r);
+    }
+
+    @PluginMethod
+    public void takeLaunchCall(PluginCall call) {
+        JSObject r = launchCall != null ? launchCall : new JSObject();
+        launchCall = null;
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void showCall(PluginCall call) {
+        String roomId = call.getString("roomId"), eventId = call.getString("eventId");
+        if (roomId == null || eventId == null) { call.reject("roomId and eventId required"); return; }
+        Notifier.showCall(getContext(), roomId, eventId, call.getString("caller", ""), call.getBoolean("video", false),
+            call.getString("icon"), call.getDouble("timeout", 60000.0).longValue());
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void cancelCall(PluginCall call) {
+        String roomId = call.getString("roomId");
+        if (roomId != null) Notifier.cancelCall(getContext(), roomId);
+        call.resolve();
+    }
+
+    /** In a call: mic/camera foreground service, call audio mode, and staying over the lock screen until it ends. */
+    @PluginMethod
+    public void callActive(PluginCall call) {
+        boolean on = call.getBoolean("on", false);
+        SyncService.setCall(getContext(), on, call.getBoolean("video", false));
+        AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+        am.setMode(on ? AudioManager.MODE_IN_COMMUNICATION : AudioManager.MODE_NORMAL);
+        if (!on && Build.VERSION.SDK_INT >= 31) am.clearCommunicationDevice();
+        getActivity().runOnUiThread(() -> MainActivity.showOverLockScreen(getActivity(), on));
+        call.resolve();
+    }
+
+    /** Loudspeaker vs earpiece (or whatever headset is plugged in). */
+    @PluginMethod
+    public void setSpeaker(PluginCall call) {
+        boolean on = call.getBoolean("on", false);
+        AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+        if (Build.VERSION.SDK_INT >= 31) {
+            if (!on) am.clearCommunicationDevice();
+            else for (AudioDeviceInfo d : am.getAvailableCommunicationDevices()) {
+                if (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) { am.setCommunicationDevice(d); break; }
+            }
+        } else {
+            am.setSpeakerphoneOn(on);
+        }
+        call.resolve();
+    }
+
+    /** Android 14+: full-screen ringing needs the user's OK unless the store granted it. */
+    @PluginMethod
+    public void requestFullScreen(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= 34) {
+            try {
+                getActivity().startActivity(new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:" + getContext().getPackageName())));
+            } catch (RuntimeException e) {
+                getActivity().startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getContext().getPackageName()));
+            }
+        }
+        call.resolve();
     }
 
     @PluginMethod
@@ -125,6 +231,7 @@ public class PanbehPlugin extends Plugin {
         r.put("permission", permission());
         r.put("service", SyncService.isEnabled(getContext()));
         r.put("batteryOptimized", batteryOptimized());
+        r.put("fullScreen", Build.VERSION.SDK_INT < 34 || getContext().getSystemService(NotificationManager.class).canUseFullScreenIntent());
         call.resolve(r);
     }
 

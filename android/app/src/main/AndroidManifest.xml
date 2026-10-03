@@ -49,7 +49,12 @@
         <service
             android:name=".SyncService"
             android:exported="false"
-            android:foregroundServiceType="remoteMessaging" />
+            android:foregroundServiceType="remoteMessaging|microphone|camera" />
+
+        <!-- "decline" on the incoming-call notification -->
+        <receiver
+            android:name=".CallReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".BootReceiver"
@@ -83,4 +88,10 @@
     <!-- voice messages: Capacitor's WebChromeClient asks for these at runtime when getUserMedia is called -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- calls: camera (asked at runtime like the mic), ringing over the lock screen, mic/camera kept alive in the background -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 </manifest>

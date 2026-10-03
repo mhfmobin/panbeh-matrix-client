@@ -2,7 +2,10 @@ import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor
 
 /** The Android app: our own WebView (Capacitor plugin) or the background service's headless one (JS interface). */
 type Payload = { roomId: string; title: string; body: string; icon?: string; sound: boolean; openRoom?: string };
-type Status = { permission: "granted" | "denied" | "default"; service: boolean; batteryOptimized: boolean };
+type Status = { permission: "granted" | "denied" | "default"; service: boolean; batteryOptimized: boolean; fullScreen: boolean };
+type CallPayload = { roomId: string; eventId: string; caller: string; video: boolean; timeout: number; icon?: string };
+/** A button on the incoming-call notification; "open" = the notification itself (full-screen on the lock screen). */
+export type CallAction = { action: "answer" | "decline" | "open"; roomId: string; eventId: string; video: boolean };
 interface PanbehPlugin {
   showNotification(p: Payload): Promise<void>;
   cancel(p: { roomId: string }): Promise<void>;
@@ -14,10 +17,17 @@ interface PanbehPlugin {
   requestBatteryExemption(): Promise<void>;
   takeLaunchRoom(): Promise<{ roomId?: string | null }>;
   takeLaunchLink(): Promise<{ link?: string | null }>;
+  showCall(p: CallPayload): Promise<void>;
+  cancelCall(p: { roomId: string }): Promise<void>;
+  callActive(p: { on: boolean; video: boolean }): Promise<void>;
+  setSpeaker(p: { on: boolean }): Promise<void>;
+  requestFullScreen(): Promise<void>;
+  takeLaunchCall(): Promise<Partial<CallAction>>;
   addListener(e: "openRoom", f: (d: { roomId: string }) => void): Promise<PluginListenerHandle>;
   addListener(e: "openLink", f: (d: { link: string }) => void): Promise<PluginListenerHandle>;
+  addListener(e: "callAction", f: (d: CallAction) => void): Promise<PluginListenerHandle>;
 }
-type Headless = { showNotification(json: string): void; cancel(roomId: string): void; stopService(): void };
+type Headless = { showNotification(json: string): void; cancel(roomId: string): void; stopService(): void; showCall(json: string): void; cancelCall(roomId: string): void };
 
 const headless = (window as unknown as { PanbehAndroid?: Headless }).PanbehAndroid;
 const plugin = registerPlugin<PanbehPlugin>("Panbeh");
@@ -57,6 +67,32 @@ export function onOpenLink(open: (link: string) => void) {
   if (!isNative || headless) return () => {};
   plugin.takeLaunchLink().then((r) => r.link && open(r.link), () => {});
   const h = plugin.addListener("openLink", (d) => open(d.link));
+  return () => { h.then((x) => x.remove()); };
+}
+
+export function nativeShowCall(p: CallPayload) {
+  if (headless) headless.showCall(JSON.stringify(p));
+  else plugin.showCall(p).catch(() => {});
+}
+export function nativeCancelCall(roomId: string) {
+  if (headless) headless.cancelCall(roomId);
+  else plugin.cancelCall({ roomId }).catch(() => {});
+}
+/** In a call: keeps mic/camera alive in the background (foreground service) and the call on the lock screen. */
+export const nativeCallActive = (on: boolean, video: boolean) => { if (!headless) plugin.callActive({ on, video }).catch(() => {}); };
+export const nativeSpeaker = (on: boolean) => { if (!headless) plugin.setSpeaker({ on }).catch(() => {}); };
+/** Android 14+: lets the user allow ringing over the lock screen. */
+export const requestFullScreen = () => plugin.requestFullScreen();
+
+/** Incoming-call notification buttons: now (cold start) and later. The headless page gets them via window.panbehCallAction. */
+export function onCallAction(f: (a: CallAction) => void) {
+  if (!isNative) return () => {};
+  if (headless) {
+    (window as unknown as { panbehCallAction?: unknown }).panbehCallAction = f;
+    return () => {};
+  }
+  plugin.takeLaunchCall().then((a) => a.action && f(a as CallAction), () => {});
+  const h = plugin.addListener("callAction", f);
   return () => { h.then((x) => x.remove()); };
 }
 
