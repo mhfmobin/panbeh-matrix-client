@@ -51,6 +51,8 @@ linux:
   category: Network;InstantMessaging;Chat
   executableName: panbeh
   synopsis: Matrix messenger
+  # one PNG per hicolor size: a lone 1024px icon lands in hicolor/1024x1024, which GNOME never looks in
+  icon: build/icons
   target: [AppImage, deb]
   syncDesktopName: true # window ↔ launcher entry, via desktopName in package.json
 appImage:
