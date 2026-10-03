@@ -4,6 +4,7 @@ import { downsample, fmtDuration, num } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 import { audioDuration, errText, isVoice, senderName } from "./common.tsx";
 import { client, mediaUrl } from "../matrix.ts";
+import { alertDialog } from "./dialog.tsx";
 
 const BARS = 40;
 const SPEEDS = [1, 1.5, 2, 0.5];
@@ -48,7 +49,7 @@ async function start(t: Track) {
     await audio.play();
   } catch (e) {
     if (snap.track === t) set({ state: "idle" });
-    alert(errText(e));
+    alertDialog(errText(e));
   }
 }
 
@@ -70,7 +71,7 @@ audio.onended = () => (snap.track?.ev ? playNext(snap.track.ev) : set({ pos: 0, 
 function toggle(t: Track) {
   if (snap.track?.id !== t.id) return void start(t);
   if (snap.state === "playing") audio.pause();
-  else if (snap.state === "paused") audio.play().catch((e) => alert(errText(e)));
+  else if (snap.state === "paused") audio.play().catch((e) => alertDialog(errText(e)));
 }
 
 function cycleSpeed() {
@@ -168,7 +169,7 @@ export function VoiceRecorder({ onDone }: { onDone: (v?: Voice) => void }) {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       } catch {
-        alert(window.isSecureContext
+        alertDialog(window.isSecureContext
           ? "دسترسی به میکروفون ممکن نشد. اجازه‌ی میکروفون را در تنظیمات مرورگر یا برنامه بدهید."
           : "دسترسی به میکروفون ممکن نشد. ضبط صدا فقط روی https یا localhost کار می‌کند.");
         return onDone();

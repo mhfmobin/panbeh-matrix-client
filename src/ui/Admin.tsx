@@ -5,6 +5,7 @@ import { useTick } from "../hooks.ts";
 import { aliasLocalpart, HISTORY, JOIN_RULES, num, roleLabel, supportsKnock } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 import { Avatar, errText, me, Select } from "./common.tsx";
+import { alertDialog, confirmDialog } from "./dialog.tsx";
 
 const STATE = [RoomStateEvent.Events, RoomStateEvent.Members];
 
@@ -13,7 +14,7 @@ function useAct() {
   const [busy, setBusy] = useState(false);
   const act = (fn: () => Promise<unknown>, then?: () => void) => {
     setBusy(true);
-    fn().then(then, (e) => alert(errText(e))).finally(() => setBusy(false));
+    fn().then(then, (e) => alertDialog(errText(e))).finally(() => setBusy(false));
   };
   return [busy, act] as const;
 }
@@ -47,9 +48,9 @@ export function MemberAdmin({ room, userId }: { room: Room; userId: string }) {
   const roles: [number, string][] = ([[0, "عضو"], [50, "ناظر"], [100, "مدیر"]] as [number, string][]).filter(([l]) => l <= mine);
   if (!roles.some(([l]) => l === theirs)) roles.push([theirs, roleLabel(theirs) ?? num(theirs)]);
   roles.sort((a, b) => a[0] - b[0]);
-  const setRole = (l: number) => {
+  const setRole = async (l: number) => {
     // same level as mine can't be undone by me
-    if (l >= mine && !confirm("هم‌سطح شما می‌شود و دیگر نمی‌توانید نقشش را تغییر دهید یا بیرونش کنید. ادامه می‌دهید؟")) return;
+    if (l >= mine && !(await confirmDialog("هم‌سطح شما می‌شود و دیگر نمی‌توانید نقشش را تغییر دهید یا بیرونش کنید. ادامه می‌دهید؟", { danger: true }))) return;
     act(() => client.setPowerLevel(room.roomId, userId, l));
   };
   const kick = () => {
@@ -171,8 +172,8 @@ export function GroupSettings({ room }: { room: Room }) {
         ? <p className="card ok"><Icon name="lock" size={16} /> رمزنگاری سرتاسری روشن است</p>
         : can(EventType.RoomEncryption) && (
           <div className="row-actions">
-            <button disabled={busy} onClick={() => confirm("رمزنگاری سرتاسری پس از روشن شدن خاموش نمی‌شود و جستجوی سرور و ربات‌ها شاید دیگر کار نکنند. روشن شود؟")
-              && send(EventType.RoomEncryption, { algorithm: "m.megolm.v1.aes-sha2" })}>
+            <button disabled={busy} onClick={() => confirmDialog("رمزنگاری سرتاسری پس از روشن شدن خاموش نمی‌شود و جستجوی سرور و ربات‌ها شاید دیگر کار نکنند. روشن شود؟", { danger: true })
+              .then((y) => y && send(EventType.RoomEncryption, { algorithm: "m.megolm.v1.aes-sha2" }))}>
               <Icon name="lock" size={16} /> روشن کردن رمزنگاری سرتاسری
             </button>
           </div>
@@ -218,7 +219,7 @@ function Address({ room }: { room: Room }) {
         <div className="user-row">
           <span className="device-box"><Icon name="link" /></span>
           <span><b dir="ltr">{alias}</b></span>
-          <button className="icon-btn" disabled={busy} title="حذف نشانی" aria-label="حذف نشانی" onClick={() => confirm("نشانی حذف شود؟") && act(remove)}><Icon name="trash" size={18} /></button>
+          <button className="icon-btn" disabled={busy} title="حذف نشانی" aria-label="حذف نشانی" onClick={() => confirmDialog("نشانی حذف شود؟", { danger: true }).then((y) => y && act(remove))}><Icon name="trash" size={18} /></button>
         </div>
       ) : (
         <form className="alias-input" dir="ltr" onSubmit={(e) => { e.preventDefault(); act(add); }}>

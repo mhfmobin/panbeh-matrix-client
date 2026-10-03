@@ -15,6 +15,7 @@ import { EmojiPanel } from "./Emoji.tsx";
 import { LinkPreview } from "./LinkPreview.tsx";
 import { captionOf, EDITABLE } from "./Composer.tsx";
 import { useBackdropHold } from "./useBackdropHold.ts";
+import { alertDialog, confirmDialog } from "./dialog.tsx";
 
 export type Actions = {
   reply: (ev: MatrixEvent) => void;
@@ -44,7 +45,7 @@ export function copyTextOf(ev: MatrixEvent): string {
   return stripReplyFallback(String(c.body ?? ""));
 }
 
-export const copyMessages = (text: string) => copyText(text).then(() => toast("کپی شد"), (e) => alert(errText(e)));
+export const copyMessages = (text: string) => copyText(text).then(() => toast("کپی شد"), (e) => alertDialog(errText(e)));
 
 let pillRoom: Room | null = null; // the room being rendered; sanitize() is synchronous
 
@@ -204,9 +205,9 @@ export function Message({ ev, room, first, last, actions, flash }: Props) {
           {actions.thread && <button title="پاسخ در رشته" aria-label="پاسخ در رشته" onClick={() => actions.thread!(ev)}><Icon name="thread" size={17} /></button>}
           {mine && <button title="دیده‌شده توسط" aria-label="دیده‌شده توسط" onClick={() => actions.info(ev)}><Icon name="info" size={17} /></button>}
           {canPin && <button title={pinned ? "برداشتن سنجاق" : "سنجاق"} aria-label={pinned ? "برداشتن سنجاق" : "سنجاق"}
-            onClick={() => togglePin(room, ev.getId()!).catch((e) => alert(errText(e)))}><Icon name="pin" size={17} /></button>}
+            onClick={() => togglePin(room, ev.getId()!).catch((e) => alertDialog(errText(e)))}><Icon name="pin" size={17} /></button>}
           {mine && EDITABLE.includes(content.msgtype ?? "") && <button title="ویرایش" aria-label="ویرایش" onClick={() => actions.edit(ev)}><Icon name="edit" size={17} /></button>}
-          {canDelete && <button title="حذف" aria-label="حذف" onClick={() => confirm("این پیام برای همه حذف شود؟") && client.redactEvent(room.roomId, ev.getId()!)}><Icon name="trash" size={17} /></button>}
+          {canDelete && <button title="حذف" aria-label="حذف" onClick={() => confirmDialog("این پیام برای همه حذف شود؟", { danger: true }).then((y) => y && void client.redactEvent(room.roomId, ev.getId()!))}><Icon name="trash" size={17} /></button>}
           {picker && (
             <div className="quick-react" onMouseLeave={() => setPicker(false)}>
               {QUICK.map((k) => <button key={k} onClick={() => { toggleReaction(room, ev, k); setPicker(false); }}>{k}</button>)}
@@ -221,11 +222,11 @@ export function Message({ ev, room, first, last, actions, flash }: Props) {
           text && { icon: "copy", label: "کپی", run: () => void copyMessages(text) },
           !M_POLL_START.matches(ev.getType()) && { icon: "forward", label: "هدایت", run: () => actions.forward(ev) },
           actions.thread && { icon: "thread", label: "پاسخ در رشته", run: () => actions.thread!(ev) },
-          canPin && { icon: "pin", label: pinned ? "برداشتن سنجاق" : "سنجاق", run: () => togglePin(room, ev.getId()!).catch((e) => alert(errText(e))) },
+          canPin && { icon: "pin", label: pinned ? "برداشتن سنجاق" : "سنجاق", run: () => togglePin(room, ev.getId()!).catch((e) => alertDialog(errText(e))) },
           mine && EDITABLE.includes(content.msgtype ?? "") && { icon: "edit", label: "ویرایش", run: () => actions.edit(ev) },
           mine && { icon: "info", label: "دیده‌شده توسط", run: () => actions.info(ev) },
           actions.select && { icon: "select", label: "انتخاب", run: () => actions.select!(ev) },
-          canDelete && { icon: "trash", label: "حذف", danger: true, run: () => confirm("این پیام برای همه حذف شود؟") && client.redactEvent(room.roomId, ev.getId()!) },
+          canDelete && { icon: "trash", label: "حذف", danger: true, run: () => confirmDialog("این پیام برای همه حذف شود؟", { danger: true }).then((y) => y && void client.redactEvent(room.roomId, ev.getId()!)) },
         ]} />
       )}
       {/* portal: .msg-actions fades out when the pointer leaves the message */}
@@ -379,7 +380,7 @@ export function FileRow({ c }: { c: Content }) {
     try {
       Object.assign(document.createElement("a"), { href: await mediaUrl(c)!, download: c.filename ?? c.body ?? "file" }).click();
     } catch (e) {
-      alert(errText(e));
+      alertDialog(errText(e));
     } finally {
       setBusy(false);
     }

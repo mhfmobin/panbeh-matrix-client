@@ -4,6 +4,7 @@ import { client, createChat, openDM } from "../matrix.ts";
 import { aliasLocalpart, isUserId, num } from "../logic.ts";
 import { Icon, type IconName } from "../icons.tsx";
 import { Avatar, errText, me, Select, Sheet } from "./common.tsx";
+import { alertDialog, confirmDialog } from "./dialog.tsx";
 
 type Kind = "dm" | "group" | "space" | "join";
 const MENU: [Kind, IconName, string][] = [
@@ -49,7 +50,7 @@ function NewDM({ onDone }: { onDone: (roomId: string) => void }) {
   const [busy, setBusy] = useState(false);
   const pick = (p: Person) => {
     setBusy(true);
-    openDM(p.userId).then(onDone, (e) => { alert(errText(e)); setBusy(false); });
+    openDM(p.userId).then(onDone, (e) => { alertDialog(errText(e)); setBusy(false); });
   };
   return busy ? <p className="muted">در حال ساخت گفتگو…</p> : <UserPicker onPick={pick} />;
 }
@@ -223,12 +224,12 @@ function JoinChat({ onDone }: { onDone: (roomId: string, space: boolean) => void
     setBusy(true);
     client.joinRoom(idOrAlias).then((r) => onDone(r.roomId, space || r.isSpaceRoom()), async (e) => {
       // knock-only (or invite-only) rooms refuse a join; asking to be let in is the only way
-      if (e?.errcode === "M_FORBIDDEN" && confirm("پیوستن به این گفتگو نیاز به تأیید مدیران دارد. درخواست عضویت فرستاده شود؟")) {
+      if (e?.errcode === "M_FORBIDDEN" && await confirmDialog("پیوستن به این گفتگو نیاز به تأیید مدیران دارد. درخواست عضویت فرستاده شود؟")) {
         try {
           await client.knockRoom(idOrAlias);
-          alert("درخواست فرستاده شد. اگر پذیرفته شود، دعوت‌نامه برایتان می‌آید.");
-        } catch (e2) { alert((e2 as { errcode?: string }).errcode === "M_FORBIDDEN" ? "این گفتگو درخواست عضویت نمی‌پذیرد" : errText(e2)); }
-      } else if (e?.errcode !== "M_FORBIDDEN") alert(errText(e));
+          alertDialog("درخواست فرستاده شد. اگر پذیرفته شود، دعوت‌نامه برایتان می‌آید.");
+        } catch (e2) { alertDialog((e2 as { errcode?: string }).errcode === "M_FORBIDDEN" ? "این گفتگو درخواست عضویت نمی‌پذیرد" : errText(e2)); }
+      } else if (e?.errcode !== "M_FORBIDDEN") alertDialog(errText(e));
       setBusy(false);
     });
   };

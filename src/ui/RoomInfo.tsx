@@ -10,6 +10,7 @@ import { ChatForm, UserPicker } from "./NewChat.tsx";
 import { isMuted, setMuted } from "../notify.ts";
 import { SharedMedia } from "./Media.tsx";
 import { BannedList, canManage, GroupSettings, KnockRequests } from "./Admin.tsx";
+import { alertDialog, confirmDialog } from "./dialog.tsx";
 
 type View = "main" | "invite" | "add" | "new-group" | "settings";
 
@@ -22,7 +23,7 @@ export function RoomInfo({ room, onClose }: { room: Room; onClose: () => void })
   const [media, setMedia] = useState(false);
   const act = (fn: () => Promise<unknown>, then?: () => void) => {
     setBusy(true);
-    fn().then(then, (e) => alert(errText(e))).finally(() => setBusy(false));
+    fn().then(then, (e) => alertDialog(errText(e))).finally(() => setBusy(false));
   };
 
   const space = room.isSpaceRoom();
@@ -76,7 +77,7 @@ export function RoomInfo({ room, onClose }: { room: Room; onClose: () => void })
           </label>
         ) : <RoomAvatar room={room} size={96} />}
         {can(EventType.RoomAvatar) && room.getMxcAvatarUrl() && (
-          <button className="photo-remove" disabled={busy} onClick={() => confirm("عکس گفتگو حذف شود؟") && act(() => client.sendStateEvent(room.roomId, EventType.RoomAvatar, {}, ""))}>حذف عکس</button>
+          <button className="photo-remove" disabled={busy} onClick={() => confirmDialog("عکس گفتگو حذف شود؟", { danger: true }).then((y) => y && act(() => client.sendStateEvent(room.roomId, EventType.RoomAvatar, {}, "")))}>حذف عکس</button>
         )}
         {room.getCanonicalAlias() && <bdi dir="ltr" className="muted">{room.getCanonicalAlias()}</bdi>}
       </div>
@@ -131,10 +132,10 @@ export function RoomInfo({ room, onClose }: { room: Room; onClose: () => void })
       <BannedList room={room} onUser={setProfile} />
 
       <button className="danger" disabled={busy}
-        onClick={() => confirm(space ? "از این فضا خارج می‌شوید؟" : "از این گفتگو خارج می‌شوید؟") && act(() => client.leave(room.roomId), () => {
+        onClick={() => confirmDialog(space ? "از این فضا خارج می‌شوید؟" : "از این گفتگو خارج می‌شوید؟", { danger: true }).then((y) => y && act(() => client.leave(room.roomId), () => {
           if (location.hash.slice(1) === room.roomId) location.hash = "";
           onClose();
-        })}>
+        }))}>
         {space ? "خروج از فضا" : "خروج از گفتگو"}
       </button>
       {profile && <UserProfile userId={profile} room={room} onClose={() => setProfile(null)} onOpened={onClose} />}
@@ -158,7 +159,7 @@ function Profile({ room, topic, editable }: { room: Room; topic: string; editabl
       if (name.trim() !== current) await client.setRoomName(room.roomId, name.trim()); // "" removes it
       if (newTopic.trim() !== topic) await client.setRoomTopic(room.roomId, newTopic.trim());
     } catch (e) {
-      alert(errText(e));
+      alertDialog(errText(e));
     }
     setBusy(false);
   };

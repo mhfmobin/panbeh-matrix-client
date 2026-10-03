@@ -4,6 +4,7 @@ import { decryptAttachment, encryptAttachment, type IEncryptedFile } from "matri
 import { fitSize, normalizeServer, roomName } from "./logic.ts";
 import { isHeadless, isNative, nativeCancelAll, setBackgroundService } from "./native.ts";
 import { isDesktop, isWindowVisible, onWindowVisibility, openExternal } from "./desktop.ts";
+import { confirmDialog } from "./ui/dialog.tsx";
 
 type Session = { baseUrl: string; userId: string; deviceId: string; accessToken: string; refreshToken?: string; oauthClientId?: string; legacy?: boolean };
 // several accounts, one running client at a time; switching reloads the page so every cache starts clean
@@ -221,7 +222,7 @@ export async function setupRecovery(password?: string) {
         const url = params?.["m.oauth"]?.url ?? params?.["org.matrix.cross_signing_reset"]?.url;
         if (!url) throw e;
         window.open(url, "_blank");
-        if (!confirm("بازنشانی کلیدها را در صفحه‌ی بازشده تأیید کنید، سپس «تأیید» را بزنید.")) throw new Error("لغو شد");
+        if (!(await confirmDialog("بازنشانی کلیدها را در صفحه‌ی بازشده تأیید کنید، سپس «تأیید» را بزنید."))) throw new Error("لغو شد");
         await makeRequest(null);
       }
     },

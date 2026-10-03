@@ -545,6 +545,7 @@ input[role="switch"]:checked::before { transform: translateX(-18px); }
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, 0.45); animation: fade 0.18s; }
 .modal { width: min(420px, 100%); max-height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 16px; background: var(--panel); color: var(--text); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); }
 .modal h2 { margin: 0; font-size: 18px; }
+.modal p { margin: 0; line-height: 1.5; white-space: pre-line; }
 .send-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
 .send-thumb { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: var(--hover); }
 .send-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -557,6 +558,7 @@ input[role="switch"]:checked::before { transform: translateX(-18px); }
 .modal-actions button { padding: 8px 16px; border-radius: 10px; color: var(--accent); font-weight: 600; }
 .modal-actions button:hover { background: var(--hover); }
 .modal-actions button.primary { background: var(--accent); color: #fff; }
+.modal-actions button.danger { width: auto; margin: 0; background: #e53935; color: #fff; }
 
 /* ---------- attach menu / mention list ---------- */
 .composer { position: relative; }

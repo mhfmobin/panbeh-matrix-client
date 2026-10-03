@@ -10,6 +10,7 @@ import { decryptKeyFile, encryptKeyFile } from "../keyfile.ts";
 import { showVerification } from "./Verify.tsx";
 import { desktopVersion, getAutostart, isDesktop, setAutostart } from "../desktop.ts";
 import { isNative, nativeCancelAll, nativeStatus, requestBatteryExemption, requestNotifyPermission, setBackgroundService } from "../native.ts";
+import { alertDialog, confirmDialog } from "./dialog.tsx";
 
 type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; previews: boolean; shareLastSeen: boolean };
 const ACCENTS = ["#3390ec", "#8774e1", "#40a7a0", "#e5864a", "#e0578b", "#4fae4e"];
@@ -112,7 +113,7 @@ export function Settings({ onClose, onSecurityChange }: { onClose: () => void; o
       <h3>رمزنگاری</h3>
       <Encryption onChange={onSecurityChange} />
 
-      <button className="danger" onClick={() => confirm("از این دستگاه خارج می‌شوید؟") && logout()}>خروج از این حساب</button>
+      <button className="danger" onClick={() => confirmDialog("از این دستگاه خارج می‌شوید؟", { danger: true }).then((y) => y && void logout())}>خروج از این حساب</button>
     </Sheet>
   );
 }
@@ -200,7 +201,7 @@ function DesktopApp() {
       <h3>برنامه</h3>
       {autostart !== undefined && (
         <label className="switch-row"><span>اجرا هنگام ورود به سیستم<small>پنبه در سینی سیستم باز می‌شود تا اعلان‌ها برسند</small></span>
-          <input type="checkbox" role="switch" checked={autostart} onChange={(e) => setAutostart(e.target.checked).then(setOn, (err) => alert(errText(err)))} /></label>
+          <input type="checkbox" role="switch" checked={autostart} onChange={(e) => setAutostart(e.target.checked).then(setOn, (err) => alertDialog(errText(err)))} /></label>
       )}
       {version && <p className="muted">نسخه‌ی <bdi dir="ltr">{version}</bdi></p>}
     </>
@@ -214,7 +215,7 @@ function PushRules() {
   useTick(client, [ClientEvent.AccountData]); // push rules arrive as account data
   const [word, setWord] = useState("");
   const [busy, setBusy] = useState(false);
-  const act = (fn: () => Promise<unknown>) => { setBusy(true); fn().catch((e) => alert(errText(e))).finally(() => setBusy(false)); };
+  const act = (fn: () => Promise<unknown>) => { setBusy(true); fn().catch((e) => alertDialog(errText(e))).finally(() => setBusy(false)); };
   const g = client.pushRules?.global;
   const roomRules = (g?.override ?? []).filter((r) => r.rule_id === RuleId.AtRoomNotification || r.rule_id === RuleId.IsRoomMention);
   const keywords = (g?.content ?? []).filter((r) => !r.rule_id.startsWith(".") && r.pattern);
@@ -262,7 +263,7 @@ function MyProfile() {
   }, []);
   const act = async (fn: () => Promise<typeof profile>) => {
     setBusy(true);
-    try { const patch = await fn(); setProfile((p) => ({ ...p, ...patch })); } catch (e) { alert(errText(e)); }
+    try { const patch = await fn(); setProfile((p) => ({ ...p, ...patch })); } catch (e) { alertDialog(errText(e)); }
     setBusy(false);
   };
   const dirty = name.trim() !== "" && name.trim() !== (profile.displayname ?? "");
@@ -275,7 +276,7 @@ function MyProfile() {
         <Avatar mxc={profile.avatar_url} name={profile.displayname || me()} id={me()} size={64} />
       </label>
       {profile.avatar_url && <button className="photo-remove" disabled={busy}
-        onClick={() => confirm("عکس پروفایل حذف شود؟") && act(async () => (await client.setAvatarUrl(""), { avatar_url: undefined }))}>حذف عکس</button>}
+        onClick={() => confirmDialog("عکس پروفایل حذف شود؟", { danger: true }).then((y) => y && void act(async () => (await client.setAvatarUrl(""), { avatar_url: undefined })))}>حذف عکس</button>}
       </div>
       <form className="form" onSubmit={(e) => { e.preventDefault(); const n = name.trim(); act(async () => (await client.setDisplayName(n), { displayname: n })); }}>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="نام" aria-label="نام" required />
@@ -425,7 +426,7 @@ function Devices() {
       {others.map((d) => row(d, true))}
       {others.length > 0 && (oauth
         ? <button className="primary" onClick={() => manage()}>مدیریت دستگاه‌ها</button>
-        : <button className="danger" disabled={busy} onClick={() => confirm("از همه‌ی دستگاه‌های دیگر خارج می‌شوید؟") && remove(others.map((d) => d.device_id))}>خروج از همه‌ی دستگاه‌های دیگر</button>)}
+        : <button className="danger" disabled={busy} onClick={() => confirmDialog("از همه‌ی دستگاه‌های دیگر خارج می‌شوید؟", { danger: true }).then((y) => y && void remove(others.map((d) => d.device_id)))}>خروج از همه‌ی دستگاه‌های دیگر</button>)}
       {noUrl && <p className="muted">سرور صفحه‌ی مدیریت دستگاه‌ها را ارائه نمی‌کند.</p>}
       {pending && (
         <form className="card form" onSubmit={(e) => { e.preventDefault(); remove(pending, password); }}>
@@ -559,7 +560,7 @@ function Blocked() {
   useTick(client, [ClientEvent.AccountData]);
   const [busy, setBusy] = useState(false);
   const ids = client.getIgnoredUsers();
-  const unblock = (id: string) => { setBusy(true); setBlocked(id, false).catch((e) => alert(errText(e))).finally(() => setBusy(false)); };
+  const unblock = (id: string) => { setBusy(true); setBlocked(id, false).catch((e) => alertDialog(errText(e))).finally(() => setBusy(false)); };
   if (!ids.length) return <p className="muted">کسی را مسدود نکرده‌اید.</p>;
   return ids.map((id) => {
     const u = client.getUser(id);
@@ -576,9 +577,9 @@ function Blocked() {
 function Deactivate() {
   const [password, setPassword] = useState("");
   const { busy, error, run } = useForm();
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!confirm("حساب برای همیشه غیرفعال شود؟ این کار برگشت‌پذیر نیست.")) return;
+    if (!(await confirmDialog("حساب برای همیشه غیرفعال شود؟ این کار برگشت‌پذیر نیست.", { danger: true }))) return;
     run(async () => {
       await withPassword((auth) => client.deactivateAccount(auth, false), password);
       await logout(); // reloads into the login screen

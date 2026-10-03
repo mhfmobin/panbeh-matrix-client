@@ -5,6 +5,7 @@ import { usePromise, useTick } from "../hooks.ts";
 import { num } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 import { Avatar, errText, me, previewText, senderMember, senderName, Sheet } from "./common.tsx";
+import { alertDialog } from "./dialog.tsx";
 
 /** Telegram-style bar under the header: shows one pin; a click jumps to it and moves on to the next older one. */
 export function PinnedBar({ room, onJump }: { room: Room; onJump: (id: string) => Promise<boolean> }) {
@@ -52,7 +53,7 @@ function PinnedRow({ room, id, canPin, onJump }: { room: Room; id: string; canPi
         <span><b>{ev ? senderName(ev) : "…"}</b><small dir="auto">{ev ? previewText(ev) : "در حال بارگذاری…"}</small></span>
       </button>
       {canPin && (
-        <button className="icon-btn" title="برداشتن سنجاق" aria-label="برداشتن سنجاق" onClick={() => togglePin(room, id).catch((e) => alert(errText(e)))}>
+        <button className="icon-btn" title="برداشتن سنجاق" aria-label="برداشتن سنجاق" onClick={() => togglePin(room, id).catch((e) => alertDialog(errText(e)))}>
           <Icon name="close" size={18} />
         </button>
       )}

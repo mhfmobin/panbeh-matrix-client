@@ -9,6 +9,7 @@ import { usePromise, useTick } from "../hooks.ts";
 import { num, tallyPoll } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 import { errText, me, parsePoll, Sheet } from "./common.tsx";
+import { alertDialog, confirmDialog } from "./dialog.tsx";
 
 const MAX_ANSWERS = 20;
 
@@ -46,7 +47,7 @@ export function PollForm({ room, threadId, edit, onClose }: { room: Room; thread
       else await client.sendEvent(room.roomId, threadId, M_POLL_START.name as never, content as never);
       onClose();
     } catch (err) {
-      alert(errText(err));
+      alertDialog(errText(err));
       setBusy(false);
     }
   }
@@ -111,14 +112,16 @@ export function PollBody({ ev, room }: { ev: MatrixEvent; room: Room }) {
     setPending({ answers: next, at: votes.length });
     // empty selection = a spoiled vote, which is how a multi-choice voter takes their vote back
     client.sendEvent(room.roomId, M_POLL_RESPONSE.name as never, PollResponseEvent.from(next, poll.pollId).serialize().content as never)
-      .catch((e) => { setPending(null); alert(errText(e)); });
+      .catch((e) => { setPending(null); alertDialog(errText(e)); });
   }
 
   const canEnd = !!poll && !ended && (ev.getSender() === me() || room.currentState.maySendRedactionForEvent(ev, me()));
   const canEdit = !!rels && !ended && total === 0 && votes.length === 0 && ev.getSender() === me();
-  const end = () => confirm("نظرسنجی پایان یابد؟ پس از آن کسی نمی‌تواند رأی بدهد.") &&
+  const end = async () => {
+    if (!(await confirmDialog("نظرسنجی پایان یابد؟ پس از آن کسی نمی‌تواند رأی بدهد."))) return;
     client.sendEvent(room.roomId, M_POLL_END.name as never, PollEndEvent.from(poll!.pollId, "The poll has ended").serialize().content as never)
-      .catch((e) => alert(errText(e)));
+      .catch((e) => alertDialog(errText(e)));
+  };
 
   return (
     // the bubble toggles its action bar on click; voting shouldn't
