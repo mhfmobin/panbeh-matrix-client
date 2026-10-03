@@ -21,6 +21,32 @@ import com.getcapacitor.annotation.PermissionCallback;
 public class PanbehPlugin extends Plugin {
     /** Room from a notification tap that arrived before the page was listening. */
     private String launchRoom;
+    /** matrix.to / matrix: link that arrived before the page was listening. */
+    private String launchLink;
+
+    /** A matrix.to or matrix: VIEW intent: pass the URL to the page, which parses and opens it. */
+    static boolean isMatrixLink(Uri data) {
+        String scheme = data.getScheme();
+        return "matrix".equalsIgnoreCase(scheme) || ("https".equalsIgnoreCase(scheme) && "matrix.to".equalsIgnoreCase(data.getHost()));
+    }
+
+    /** Reads a link out of an intent; also called for the launch intent (handleOnNewIntent doesn't see it). */
+    void dispatchLink(Intent intent) {
+        Uri data = intent == null ? null : intent.getData();
+        if (data == null || !isMatrixLink(data)) return;
+        String link = data.toString();
+        if (hasListeners("openLink")) notifyListeners("openLink", new JSObject().put("link", link));
+        else launchLink = link;
+    }
+
+    @Override
+    public void load() {
+        // cold start: the launch intent never goes through handleOnNewIntent
+        Intent launch = getActivity().getIntent();
+        dispatchLink(launch);
+        if (launch != null && launch.getData() != null && isMatrixLink(launch.getData())) // don't replay it if recreated
+            getActivity().setIntent(new Intent(getContext(), MainActivity.class));
+    }
 
     @Override
     protected void handleOnNewIntent(Intent intent) {
@@ -30,6 +56,7 @@ public class PanbehPlugin extends Plugin {
             if (hasListeners("openRoom")) notifyListeners("openRoom", new JSObject().put("roomId", room));
             else launchRoom = room;
         }
+        dispatchLink(intent);
         Uri data = intent.getData();
         if (data != null && "ir.panbeh.app".equals(data.getScheme())) {
             // OAuth redirect from the browser: hand the code to the page's existing callback handling
@@ -45,6 +72,14 @@ public class PanbehPlugin extends Plugin {
         JSObject r = new JSObject();
         r.put("roomId", launchRoom);
         launchRoom = null;
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void takeLaunchLink(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("link", launchLink);
+        launchLink = null;
         call.resolve(r);
     }
 

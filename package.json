@@ -16,7 +16,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "node --test src/logic.test.ts",
+    "test": "node --test src/logic.test.ts src/uri.test.ts",
     "desktop": "npm run build && electron .",
     "desktop:dev": "electron . --dev",
     "desktop:dist": "npm run build && electron-builder --publish never"

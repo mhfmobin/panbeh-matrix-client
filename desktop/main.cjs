@@ -21,6 +21,9 @@ if (!app.requestSingleInstanceLock()) app.exit(0);
 
 if (process.defaultApp) app.setAsDefaultProtocolClient(OAUTH_SCHEME, process.execPath, [path.resolve(process.argv[1])]);
 else app.setAsDefaultProtocolClient(OAUTH_SCHEME);
+// matrix: URIs (and matrix.to clicks inside the app) open in Panbeh; see src/uri.ts
+if (process.defaultApp) app.setAsDefaultProtocolClient("matrix", process.execPath, [path.resolve(process.argv[1])]);
+else app.setAsDefaultProtocolClient("matrix");
 
 /** @type {BrowserWindow | null} */ let win = null;
 /** @type {Tray | null} */ let tray = null;
@@ -75,6 +78,7 @@ function createWindow(hidden) {
   win.webContents.on("will-navigate", (e, url) => {
     if (!url.startsWith(startUrl())) { e.preventDefault(); openExternal(url); }
   });
+  win.webContents.on("did-start-loading", () => { linksReady = false; });
   win.webContents.on("context-menu", (_e, p) => editMenu(p));
   win.loadURL(startUrl());
 }
@@ -87,7 +91,24 @@ function show() {
 }
 
 function openExternal(url) {
+  if (isMatrixLink(url)) return deliverLink(url);
   if (/^https?:|^mailto:/i.test(url)) shell.openExternal(url);
+}
+
+// ---------- matrix.to / matrix: links ----------
+
+const isMatrixLink = (url) => /^matrix:/i.test(url) || /^https:\/\/matrix\.to\/#\//i.test(url);
+const linkArg = (argv) => argv.find((a) => /^matrix:/i.test(a));
+/** @type {string[]} links that arrived before the page registered its listener */
+const pendingLinks = [];
+let linksReady = false;
+
+/** Hands a link to the page (which resolves and opens it) and brings the window forward. */
+function deliverLink(url) {
+  if (!win) createWindow(false);
+  else show();
+  if (linksReady) win.webContents.send("link", url);
+  else pendingLinks.push(url);
 }
 
 /** Right-click in text fields and on selections: Chromium shows nothing by default. */
@@ -155,8 +176,19 @@ const oauthArg = (argv) => argv.find((a) => a.startsWith(OAUTH_SCHEME + ":"));
 // a cold start through the link: macOS hands it over before "ready", Windows/Linux in argv
 let pendingOAuth = oauthArg(process.argv);
 
-app.on("second-instance", (_e, argv) => { if (!handleOAuthUrl(oauthArg(argv))) show(); });
-app.on("open-url", (e, url) => { e.preventDefault(); if (app.isReady()) handleOAuthUrl(url); else pendingOAuth = url; });
+let pendingLink = linkArg(process.argv);
+
+app.on("second-instance", (_e, argv) => {
+  const link = linkArg(argv);
+  if (link) deliverLink(link);
+  else if (!handleOAuthUrl(oauthArg(argv))) show();
+});
+app.on("open-url", (e, url) => {
+  e.preventDefault();
+  if (isMatrixLink(url)) { if (app.isReady()) deliverLink(url); else pendingLink = url; }
+  else if (app.isReady()) handleOAuthUrl(url);
+  else pendingOAuth = url;
+});
 
 // ---------- updates ----------
 
@@ -185,6 +217,11 @@ function startUpdater() {
 
 ipcMain.on("badge", (_e, n) => setBadge(n));
 ipcMain.on("focus", show);
+ipcMain.on("links-ready", (e) => {
+  if (e.sender !== win?.webContents) return;
+  linksReady = true;
+  for (const l of pendingLinks.splice(0)) win.webContents.send("link", l);
+});
 ipcMain.on("open-external", (_e, url) => openExternal(String(url)));
 ipcMain.handle("autostart", (_e, on) => { if (typeof on === "boolean") setAutostart(on); return getAutostart(); });
 ipcMain.handle("info", () => ({ version: app.getVersion(), platform: process.platform, visible: !!win?.isVisible() }));
@@ -209,7 +246,8 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionCheckHandler((wc, perm) => allowed.has(perm) && ours(wc?.getURL()));
 
   createTray();
-  if (!handleOAuthUrl(pendingOAuth)) createWindow(startedHidden());
+  if (!handleOAuthUrl(pendingOAuth)) createWindow(startedHidden() && !pendingLink);
+  if (pendingLink) deliverLink(pendingLink);
   startUpdater();
 });
 

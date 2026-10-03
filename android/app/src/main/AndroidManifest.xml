@@ -30,6 +30,20 @@
                 <data android:scheme="ir.panbeh.app" />
             </intent-filter>
 
+            <!-- matrix: URIs and matrix.to links. We don't own matrix.to, so no autoVerify: Android shows a chooser -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="matrix" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="matrix.to" />
+            </intent-filter>
+
         </activity>
 
         <service

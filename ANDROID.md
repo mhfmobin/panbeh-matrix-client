@@ -67,3 +67,7 @@ The app registers itself as a native client with `client_uri` `https://app.panbe
 redirect scheme to be that host reversed). If you'd rather use a domain of your own, change
 `NATIVE_REDIRECT` / `NATIVE_CLIENT_URI` in `src/matrix.ts`, the `data android:scheme` in
 `AndroidManifest.xml`, and the scheme check in `PanbehPlugin.java` to match.
+
+## Links
+
+`matrix:` URIs and `https://matrix.to/…` links open in Panbeh (VIEW intent filters on `MainActivity`). Android can't verify `matrix.to` for us, so there is no `autoVerify`: the first time, the system offers a chooser. Test with `adb shell am start -a android.intent.action.VIEW -d "matrix:u/user:server"`, both with the app closed and running.
