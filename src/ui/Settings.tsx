@@ -8,6 +8,7 @@ import { Avatar, errText, me, Sheet } from "./common.tsx";
 import { num, stamp } from "../logic.ts";
 import { decryptKeyFile, encryptKeyFile } from "../keyfile.ts";
 import { showVerification } from "./Verify.tsx";
+import { desktopVersion, getAutostart, isDesktop, setAutostart } from "../desktop.ts";
 import { isNative, nativeCancelAll, nativeStatus, requestBatteryExemption, requestNotifyPermission, setBackgroundService } from "../native.ts";
 
 type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; previews: boolean; shareLastSeen: boolean };
@@ -15,8 +16,8 @@ const ACCENTS = ["#3390ec", "#8774e1", "#40a7a0", "#e5864a", "#e0578b", "#4fae4e
 const WALLPAPERS = { doodle: "طرح‌دار", gradient: "گرادیان", plain: "ساده" };
 const THEMES = { system: "سیستم", light: "روشن", dark: "تیره" };
 
-// the Android app defaults to notifying: it asks for permission on first start
-export const loadPrefs = (): Prefs => ({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative, notifyDMs: true, notifyGroups: true, previews: true, shareLastSeen: true, ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
+// the Android app defaults to notifying: it asks for permission on first start. The desktop app needs no permission.
+export const loadPrefs = (): Prefs => ({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, previews: true, shareLastSeen: true, ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
 
 export function applyPrefs(p = loadPrefs()) {
   const root = document.documentElement;
@@ -93,6 +94,8 @@ export function Settings({ onClose, onSecurityChange }: { onClose: () => void; o
       <h3>اعلان‌ها</h3>
       <Notifications prefs={prefs} set={set} />
       <PushRules />
+
+      {isDesktop && <DesktopApp />}
 
       <h3>حساب</h3>
       {ACCOUNT.map(([v, icon, label, hint]) => (
@@ -178,11 +181,28 @@ function WebNotifications({ prefs, set }: { prefs: Prefs; set: (p: Partial<Prefs
   const on = prefs.notify && perm === "granted";
   return (
     <>
-      <label className="switch-row"><span>اعلان پیام‌های تازه<small>تا وقتی پنبه در یک زبانه باز است</small></span>
+      <label className="switch-row"><span>اعلان پیام‌های تازه<small>{isDesktop ? "با بستن پنجره، پنبه در سینی سیستم متصل می‌ماند" : "تا وقتی پنبه در یک زبانه باز است"}</small></span>
         <input type="checkbox" role="switch" checked={on} onChange={(e) => toggle(e.target.checked)} /></label>
       {/* local only: turning the server's message rules off would also zero the unread badges */}
       {on && <KindSwitches prefs={prefs} set={set} />}
       {perm === "denied" && <p className="muted">اجازه‌ی اعلان در مرورگر رد شده است؛ از تنظیمات سایت در مرورگر آن را باز کنید.</p>}
+    </>
+  );
+}
+
+/** The desktop app: start with the system (into the tray), and its version. */
+function DesktopApp() {
+  const [autostart, setOn] = useState<boolean>();
+  const [version, setVersion] = useState<string>();
+  useEffect(() => { getAutostart().then(setOn, () => {}); desktopVersion()?.then(setVersion, () => {}); }, []);
+  return (
+    <>
+      <h3>برنامه</h3>
+      {autostart !== undefined && (
+        <label className="switch-row"><span>اجرا هنگام ورود به سیستم<small>پنبه در سینی سیستم باز می‌شود تا اعلان‌ها برسند</small></span>
+          <input type="checkbox" role="switch" checked={autostart} onChange={(e) => setAutostart(e.target.checked).then(setOn, (err) => alert(errText(err)))} /></label>
+      )}
+      {version && <p className="muted">نسخه‌ی <bdi dir="ltr">{version}</bdi></p>}
     </>
   );
 }
