@@ -824,14 +824,6 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .avatar-wrap { position: relative; display: inline-flex; flex: none; }
 .online-dot { position: absolute; inset-inline-end: 1px; bottom: 1px; width: 12px; height: 12px; border-radius: 50%; background: #4fae4e; border: 2px solid var(--bg); }
 
-/* --- chat list swipe actions --- */
-.swipe-row { position: relative; overflow: hidden; }
-.swipe-fg { position: relative; background: var(--panel); touch-action: pan-y; will-change: transform; }
-.swipe-actions { position: absolute; inset-block: 0; inset-inline-end: 0; display: flex; visibility: hidden; }
-.swipe-actions button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #fff; font-size: 11px; }
-.sa-pin { background: #f5a623; }
-.sa-read { background: var(--accent); }
-.sa-archive { background: #8e949a; }
 /* --- message gestures --- */
 .msg { touch-action: pan-y; }
 .msg > :not(.swipe-ico):not(.sel-check) { transform: translateX(var(--sx, 0)); }

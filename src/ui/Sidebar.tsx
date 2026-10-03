@@ -1,5 +1,5 @@
 import { useBackdropHold } from "./useBackdropHold.ts";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type TouchEvent } from "react";
+import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { NotificationCountType, UserEvent, type Room } from "matrix-js-sdk";
 import { client, dmPeer } from "../matrix.ts";
@@ -91,17 +91,9 @@ export function Sidebar({ selected, onSelect, onSettings, banner }: Props) {
     if (b.active !== BASE_FOLDERS[0].id) { b.pick(BASE_FOLDERS[0].id); return true; }
     return false;
   }, { low: true }), []);
-  const [opened, setOpened] = useState<string | null>(null); // chat whose swipe actions are showing
-  useEffect(() => { // a touch anywhere else closes them
-    if (!opened) return;
-    const f = (e: Event) => { if (!(e.target as Element).closest?.(".swipe-actions, .swipe-row.open")) setOpened(null); };
-    addEventListener("pointerdown", f, true);
-    return () => removeEventListener("pointerdown", f, true);
-  }, [opened]);
-  const item = (r: RoomRow) => {
-    const it = <RoomItem row={r} active={r.id === selected} onClick={() => onSelect(r.id)} onMenu={(x, y) => setMenu({ row: r, x, y })} />;
-    return r.invite ? it : <SwipeRow row={r} open={opened === r.id} onOpen={(o) => setOpened(o ? r.id : (c) => (c === r.id ? null : c))}>{it}</SwipeRow>;
-  };
+  const item = (r: RoomRow) => (
+    <RoomItem row={r} active={r.id === selected} onClick={() => onSelect(r.id)} onMenu={(x, y) => setMenu({ row: r, x, y })} />
+  );
 
   return (
     <aside className="sidebar">
@@ -168,9 +160,8 @@ function busyEsc(e: KeyboardEvent) {
 }
 
 const LONG_PRESS = 500;
-const ACT_W = 64, ACTS = 3, REVEAL = ACT_W * ACTS; // action buttons' width, count, and total reveal distance
 
-/** The actions shared by the context menu and the swipe buttons. */
+/** The chat actions in the context menu. */
 function chatOps(row: RoomRow) {
   const { room } = row, unread = isUnread(row);
   return {
@@ -179,80 +170,6 @@ function chatOps(row: RoomRow) {
     archive: () => setTag(room, ARCHIVED, !row.archived),
     read: () => (unread ? markRead(room) : setMarkedUnread(room, true)),
   };
-}
-
-/** Swipe a chat row to reveal pin / read / archive behind it, like Telegram. The actions sit on the inline-end side
- *  (left in RTL, right in LTR) and the row slides toward it: RTL swipe right, LTR swipe left. The other direction
- *  isn't ours, so it still reaches the list's folder swipe; a horizontal drag we own never does (see touchend). */
-function SwipeRow({ row, open, onOpen, children }: { row: RoomRow; open: boolean; onOpen: (o: boolean) => void; children: ReactNode }) {
-  const fg = useRef<HTMLDivElement>(null);
-  const acts = useRef<HTMLDivElement>(null);
-  const hide = useRef(0);
-  const g = useRef<{ x: number; y: number; base: number; lock: "" | "row" | "pass"; crossed: boolean; dx: number; wasOpen: boolean } | null>(null);
-  const swallow = useRef(false); // a swipe (or the tap that closes) must not open the chat
-  const ops = chatOps(row);
-  const sign = () => (getComputedStyle(fg.current!).direction === "rtl" ? 1 : -1); // translate direction that reveals
-  const set = (px: number, anim: boolean) => {
-    const el = fg.current!, a = acts.current!;
-    el.style.transition = anim ? "transform 0.2s" : "none";
-    el.style.transform = px ? `translateX(${px}px)` : "";
-    // the buttons sit behind the row: at rest they must be invisible, or a sub-pixel gap lets them peek out
-    clearTimeout(hide.current);
-    if (px) a.style.visibility = "visible";
-    else if (anim) hide.current = window.setTimeout(() => { a.style.visibility = ""; }, 220);
-    else a.style.visibility = "";
-  };
-  useLayoutEffect(() => { if (!g.current) set(open ? sign() * REVEAL : 0, true); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
-  const end = () => {
-    const s = g.current;
-    g.current = null;
-    if (!s || s.lock !== "row") return;
-    swallow.current = true;
-    const o = s.base + s.dx > REVEAL / 2;
-    set(o ? sign() * REVEAL : 0, true);
-    onOpen(o);
-  };
-  const run = (fn: () => Promise<unknown>) => { onOpen(false); fn().catch((e) => alert(errText(e))); };
-  return (
-    <div className={"swipe-row" + (open ? " open" : "")}>
-      <div className="swipe-actions" ref={acts} style={{ width: REVEAL }}>
-        <button className="sa-pin" onClick={() => run(ops.pin)} aria-label={row.pinned ? "برداشتن سنجاق" : "سنجاق"} tabIndex={open ? 0 : -1}>
-          <Icon name="pin" /><small>{row.pinned ? "برداشتن" : "سنجاق"}</small></button>
-        <button className="sa-read" onClick={() => run(ops.read)} aria-label={ops.unread ? "علامت خوانده‌شده" : "علامت خوانده‌نشده"} tabIndex={open ? 0 : -1}>
-          <Icon name={ops.unread ? "checks" : "unread"} /><small>{ops.unread ? "خوانده" : "نخوانده"}</small></button>
-        <button className="sa-archive" onClick={() => run(ops.archive)} aria-label={row.archived ? "خروج از بایگانی" : "بایگانی"} tabIndex={open ? 0 : -1}>
-          <Icon name="archive" /><small>{row.archived ? "خروج" : "بایگانی"}</small></button>
-      </div>
-      <div className="swipe-fg" ref={fg}
-        onClickCapture={(e) => { if (swallow.current || open) { swallow.current = false; e.stopPropagation(); e.preventDefault(); if (open) onOpen(false); } }}
-        onTouchStart={(e) => {
-          swallow.current = false;
-          const t = e.touches[0];
-          g.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY, base: open ? REVEAL : 0, lock: "", crossed: open, dx: 0, wasOpen: open } : null;
-        }}
-        onTouchMove={(e) => {
-          const s = g.current;
-          if (!s || s.lock === "pass") return;
-          const t = e.touches[0], dx = (t.clientX - s.x) * sign(), dy = t.clientY - s.y;
-          if (!s.lock) {
-            if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
-            // vertical: leave it to the scroller. Horizontal: ours if it opens (or closes an open row)
-            s.lock = Math.abs(dx) > Math.abs(dy) && (dx > 0 || s.wasOpen) ? "row" : "pass";
-            if (s.lock === "pass") return;
-          }
-          s.dx = dx;
-          const p = Math.max(0, Math.min(REVEAL * 1.15, s.base + dx));
-          set(sign() * p, false);
-          const c = p > REVEAL / 2;
-          if (c !== s.crossed) { s.crossed = c; navigator.vibrate?.(10); }
-        }}
-        // our horizontal drags must not also change folder (the list's own touchend handler)
-        onTouchEnd={(e) => { if (g.current?.lock === "row") e.stopPropagation(); end(); }}
-        onTouchCancel={end}>
-        {children}
-      </div>
-    </div>
-  );
 }
 
 function OnlineDot({ room }: { room: Room }) {
