@@ -8,6 +8,7 @@ import { useRooms, useTick, type RoomRow } from "../hooks.ts";
 import { ARCHIVED, leaveAndForget, markRead, PINNED, setMarkedUnread, setTag } from "../chats.ts";
 import { BASE_FOLDERS, inFolder, isUnread, listTime, num } from "../logic.ts";
 import { pushBack } from "../back.ts";
+import { setBadge } from "../desktop.ts";
 import { Icon } from "../icons.tsx";
 import { bdi, errText, me, previewText, RoomAvatar, senderName } from "./common.tsx";
 import { NewChat } from "./NewChat.tsx";
@@ -37,7 +38,8 @@ export function Sidebar({ selected, onSelect, onSettings, banner }: Props) {
   const shown = rows.filter((r) => (q ? r.room.name.toLowerCase().includes(q) : inFolder(r, inArchiveView ? "archive" : active)));
   const unreadIn = (id: string) => rows.filter((r) => isUnread(r) && inFolder(r, id)).length;
   const unreadChats = rows.filter((r) => isUnread(r) && !r.muted).length;
-  useEffect(() => { document.title = unreadChats ? `(${num(unreadChats)}) پنبه` : "پنبه"; }, [unreadChats]);
+  useEffect(() => { document.title = unreadChats ? `(${num(unreadChats)}) پنبه` : "پنبه"; setBadge(unreadChats); }, [unreadChats]);
+  useEffect(() => () => setBadge(0), []); // signed out or switching accounts
 
   const nav = useRef<HTMLElement>(null);
   // keep the active tab visible (e.g. a remembered space folder past the edge)

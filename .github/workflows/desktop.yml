@@ -1,0 +1,110 @@
+name: Desktop apps
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # attach the installers to releases
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: --win
+          - os: macos-latest
+            target: --mac
+          - os: ubuntu-latest
+            target: --linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Build web app
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      # signing is optional: without the secrets the apps are unsigned (see DESKTOP.md)
+      - name: Signing keys
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          put() { if [ -n "${!1}" ]; then echo "$1=${!1}" >> "$GITHUB_ENV"; fi; }
+          if [ "$RUNNER_OS" = macOS ]; then
+            if [ -n "$CSC_LINK" ]; then
+              for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do put $v; done
+            else
+              # ad-hoc signature: Apple Silicon refuses to run arm64 code without one
+              echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+              echo "BUILDER_ARGS=-c.mac.identity=-" >> "$GITHUB_ENV"
+            fi
+          elif [ "$RUNNER_OS" = Windows ]; then
+            put WIN_CSC_LINK; put WIN_CSC_KEY_PASSWORD
+            [ -n "$WIN_CSC_LINK" ] || echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Package
+        shell: bash
+        env:
+          VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('0.1.0-{0}', github.run_number) }}
+        run: npx electron-builder ${{ matrix.target }} --publish never -c.extraMetadata.version="${VERSION#v}" $BUILDER_ARGS
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: panbeh-${{ runner.os }}
+          path: |
+            release/Panbeh-*
+            release/latest*.yml
+
+  # one job uploads everything, so the three builds don't race to create the release
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: out
+          merge-multiple: true
+
+      # the auto-update channel: latest*.yml and the blockmaps must sit next to the installers
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+
+      # rolling pre-release shared with the APK (android.yml moves the tag). The update metadata stays out:
+      # installed apps only follow v* releases.
+      - name: Rolling release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Panbeh (latest build)
+          prerelease: true
+          make_latest: false
+          files: |
+            out/Panbeh-windows-setup.exe
+            out/Panbeh-mac.dmg
+            out/Panbeh-linux-*.AppImage
+            out/Panbeh-linux-*.deb

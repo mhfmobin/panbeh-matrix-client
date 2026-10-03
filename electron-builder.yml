@@ -1,0 +1,57 @@
+# Desktop installers; see DESKTOP.md. Everything the web app needs is already bundled into dist/ by vite,
+# so the only runtime dependency packed is electron-updater (hence the web libraries are devDependencies).
+appId: ir.panbeh.app
+productName: Panbeh
+copyright: Panbeh
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - desktop/**
+  - build/icon.png # the Linux window icon
+  - package.json
+protocols:
+  - name: Panbeh login
+    schemes: [ir.panbeh.app] # OAuth comes back through this; see src/matrix.ts
+publish:
+  provider: github
+  owner: mhfmobin
+  repo: panbe-matrix-client
+  releaseType: release
+# no version in the names: the rolling `latest` release replaces same-named files (latest*.yml carry the version)
+artifactName: Panbeh-${os}-${arch}.${ext}
+
+win:
+  target:
+    - target: nsis
+      arch: [x64] # also runs on Windows on ARM, emulated
+nsis:
+  oneClick: true
+  perMachine: false # per-user: no admin prompt, and updates install silently
+  artifactName: Panbeh-windows-setup.${ext}
+
+mac:
+  category: public.app-category.social-networking
+  target:
+    - target: dmg
+      arch: [universal]
+    - target: zip # the updater needs the zip
+      arch: [universal]
+  artifactName: Panbeh-mac.${ext}
+  # hardened runtime (needed for notarization) blocks the mic unless entitled
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: پنبه برای ضبط پیام صوتی به میکروفون نیاز دارد.
+
+linux:
+  category: Network;InstantMessaging;Chat
+  executableName: panbeh
+  synopsis: Matrix messenger
+  target: [AppImage, deb]
+  syncDesktopName: true # window ↔ launcher entry, via desktopName in package.json
+appImage:
+  artifactName: Panbeh-linux-${arch}.${ext}
+deb:
+  artifactName: Panbeh-linux-${arch}.${ext}

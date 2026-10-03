@@ -3,6 +3,7 @@ import { avatarUrl, client } from "./matrix.ts";
 import { isGroupChat, previewText, senderName, roomAvatarMxc } from "./ui/common.tsx";
 import { loadPrefs } from "./ui/Settings.tsx";
 import { isHeadless, isNative, nativeCancel, nativeNotify, toDataUrl } from "./native.ts";
+import { showWindow } from "./desktop.ts";
 
 /** Muted = a room or override rule for this room that doesn't notify (ours, or Element's). */
 export function isMuted(room: Room) {
@@ -67,7 +68,7 @@ async function notify(ev: MatrixEvent, room: Room) {
     tag: room.roomId, // newest message per chat replaces the previous one
     icon, lang: "fa", dir: "rtl",
   });
-  n.onclick = () => { focus(); location.hash = room.roomId; n.close(); };
+  n.onclick = () => { showWindow(); location.hash = room.roomId; n.close(); };
   if (actions.tweaks?.sound) ding();
 }
 

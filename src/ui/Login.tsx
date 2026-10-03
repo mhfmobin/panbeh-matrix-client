@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { login, loginMode, startOAuth } from "../matrix.ts";
 import { normalizeServer } from "../logic.ts";
 import { errText } from "./common.tsx";
+import { isDesktop } from "../desktop.ts";
 
 export function Login({ onDone, initialError, onCancel }: { onDone: () => void; initialError?: unknown; onCancel?: () => void }) {
   const [server, setServer] = useState(localStorage.getItem("panbeh.lastServer") ?? "");
@@ -9,6 +10,7 @@ export function Login({ onDone, initialError, onCancel }: { onDone: () => void; 
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(initialError ? errText(initialError) : "");
+  const [inBrowser, setInBrowser] = useState(false); // desktop: the login page is open in the browser
   // "" = not checked yet (or unreachable)
   const [mode, setMode] = useState<"" | "checking" | "oauth" | "password">("");
   const latest = useRef(server);
@@ -39,7 +41,11 @@ export function Login({ onDone, initialError, onCancel }: { onDone: () => void; 
     setError("");
     try {
       localStorage.setItem("panbeh.lastServer", server);
-      if (mode === "oauth") return await startOAuth(server); // navigates away
+      if (mode === "oauth") {
+        await startOAuth(server); // navigates away; the desktop app opens the browser and stays
+        if (isDesktop) { setInBrowser(true); setBusy(false); }
+        return;
+      }
       await login(server, user, password);
       onDone();
     } catch (err) {
@@ -68,6 +74,7 @@ export function Login({ onDone, initialError, onCancel }: { onDone: () => void; 
           </label>
         </>}
         {error && <p className="error" role="alert">{error}</p>}
+        {inBrowser && !error && <p className="muted">ورود را در مرورگر ادامه دهید؛ پس از آن به پنبه برمی‌گردید.</p>}
         <button className="primary" disabled={busy || mode === "checking"}>
           {busy ? "در حال ورود…" : { "": "ادامه", checking: "در حال بررسی سرور…", oauth: "ادامه در صفحه‌ی ورود سرور", password: "ورود" }[mode]}
         </button>

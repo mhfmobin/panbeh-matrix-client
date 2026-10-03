@@ -3,6 +3,7 @@ import { decodeRecoveryKey, deriveRecoveryKeyFromPassphrase } from "matrix-js-sd
 import { decryptAttachment, encryptAttachment, type IEncryptedFile } from "matrix-encrypt-attachment";
 import { fitSize, normalizeServer, roomName } from "./logic.ts";
 import { isHeadless, isNative, nativeCancelAll, setBackgroundService } from "./native.ts";
+import { isDesktop, isWindowVisible, onWindowVisibility, openExternal } from "./desktop.ts";
 
 type Session = { baseUrl: string; userId: string; deviceId: string; accessToken: string; refreshToken?: string; oauthClientId?: string; legacy?: boolean };
 // several accounts, one running client at a time; switching reloads the page so every cache starts clean
@@ -76,6 +77,10 @@ export async function start(s: Session) {
     const away = () => { if (shareLastSeen()) void c.setSyncPresence(isHeadless || document.visibilityState === "hidden" ? SetPresence.Unavailable : undefined); };
     away();
     document.addEventListener("visibilitychange", away);
+  } else if (isDesktop) { // the same while the window sits in the tray
+    const away = () => { if (shareLastSeen()) void c.setSyncPresence(isWindowVisible() ? undefined : SetPresence.Unavailable); };
+    away();
+    onWindowVisibility(away);
   }
   if (import.meta.env.DEV) Object.assign(window, { mx: c });
   return c;
@@ -87,7 +92,7 @@ export async function login(server: string, user: string, password: string) {
     type: "m.login.password",
     identifier: { type: "m.id.user", user },
     password,
-    initial_device_display_name: isNative ? "Panbeh Android" : "Panbeh Web",
+    initial_device_display_name: isNative ? "Panbeh Android" : isDesktop ? "Panbeh Desktop" : "Panbeh Web",
   });
   const s = { baseUrl, userId: r.user_id, deviceId: r.device_id, accessToken: r.access_token };
   save(s);
@@ -97,12 +102,13 @@ export async function login(server: string, user: string, password: string) {
 // ---------- OAuth 2.0 (next-gen auth, e.g. MAS) ----------
 
 const PENDING_KEY = "panbeh.oauthPending";
-// Android: login happens in the browser, which hands the code back through the app's own URL scheme.
+// Android and desktop: login happens in the browser, which hands the code back through the app's own URL scheme.
 // MAS wants a native app's scheme to be its client_uri's host reversed.
 const NATIVE_REDIRECT = "ir.panbeh.app:/oauth", NATIVE_CLIENT_URI = "https://app.panbeh.ir/";
-const redirectUri = () => isNative ? NATIVE_REDIRECT : location.origin + location.pathname;
+const isApp = isNative || isDesktop;
+const redirectUri = () => isApp ? NATIVE_REDIRECT : location.origin + location.pathname;
 // the app's page may be recreated while the browser is in front, losing sessionStorage
-const pendingStore = () => isNative ? localStorage : sessionStorage;
+const pendingStore = () => isApp ? localStorage : sessionStorage;
 
 /** How this server logs in: on its own page (OAuth, e.g. MAS) or with a password. Throws if it isn't reachable. */
 export async function loginMode(baseUrl: string) {
@@ -121,9 +127,9 @@ export async function startOAuth(server: string) {
   if (!clientId) {
     // MAS only registers https web apps; over http it takes us as a "native" app with a localhost/127.0.0.1
     // redirect, but still wants an https homepage, so borrow the server's
-    const https = location.protocol === "https:" && !isNative;
+    const https = location.protocol === "https:" && !isApp;
     clientId = await OAuth2.registerClient(meta, {
-      client_name: "Panbeh", client_uri: isNative ? NATIVE_CLIENT_URI : https ? location.origin + "/" : baseUrl + "/", redirect_uris: [redirectUri()],
+      client_name: "Panbeh", client_uri: isApp ? NATIVE_CLIENT_URI : https ? location.origin + "/" : baseUrl + "/", redirect_uris: [redirectUri()],
       application_type: https ? "web" : "native",
     });
     localStorage.setItem(idKey, clientId);
@@ -132,7 +138,9 @@ export async function startOAuth(server: string) {
   const state = crypto.randomUUID();
   pendingStore().setItem(PENDING_KEY, JSON.stringify({ state, baseUrl, ...o.context }));
   // query, not fragment: the hash is the open room
-  location.href = await o.generateAuthorizationCodeGrantUrl(state, redirectUri(), "query");
+  const url = await o.generateAuthorizationCodeGrantUrl(state, redirectUri(), "query");
+  if (isDesktop) openExternal(url); // the browser, where the user's password manager and passkeys are
+  else location.href = url;
 }
 
 /** True if this page load is the auth service redirecting back to us. */
