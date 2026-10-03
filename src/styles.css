@@ -59,7 +59,7 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--muted) 65%, transparent); }
 ::-webkit-scrollbar-track { background: transparent; }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
-input, textarea { font: inherit; color: inherit; }
+input, textarea, select { font: inherit; color: inherit; }
 a { color: var(--accent); }
 .muted { color: var(--muted); }
 .error { color: #e53935; font-size: 14px; margin: 0; }
@@ -121,11 +121,11 @@ button:disabled { opacity: 0.6; cursor: default; }
   border-radius: 50%; background: var(--accent); color: #fff; font-size: 34px;
 }
 .login-card label, .card { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
-.login-card input, .card input, .form input, .form select, .admin select {
+.login-card input, .card input, .form input {
   height: 48px; padding: 0 14px; border-radius: 12px; font-size: 16px; color: var(--text);
   background: var(--bg); border: 1.5px solid var(--border); transition: border-color 0.15s;
 }
-.login-card input:focus, .card input:focus, .form input:focus, .form select:focus, .admin select:focus { outline: none; border-color: var(--accent); }
+.login-card input:focus, .card input:focus, .form input:focus { outline: none; border-color: var(--accent); }
 .login-card button { margin-top: 6px; }
 @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
 
@@ -459,7 +459,7 @@ button.user-row:hover { background: var(--hover); }
 .user-row em.muted { color: var(--muted); }
 .user-row > svg { color: var(--accent); flex: none; }
 
-.form { display: grid; gap: 10px; }
+.form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; } /* minmax: the alias input's intrinsic width mustn't widen the sheet */
 .form h3 { margin: 14px 0 0; }
 .form-head { display: flex; align-items: center; gap: 12px; }
 .form-head input { flex: 1; min-width: 0; }
@@ -475,7 +475,19 @@ button.user-row:hover { background: var(--hover); }
 .switch-row, .select-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 2px; cursor: pointer; }
 .switch-row span { display: grid; }
 .switch-row small, .select-row { color: var(--muted); font-size: 13px; }
-.select-row select { height: 40px; width: auto; flex: 1; max-width: 60%; }
+/* min-width: 0 so a long option can't push the sheet sideways */
+.select {
+  flex: 1; min-width: 0; max-width: 60%; height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  padding: 0 12px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--bg); color: var(--text); font-size: 15px;
+  transition: border-color 0.15s;
+}
+.select[aria-expanded="true"] { border-color: var(--accent); }
+.select > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.select > svg { flex: none; color: var(--muted); }
+.select-menu { max-height: 60vh; overflow-y: auto; }
+.select-menu button svg { visibility: hidden; color: var(--accent); }
+.select-menu button.on { color: var(--accent); }
+.select-menu button.on svg { visibility: visible; }
 input[role="switch"] {
   appearance: none; flex: none; width: 40px; height: 22px; padding: 0; border-radius: 11px; border: 0;
   background: var(--border); position: relative; cursor: pointer; transition: background 0.15s;

@@ -3,7 +3,7 @@ import { EventType, type IPublicRoomsChunkRoom } from "matrix-js-sdk";
 import { client, createChat, openDM } from "../matrix.ts";
 import { aliasLocalpart, isUserId, num } from "../logic.ts";
 import { Icon, type IconName } from "../icons.tsx";
-import { Avatar, errText, me, Sheet } from "./common.tsx";
+import { Avatar, errText, me, Select, Sheet } from "./common.tsx";
 
 type Kind = "dm" | "group" | "space" | "join";
 const MENU: [Kind, IconName, string][] = [
@@ -169,10 +169,7 @@ export function ChatForm({ kind, space, onDone }: { kind: "group" | "space"; spa
       )}
       {spaces.length > 0 && (
         <label className="select-row">داخل فضای
-          <select value={parent} onChange={(e) => setParent(e.target.value)}>
-            <option value="">هیچ‌کدام</option>
-            {spaces.map((s) => <option key={s.roomId} value={s.roomId}>{s.name}</option>)}
-          </select>
+          <Select value={parent} options={[["", "هیچ‌کدام"], ...spaces.map((s): [string, string] => [s.roomId, s.name])]} onChange={setParent} />
         </label>
       )}
 
