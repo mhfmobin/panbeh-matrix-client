@@ -210,3 +210,13 @@ test("fitSize downscales the long side and never upscales", () => {
   assert.deepEqual(fitSize(3000, 4000), { w: 960, h: 1280 });
   assert.deepEqual(fitSize(800, 600), { w: 800, h: 600 });
 });
+
+import { textDir } from "./logic.ts";
+test("textDir: first letter decides, no letters is ltr", () => {
+  assert.equal(textDir("سلام hello"), "rtl");
+  assert.equal(textDir("hello سلام"), "ltr");
+  assert.equal(textDir("123 سلام"), "rtl");
+  assert.equal(textDir("۱۲۳"), "ltr");
+  assert.equal(textDir("12:30 👍"), "ltr");
+  assert.equal(textDir(""), "ltr");
+});

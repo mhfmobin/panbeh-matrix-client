@@ -291,3 +291,10 @@ export function fitSize(w: number, h: number, max = 1280) {
   const k = Math.min(1, max / Math.max(w, h));
   return { w: Math.round(w * k), h: Math.round(h * k) };
 }
+
+/** Direction of a message's text the way dir=auto picks it (first letter), but the same everywhere: WebViews disagree on text
+ *  with no letters (numbers, emoji), and the time/ticks have to sit on the side the text leaves free. */
+export function textDir(s: string): "rtl" | "ltr" {
+  const letter = /\p{L}/u.exec(s)?.[0];
+  return letter && /[\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}]/u.test(letter) ? "rtl" : "ltr";
+}

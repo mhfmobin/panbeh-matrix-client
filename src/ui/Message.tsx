@@ -4,7 +4,7 @@ import DOMPurify from "dompurify";
 import { EventStatus, EventType, M_POLL_START, RelationType, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { avatarUrl, client, mediaUrl, pinnedIds, seenBy, togglePin } from "../matrix.ts";
 import { usePromise } from "../hooks.ts";
-import { clock, num, osmUrl, parseGeoUri, stamp } from "../logic.ts";
+import { clock, num, osmUrl, parseGeoUri, stamp, textDir } from "../logic.ts";
 import { Icon, type IconName } from "../icons.tsx";
 import { Avatar, colorFor, copyText, errText, formatSize, isGroupChat, me, previewText, senderMember, senderName, stripReplyFallback, toast } from "./common.tsx";
 import { AudioPlayer, trackFor } from "./Voice.tsx";
@@ -273,7 +273,7 @@ function Body({ ev, room, onView, onUser }: { ev: MatrixEvent; room: Room; onVie
   if (ev.getType() === EventType.RoomMessageEncrypted) return <p className="msg-text muted">در حال رمزگشایی…</p>;
   const c = ev.getContent();
   if (M_POLL_START.matches(ev.getType())) return <PollBody ev={ev} room={room} />;
-  const caption = c.msgtype !== "m.audio" && captionOf(c) && <p className="msg-text caption" dir="auto">{linkify(c.body)}</p>;
+  const caption = c.msgtype !== "m.audio" && captionOf(c) && <p className="msg-text caption" dir={textDir(c.body)}>{linkify(c.body)}</p>;
   if (c.msgtype === "m.image" || ev.getType() === EventType.Sticker) return <><Image c={c} onView={() => onView(ev)} />{caption}</>;
   if (c.msgtype === "m.video") return <><Video c={c} />{caption}</>;
   if (c.msgtype === "m.audio") return (
@@ -289,10 +289,10 @@ function Body({ ev, room, onView, onUser }: { ev: MatrixEvent; room: Room; onVie
     const html = DOMPurify.sanitize(c.formatted_body.replace(/<mx-reply>[\s\S]*?<\/mx-reply>/, ""), { FORBID_TAGS: ["style", "img"] });
     pillRoom = null;
     // the emote prefix holds a user-chosen display name: keep it out of innerHTML
-    return <div className={"msg-text" + (emote ? " emote" : "")} dir="auto">{emote}<Html html={html} room={room} onUser={onUser} /></div>;
+    return <div className={"msg-text" + (emote ? " emote" : "")} dir={textDir(emote + stripReplyFallback(String(c.body ?? "")))}>{emote}<Html html={html} room={room} onUser={onUser} /></div>;
   }
   const text = emote + stripReplyFallback(String(c.body ?? ""));
-  return <p dir="auto" className={"msg-text" + (/^\p{Extended_Pictographic}{1,3}$/u.test(text) ? " jumbo" : "")}>{linkify(text)}</p>;
+  return <p dir={textDir(text)} className={"msg-text" + (/^\p{Extended_Pictographic}{1,3}$/u.test(text) ? " jumbo" : "")}>{linkify(text)}</p>;
 }
 
 /** Sanitized HTML; gives mention pills their avatars and opens them in-app. */

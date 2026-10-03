@@ -285,9 +285,10 @@ div.msg-text blockquote { margin: 4px 0; padding-inline-start: 10px; border-inli
 .msg.mine .msg-meta { color: var(--out-meta); }
 /* time sits at the end of the text: bottom-left in RTL bubbles (meta has its own dir, so key off the bubble) */
 .bubble:dir(rtl) > .msg-meta { right: auto; left: 9px; }
-/* text has its own dir (a bare number is ltr even in an rtl bubble): the time follows the text */
-.bubble:has(> .msg-text:dir(rtl)) > .msg-meta { right: auto; left: 9px; }
-.bubble:has(> .msg-text:dir(ltr)) > .msg-meta { left: auto; right: 9px; }
+/* text has its own explicit dir (textDir; a bare number is ltr even in an rtl bubble): the time follows the text.
+   Attribute selectors, not :dir(), so older WebViews agree */
+.bubble:has(> .msg-text[dir="rtl"]) > .msg-meta { right: auto; left: 9px; }
+.bubble:has(> .msg-text[dir="ltr"]) > .msg-meta, .bubble:has(.voice) > .msg-meta { left: auto; right: 9px; } /* the player is ltr and keeps the right free */
 /* names keep their own dir (skipped by the bubble's dir=auto) but align with the text they head */
 .bubble:dir(rtl) > .msg-sender, .reply-quote:dir(rtl) > b { text-align: right; }
 .tick { display: inline-flex; }
