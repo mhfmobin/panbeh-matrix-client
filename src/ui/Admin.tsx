@@ -18,7 +18,7 @@ function useAct() {
   return [busy, act] as const;
 }
 
-type Levels = { users?: Record<string, number>; users_default?: number; kick?: number; ban?: number };
+type Levels = { users?: Record<string, number>; users_default?: number; kick?: number; ban?: number; events?: Record<string, number>; events_default?: number };
 const levels = (room: Room): Levels => room.currentState.getStateEvents(EventType.RoomPowerLevels, "")?.getContent() ?? {};
 /** The member's level as the SDK computes it: from room v12 on, creators aren't in `users` and outrank everyone (Infinity). */
 const levelOf = (room: Room, id: string) => {
@@ -128,7 +128,7 @@ export function BannedList({ room, onUser }: { room: Room; onUser: (id: string) 
 export function canManage(room: Room) {
   const can = (t: string) => room.currentState.maySendStateEvent(t, me());
   return can(EventType.RoomJoinRules) || can(EventType.RoomCanonicalAlias)
-    || (!room.isSpaceRoom() && (can(EventType.RoomHistoryVisibility) || (can(EventType.RoomEncryption) && !room.hasEncryptionStateEvent())));
+    || (!room.isSpaceRoom() && (can(EventType.RoomPowerLevels) || can(EventType.RoomHistoryVisibility) || (can(EventType.RoomEncryption) && !room.hasEncryptionStateEvent())));
 }
 
 export function GroupSettings({ room }: { room: Room }) {
@@ -141,9 +141,24 @@ export function GroupSettings({ room }: { room: Room }) {
   const rules = ["public", "invite", ...(supportsKnock(room.getVersion()) ? ["knock"] : [])];
   if (!rules.includes(rule)) rules.push(rule);
   const history = room.getHistoryVisibility();
+  const pl = levels(room), mine = levelOf(room, me());
+  const sendLevel = pl.events?.[EventType.RoomMessage] ?? pl.events_default ?? 0;
+  const sendRoles: [number, string][] = ([[0, "همه‌ی اعضا"], [50, "ناظران و مدیران"], [100, "فقط مدیران"]] as [number, string][]).filter(([l]) => l <= mine || l === sendLevel);
+  if (!sendRoles.some(([l]) => l === sendLevel)) sendRoles.push([sendLevel, roleLabel(sendLevel) ?? num(sendLevel)]);
+  const setSendLevel = (l: number) => {
+    const { [EventType.RoomMessage]: _, ...events } = pl.events ?? {};
+    send(EventType.RoomPowerLevels, { ...pl, events_default: l, events });
+  };
 
   return (
     <div className="form">
+      {!space && can(EventType.RoomPowerLevels) && (
+        <label className="select-row">چه کسی می‌تواند پیام بفرستد
+          <select value={sendLevel} disabled={busy} onChange={(e) => setSendLevel(+e.target.value)}>
+            {sendRoles.map(([l, label]) => <option key={l} value={l}>{label}</option>)}
+          </select>
+        </label>
+      )}
       {can(EventType.RoomJoinRules) && (
         <label className="select-row">پیوستن
           <select value={rule} disabled={busy} onChange={(e) => send(EventType.RoomJoinRules, { join_rule: e.target.value })}>
@@ -230,12 +245,15 @@ function Address({ room }: { room: Room }) {
 
 // ---------- room upgrades ----------
 
-/** A tombstoned room takes no messages: the composer becomes a link to the new room. */
+/** A tombstoned room takes no messages: the composer becomes a link to the new room. A room where I may not post gets a notice instead. */
 export function Upgraded({ room, children }: { room: Room; children: ReactNode }) {
-  useTick(client, [RoomStateEvent.Events]);
+  useTick(client, STATE);
   const [busy, act] = useAct();
   const ev = room.currentState.getStateEvents(EventType.RoomTombstone, "");
-  if (!ev) return children;
+  if (!ev) {
+    if (room.currentState.maySendEvent(EventType.RoomMessage, me())) return children;
+    return <div className="upgraded"><span>فقط مدیران می‌توانند در این گروه پیام بفرستند</span></div>;
+  }
   const to: string | undefined = ev.getContent().replacement_room;
   const go = async () => {
     // the upgrader's server is in the new room for sure
