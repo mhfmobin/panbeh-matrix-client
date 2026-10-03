@@ -48,7 +48,7 @@ function createWindow(hidden) {
   const b = loadBounds();
   win = new BrowserWindow({
     x: b.x, y: b.y, width: b.width, height: b.height, minWidth: 360, minHeight: 480,
-    show: false, title: "پنبه", backgroundColor: "#ffffff", autoHideMenuBar: true,
+    show: false, title: "Panbeh", backgroundColor: "#ffffff", autoHideMenuBar: true,
     icon: isWin || isMac ? undefined : asset("../build/icon.png"),
     webPreferences: {
       preload: asset("preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true,
@@ -58,6 +58,7 @@ function createWindow(hidden) {
   });
   if (b.maximized) win.maximize();
   win.once("ready-to-show", () => { if (!hidden) win.show(); });
+  win.on("page-title-updated", (e) => e.preventDefault()); // stays "Panbeh"; the unread count is on the tray and badge
 
   // closing only hides: the client keeps syncing and notifying from the tray
   win.on("close", (e) => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import type { MatrixEvent } from "matrix-js-sdk";
 import { downsample, fmtDuration, num } from "../logic.ts";
 import { Icon } from "../icons.tsx";
@@ -80,8 +80,9 @@ function cycleSpeed() {
   set({});
 }
 
-/** Voice/audio player. The media is fetched on first play, so a chat full of voice notes downloads nothing up front. */
-export function AudioPlayer({ track }: { track: Track }) {
+/** Voice/audio player. The media is fetched on first play, so a chat full of voice notes downloads nothing up front.
+ *  `lead` replaces the play button (an upload's progress ring). */
+export function AudioPlayer({ track, lead }: { track: Track; lead?: ReactNode }) {
   const s = usePlayer();
   const cur = s.track?.id === track.id;
   const state = cur ? s.state : "idle", pos = cur ? s.pos : 0, dur = cur ? s.dur : track.duration / 1000;
@@ -105,9 +106,11 @@ export function AudioPlayer({ track }: { track: Track }) {
 
   return (
     <div className="voice" dir="ltr">
-      <button className="voice-play" onClick={() => toggle(track)} aria-label={state === "playing" ? "توقف" : "پخش"}>
-        {state === "loading" ? <span className="spinner inline" /> : <Icon name={state === "playing" ? "pause" : "play"} size={22} />}
-      </button>
+      {lead ?? (
+        <button className="voice-play" onClick={() => toggle(track)} aria-label={state === "playing" ? "توقف" : "پخش"}>
+          {state === "loading" ? <span className="spinner inline" /> : <Icon name={state === "playing" ? "pause" : "play"} size={22} />}
+        </button>
+      )}
       <div className="voice-body">
         {track.title && <b className="voice-title" dir="auto">{track.title}</b>}
         <div className="wave" onClick={onWave} onKeyDown={onKey} tabIndex={0} role="slider" aria-label="موقعیت پخش"

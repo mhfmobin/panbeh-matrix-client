@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { EventType, M_POLL_START, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { PollStartEvent } from "matrix-js-sdk/lib/extensible_events_v1/PollStartEvent.js";
 import { avatarUrl, client, isDirect } from "../matrix.ts";
@@ -175,5 +176,46 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
         {children}
       </div>
     </div>
+  );
+}
+
+/** Dropdown in the app's menu style (a bottom sheet on phones): Android WebView's native picker looks foreign. */
+export function Select<T extends string | number>({ value, options, onChange, disabled }:
+  { value: T; options: [T, string][]; onChange: (v: T) => void; disabled?: boolean }) {
+  const [at, setAt] = useState<DOMRect | null>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number }>();
+  useLayoutEffect(() => { // under the button, kept on screen
+    if (!at) return setPos(undefined);
+    const { offsetWidth: w, offsetHeight: h } = menu.current!; // not the rect: the pop-in animation starts scaled down
+    setPos({ left: Math.max(8, Math.min(at.right - w, innerWidth - w - 8)), top: at.bottom + h + 8 > innerHeight ? Math.max(8, at.top - h - 4) : at.bottom + 4 });
+    menu.current!.focus({ preventScroll: true });
+  }, [at]);
+  useEffect(() => {
+    if (!at) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); setAt(null); } };
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, [at]);
+  const pick = (v: T) => { setAt(null); if (v !== value) onChange(v); };
+  return (
+    <>
+      <button type="button" className="select" disabled={disabled} aria-haspopup="listbox" aria-expanded={!!at}
+        onClick={(e) => { e.preventDefault(); setAt(e.currentTarget.getBoundingClientRect()); }}>
+        <span>{options.find(([v]) => v === value)?.[1] ?? String(value)}</span><Icon name="down" size={18} />
+      </button>
+      {at && createPortal(
+        <div className="chat-menu-backdrop msg-menu-backdrop" onClick={() => setAt(null)}>
+          <div className="chat-menu msg-menu select-menu" role="listbox" tabIndex={-1} ref={menu} onClick={(e) => e.stopPropagation()}
+            style={{ minWidth: at.width, ...(pos ?? { left: 0, top: 0, visibility: "hidden" }) }}>
+            {options.map(([v, label]) => (
+              <button key={v} type="button" role="option" aria-selected={v === value} className={v === value ? "on" : undefined} onClick={() => pick(v)}>
+                <Icon name="check" /> {label}
+              </button>
+            ))}
+          </div>
+        </div>,
+        document.body)}
+    </>
   );
 }

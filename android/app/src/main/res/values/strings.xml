@@ -7,6 +7,6 @@
     <string name="channel_messages">پیام‌ها</string>
     <string name="channel_quiet">پیام‌های بی‌صدا</string>
     <string name="channel_service">اتصال پس‌زمینه</string>
-    <string name="service_title">Panbeh متصل است</string>
+    <string name="service_title">پنبه متصل است</string>
     <string name="service_text">برای دریافت پیام‌های تازه</string>
 </resources>

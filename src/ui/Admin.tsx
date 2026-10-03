@@ -4,7 +4,7 @@ import { client } from "../matrix.ts";
 import { useTick } from "../hooks.ts";
 import { aliasLocalpart, HISTORY, JOIN_RULES, num, roleLabel, supportsKnock } from "../logic.ts";
 import { Icon } from "../icons.tsx";
-import { Avatar, errText, me } from "./common.tsx";
+import { Avatar, errText, me, Select } from "./common.tsx";
 
 const STATE = [RoomStateEvent.Events, RoomStateEvent.Members];
 
@@ -66,9 +66,7 @@ export function MemberAdmin({ room, userId }: { room: Room; userId: string }) {
       <h3>مدیریت در این گفتگو</h3>
       {mayRole && (
         <label className="select-row">نقش
-          <select value={theirs} disabled={busy} onChange={(e) => setRole(+e.target.value)}>
-            {roles.map(([l, label]) => <option key={l} value={l}>{label}</option>)}
-          </select>
+          <Select value={theirs} disabled={busy} options={roles} onChange={setRole} />
         </label>
       )}
       <div className="row-actions">
@@ -154,23 +152,19 @@ export function GroupSettings({ room }: { room: Room }) {
     <div className="form">
       {!space && can(EventType.RoomPowerLevels) && (
         <label className="select-row">چه کسی می‌تواند پیام بفرستد
-          <select value={sendLevel} disabled={busy} onChange={(e) => setSendLevel(+e.target.value)}>
-            {sendRoles.map(([l, label]) => <option key={l} value={l}>{label}</option>)}
-          </select>
+          <Select value={sendLevel} disabled={busy} options={sendRoles} onChange={setSendLevel} />
         </label>
       )}
       {can(EventType.RoomJoinRules) && (
         <label className="select-row">پیوستن
-          <select value={rule} disabled={busy} onChange={(e) => send(EventType.RoomJoinRules, { join_rule: e.target.value })}>
-            {rules.map((r) => <option key={r} value={r}>{JOIN_RULES[r] ?? r}</option>)}
-          </select>
+          <Select value={rule} disabled={busy} options={rules.map((r) => [r, JOIN_RULES[r] ?? r])}
+            onChange={(r) => send(EventType.RoomJoinRules, { join_rule: r })} />
         </label>
       )}
       {!space && can(EventType.RoomHistoryVisibility) && (
         <label className="select-row">چه کسی تاریخچه را می‌بیند
-          <select value={history} disabled={busy} onChange={(e) => send(EventType.RoomHistoryVisibility, { history_visibility: e.target.value })}>
-            {Object.entries(HISTORY).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-          </select>
+          <Select value={history} disabled={busy} options={Object.entries(HISTORY)}
+            onChange={(v) => send(EventType.RoomHistoryVisibility, { history_visibility: v })} />
         </label>
       )}
       {!space && (room.hasEncryptionStateEvent()

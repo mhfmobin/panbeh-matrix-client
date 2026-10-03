@@ -6,7 +6,8 @@ import { isMessage, useTick, useUploads } from "../hooks.ts";
 import { Icon } from "../icons.tsx";
 import { buildRows, dayLabel, num, type Msg, type Row } from "../logic.ts";
 import { Message, type Actions } from "./Message.tsx";
-import { bdi, formatSize, me, noticeText } from "./common.tsx";
+import { audioDuration, bdi, formatSize, isVoice, me, noticeText } from "./common.tsx";
+import { AudioPlayer } from "./Voice.tsx";
 
 const EVENTS = [
   RoomEvent.Timeline, RoomEvent.TimelineReset, RoomEvent.LocalEchoUpdated, RoomEvent.Redaction, RoomEvent.Receipt,
@@ -186,6 +187,11 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   }, [flash]);
 
   const lastIsMine = lastEv?.getSender() === me();
+  // Virtuoso asks followOutput on every count increase, prepended history included: follow only when the end changed
+  const lastKey = rows.at(-1)?.key;
+  const prevLast = useRef(lastKey);
+  const appended = prevLast.current !== lastKey;
+  useEffect(() => { prevLast.current = lastKey; });
   const toBottom = () => { stuck.current = true; list.current?.scrollToIndex({ index: "LAST", align: "end" }); };
   const unread = thread ? 0 : room.getUnreadNotificationCount();
   // Virtuoso mounted with no data stays hidden waiting for its initial "LAST" scroll, so wait for rows
@@ -208,7 +214,7 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
       firstItemIndex={firstItemIndex}
       initialTopMostItemIndex={divider >= 0 ? { index: divider, align: "start" } : { index: "LAST", align: "end" }}
       alignToBottom
-      followOutput={() => (stuck.current || lastIsMine ? "smooth" : false)}
+      followOutput={() => (appended && (stuck.current || lastIsMine) ? "smooth" : false)}
       ref={list}
       scrollerRef={scrollerRef}
       atBottomStateChange={(b) => { if (b && Date.now() > jumpingUntil.current && Date.now() > pagingUntil.current) stuck.current = true; setAtBottom(b); }}
@@ -258,10 +264,16 @@ function Ring({ u }: { u: Upload }) {
 function PendingUpload({ u }: { u: Upload }) {
   const queued = !u.loaded && !u.error;
   const state = u.error ? "ارسال نشد" : queued ? "در صف…" : `${formatSize(u.loaded)} / ${formatSize(u.total)}`;
+  const voice = !!u.extra && isVoice(u.extra);
   return (
     <div className="row"><div className={"msg mine first last" + (u.error ? " failed" : "")}><div className="msg-col">
-      <div className={"bubble" + (u.previewUrl ? " media" : "")} dir="auto">
-        {u.previewUrl ? (
+      <div className={"bubble" + (u.previewUrl && !voice ? " media" : "")} dir="auto">
+        {voice ? (
+          // looks like the voice note it becomes, the ring where play will be
+          <AudioPlayer track={{ id: "upload:" + u.id, load: () => Promise.resolve(u.previewUrl!), duration: audioDuration(u.extra!),
+            waveform: (u.extra!["org.matrix.msc1767.audio"] as { waveform?: number[] } | undefined)?.waveform }}
+            lead={u.error ? <span className="file-icon"><Icon name="mic" /></span> : <Ring u={u} />} />
+        ) : u.previewUrl ? (
           <div className="media-box up-box">
             {u.file.type.startsWith("video/") ? <video src={u.previewUrl} preload="metadata" muted /> : <img src={u.previewUrl} alt="" />}
             {!u.error && <Ring u={u} />}
