@@ -44,6 +44,8 @@ public class SyncService extends Service {
     static SyncService instance;
     /** True between MainActivity.onCreate and onDestroy: its WebView is the one syncing. */
     static boolean activityAlive;
+    /** In a call: the service also holds the mic (and camera) so they keep working in the background. */
+    private static boolean inCall, inVideoCall;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private WebView headless;
@@ -67,6 +69,29 @@ public class SyncService extends Service {
         ctx.stopService(new Intent(ctx, SyncService.class));
     }
 
+    /** Call started or ended in the app. Started from the foreground, as Android requires for mic/camera services. */
+    static void setCall(Context ctx, boolean on, boolean video) {
+        inCall = on;
+        inVideoCall = on && video;
+        if (on) {
+            try {
+                ContextCompat.startForegroundService(ctx, new Intent(ctx, SyncService.class));
+            } catch (RuntimeException e) {
+                Log.w(TAG, "could not start for call", e);
+            }
+        } else if (instance != null) {
+            if (isEnabled(instance)) instance.goForeground(); // back to plain syncing
+            else instance.stopSelf();
+        }
+    }
+
+    /** A call notification button for the headless page. */
+    void deliverCall(org.json.JSONObject a) {
+        main.post(() -> {
+            if (headless != null) headless.evaluateJavascript("window.panbehCallAction && panbehCallAction(" + a + ")", null);
+        });
+    }
+
     /** The activity is about to load its own WebView: the headless one must be gone first. */
     static void onActivityCreated() {
         activityAlive = true;
@@ -75,6 +100,7 @@ public class SyncService extends Service {
 
     static void onActivityDestroyed() {
         activityAlive = false;
+        if (inCall) setCall(instance, false, false); // the call died with the page
         // a moment for the activity's page to unload before the next client opens the same stores
         if (instance != null) instance.scheduleHeadless();
     }
@@ -89,7 +115,7 @@ public class SyncService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         goForeground();
-        if (!isEnabled(this)) { // restarted by the system after being switched off
+        if (!isEnabled(this) && !inCall) { // restarted by the system after being switched off
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -101,19 +127,25 @@ public class SyncService extends Service {
         Intent open = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         Notification n = new NotificationCompat.Builder(this, Notifier.CH_SERVICE)
             .setSmallIcon(R.drawable.ic_stat_panbeh)
-            .setContentTitle(getString(R.string.service_title))
-            .setContentText(getString(R.string.service_text))
-            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setContentTitle(getString(inCall ? R.string.call_ongoing : R.string.service_title))
+            .setContentText(inCall ? null : getString(R.string.service_text))
+            .setPriority(inCall ? NotificationCompat.PRIORITY_DEFAULT : NotificationCompat.PRIORITY_MIN)
             .setOngoing(true)
             .setShowWhen(false)
             .setContentIntent(PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE))
             .build();
         int type = Build.VERSION.SDK_INT >= 34 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING : 0;
+        int call = !inCall || Build.VERSION.SDK_INT < 30 ? 0
+            : ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE | (inVideoCall ? ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA : 0);
         try {
-            ServiceCompat.startForeground(this, NOTIFICATION_ID, n, type);
-        } catch (RuntimeException e) {
-            Log.w(TAG, "startForeground failed", e);
-            stopSelf();
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, n, type | call);
+        } catch (RuntimeException e) { // e.g. camera permission refused: keep the mic at least
+            try {
+                ServiceCompat.startForeground(this, NOTIFICATION_ID, n, type | (call & ~ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA));
+            } catch (RuntimeException e2) {
+                Log.w(TAG, "startForeground failed", e2);
+                stopSelf();
+            }
         }
     }
 
@@ -191,6 +223,22 @@ public class SyncService extends Service {
         @JavascriptInterface
         public void cancel(String roomId) {
             Notifier.cancel(SyncService.this, roomId);
+        }
+
+        @JavascriptInterface
+        public void showCall(String json) {
+            try {
+                JSONObject o = new JSONObject(json);
+                Notifier.showCall(SyncService.this, o.getString("roomId"), o.getString("eventId"), o.optString("caller"),
+                    o.optBoolean("video"), o.optString("icon", null), o.optLong("timeout", 60000));
+            } catch (JSONException e) {
+                Log.w(TAG, "bad call", e);
+            }
+        }
+
+        @JavascriptInterface
+        public void cancelCall(String roomId) {
+            Notifier.cancelCall(SyncService.this, roomId);
         }
 
         @JavascriptInterface

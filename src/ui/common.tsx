@@ -61,8 +61,11 @@ export const bdi = (s: string) => "\u2068" + s + "\u2069";
 
 /** Farsi message for an SDK/fetch error. */
 export function errText(e: unknown): string {
-  const err = e as { errcode?: string; message?: string };
+  const err = e as { errcode?: string; message?: string; name?: string };
   if (err?.errcode === "M_FORBIDDEN") return "نام کاربری یا رمز عبور اشتباه است.";
+  // getUserMedia (calls, voice messages)
+  if (err?.name === "NotAllowedError") return "اجازه‌ی دسترسی به میکروفون یا دوربین داده نشد. آن را از تنظیمات مرورگر یا دستگاه باز کنید.";
+  if (err?.name === "NotFoundError") return "میکروفون یا دوربینی پیدا نشد.";
   const m = err?.message ?? String(e);
   return /fetch|network/i.test(m) ? "به سرور دسترسی نیست. نشانی و پورت را بررسی کنید." : m;
 }
@@ -149,6 +152,10 @@ export function noticeText(ev: MatrixEvent): string | null {
     case EventType.RoomHistoryVisibility:
       return prev.history_visibility && c.history_visibility !== prev.history_visibility ? `${who} دسترسی به تاریخچه را به «${HISTORY[c.history_visibility] ?? c.history_visibility}» تغییر داد` : null;
     case EventType.RoomTombstone: return `${who} این گروه را ارتقا داد`;
+    case EventType.RTCNotification: { // ponytail: no "missed call"; check whether we joined before it expired if wanted
+      const kind = c["m.call.intent"] === "video" ? "تماس تصویری" : "تماس صوتی";
+      return c.notification_type === "ring" ? `${who} ${kind} گرفت` : `${who} ${kind} گروهی را شروع کرد`;
+    }
   }
   return null;
 }

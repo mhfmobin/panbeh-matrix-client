@@ -74,15 +74,25 @@ async function notify(ev: MatrixEvent, room: Room) {
 
 let ctx: AudioContext | undefined;
 /** Short beep; no sound file to ship. */
-function ding() {
+const ding = () => beep(880, 0.35);
+
+function beep(freq: number, len: number, after = 0) {
   try {
     ctx ??= new AudioContext();
-    const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime;
-    o.frequency.value = 880;
+    const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + after;
+    o.frequency.value = freq;
     g.gain.setValueAtTime(0.15, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+    g.gain.exponentialRampToValueAtTime(0.001, t + len);
     o.connect(g).connect(ctx.destination);
-    o.start();
-    o.stop(t + 0.35);
+    o.start(t);
+    o.stop(t + len);
   } catch { /* no audio: the notification is enough */ }
+}
+
+/** Incoming-call ring (two tones every 2s) until the returned stop is called. */
+export function ringtone() {
+  const ring = () => { beep(440, 0.4); beep(480, 0.4, 0.5); };
+  ring();
+  const t = setInterval(ring, 2000);
+  return () => clearInterval(t);
 }

@@ -4,7 +4,8 @@ import { ClientEvent, SyncState } from "matrix-js-sdk";
 import { cancelAdd, client, finishOAuth, isAdding, isOAuthCallback, logout, recoveryState, savedSession, start } from "./matrix.ts";
 import { useTick } from "./hooks.ts";
 import { startNotifications } from "./notify.ts";
-import { isHeadless, isNative, onOpenLink, onOpenRoom, requestNotifyPermission, setBackgroundService } from "./native.ts";
+import { isHeadless, isNative, onCallAction, onOpenLink, onOpenRoom, requestNotifyPermission, setBackgroundService } from "./native.ts";
+import { onNativeCall, startCalls } from "./call.ts";
 import { startBackButton } from "./back.ts";
 import { drainLinks, handleIncomingLink } from "./openTarget.ts";
 import { onDesktopLink } from "./desktop.ts";
@@ -16,6 +17,9 @@ import { Room } from "./ui/Room.tsx";
 import { NowPlaying } from "./ui/Voice.tsx";
 import { Settings, applyPrefs, loadPrefs } from "./ui/Settings.tsx";
 import { VerificationListener } from "./ui/Verify.tsx";
+import { CallBar, CallLayer } from "./ui/Call.tsx";
+import { alertDialog } from "./ui/dialog.tsx";
+import { errText } from "./ui/common.tsx";
 import { Icon } from "./icons.tsx";
 import "@fontsource-variable/vazirmatn";
 import "./styles.css";
@@ -66,6 +70,9 @@ function Shell() {
   const synced = client.isInitialSyncComplete();
   useEffect(() => { if (synced) refreshSecurity(); }, [synced]);
   useEffect(startNotifications, []);
+  useEffect(startCalls, []);
+  // Android call notification buttons: answering may have cold-started the app, so wait for the rooms
+  useEffect(() => (synced ? onCallAction((a) => void onNativeCall(a).catch((e) => alertDialog(errText(e)))) : undefined), [synced]);
   useEffect(startBackButton, []);
   useEffect(() => onOpenRoom((id) => { location.hash = id; }), []);
   useEffect(() => { // links from outside (Android intents, desktop protocol handler, web handler) wait here until the first sync
@@ -108,12 +115,14 @@ function Shell() {
             </button>
           )}
           {!room && <NowPlaying />}
+          {!room && <CallBar />}
         </>} />
       <main className="main wallpaper">
         {room ? <Room key={room.roomId} room={room} onBack={() => open()} /> : <div className="pill center">برای شروع پیام‌رسانی یک گفتگو را انتخاب کنید</div>}
       </main>
       {settings && <Settings onClose={() => setSettings(false)} onSecurityChange={refreshSecurity} />}
       <VerificationListener onTrustChange={refreshSecurity} />
+      <CallLayer />
     </div>
   );
 }
@@ -126,7 +135,7 @@ const Splash = ({ text }: { text: string }) => (
 function headless() {
   const s = savedSession();
   if (!s || !loadPrefs().notify) return setBackgroundService(false);
-  start(s).then(startNotifications, (e) => console.error("headless start failed", e));
+  start(s).then(() => { startNotifications(); startCalls(); onCallAction((a) => void onNativeCall(a)); }, (e) => console.error("headless start failed", e));
 }
 
 if (isHeadless) headless();

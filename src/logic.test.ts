@@ -220,3 +220,15 @@ test("textDir: first letter decides, no letters is ltr", () => {
   assert.equal(textDir("12:30 👍"), "ltr");
   assert.equal(textDir(""), "ltr");
 });
+
+import { isRing } from "./logic.ts";
+test("isRing: rings only for fresh rings aimed at us or the room", () => {
+  const ring = { notification_type: "ring", "m.mentions": { user_ids: ["@me:x"] } };
+  assert.equal(isRing(ring, 2000, "@me:x", 1000), true);
+  assert.equal(isRing(ring, 1000, "@me:x", 1000), false); // expired
+  assert.equal(isRing(ring, NaN, "@me:x", 1000), false); // bad lifetime
+  assert.equal(isRing(ring, 2000, "@you:x", 1000), false); // someone else
+  assert.equal(isRing({ notification_type: "ring", "m.mentions": { room: true } }, 2000, "@me:x", 1000), true);
+  assert.equal(isRing({ notification_type: "notification", "m.mentions": { room: true } }, 2000, "@me:x", 1000), false);
+  assert.equal(isRing({ notification_type: "ring" }, 2000, "@me:x", 1000), false);
+});

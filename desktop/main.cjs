@@ -238,12 +238,18 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(ok ? file : path.join(DIST, "index.html")).toString());
   });
 
-  // mic for voice messages, notifications; only for the app itself
+  // mic/camera for voice messages and calls, screen sharing, notifications; only for the app itself
   const ours = (url) => !!url && (url.startsWith(ORIGIN) || (!!DEV_URL && url.startsWith(DEV_URL)));
-  const allowed = new Set(["media", "notifications", "clipboard-sanitized-write", "fullscreen"]);
-  const { session } = require("electron");
+  const allowed = new Set(["media", "display-capture", "notifications", "clipboard-sanitized-write", "fullscreen"]);
+  const { session, desktopCapturer } = require("electron");
   session.defaultSession.setPermissionRequestHandler((wc, perm, cb) => cb(allowed.has(perm) && ours(wc.getURL())));
   session.defaultSession.setPermissionCheckHandler((wc, perm) => allowed.has(perm) && ours(wc?.getURL()));
+  // getDisplayMedia: macOS and Wayland show the system's own picker
+  // ponytail: elsewhere (Windows, X11) it shares the first screen; add an in-app source picker for single windows
+  session.defaultSession.setDisplayMediaRequestHandler((req, cb) => {
+    if (!ours(req.frame?.url)) return cb({});
+    desktopCapturer.getSources({ types: ["screen", "window"] }).then((s) => cb(s[0] ? { video: s[0] } : {}), () => cb({}));
+  }, { useSystemPicker: true });
 
   createTray();
   if (!handleOAuthUrl(pendingOAuth)) createWindow(startedHidden() && !pendingLink);

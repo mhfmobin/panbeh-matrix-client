@@ -58,7 +58,7 @@ export async function start(s: Session) {
     onTokenRefresh: (t) => save({ ...sessions().find((x) => x.userId === s.userId)!, accessToken: t.accessToken, refreshToken: t.refreshToken }),
     store,
     timelineSupport: true,
-    disableVoip: true, // no calls in v1
+    disableVoip: true, // legacy 1:1 m.call.* stack; our calls are MatrixRTC (call.ts)
     verificationMethods: ["m.sas.v1"], // emoji only: we can't show or scan QR codes, so don't let the other side pick them
     roomNameGenerator: (roomId, state) => roomName(state, inviter(c.getRoom(roomId))),
     cryptoCallbacks: {
@@ -427,8 +427,15 @@ export async function createChat(o: NewChat) {
     creation_content: o.kind === "space" ? { type: "m.space" } : undefined,
     initial_state,
   });
+  if (o.kind === "group") await allowCalls(room_id).catch(() => {});
   if (o.parentSpace) await addToSpace(o.parentSpace, room_id);
   return room_id;
+}
+
+/** Lets ordinary members join calls: their m.call.member state events need power 0 (what Element's rooms set too). */
+export async function allowCalls(roomId: string) {
+  const pl = await client.getStateEvent(roomId, EventType.RoomPowerLevels, "");
+  await client.sendStateEvent(roomId, EventType.RoomPowerLevels, { ...pl, events: { ...pl.events, [EventType.GroupCallMemberPrefix]: 0 } } as never);
 }
 
 const uploadAvatar = async (file: File) => (await client.uploadContent(file)).content_uri;

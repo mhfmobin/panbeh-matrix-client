@@ -907,3 +907,53 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
   .room-head { gap: 4px; padding: 0 6px; }
   .room-head-info { gap: 10px; padding: 0 4px; }
 }
+
+/* ---------- calls ---------- */
+.call-bar { flex: none; display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 14px; background: #2e9e5b; color: #fff; font-size: 14px; text-align: start; }
+.call-bar b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.call-bar:hover { filter: brightness(1.08); }
+/* always dark, like a phone's call screen */
+.call-screen {
+  position: fixed; inset: 0; z-index: 48; /* over sheets and menus, under dialogs and toasts */ display: flex; flex-direction: column; background: #111418; color: #fff; animation: fade 0.18s;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.call-screen .icon-btn { color: #fff; }
+.call-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
+.call-head div { display: flex; flex-direction: column; min-width: 0; }
+.call-head span { font-size: 13px; color: rgba(255, 255, 255, 0.7); }
+.call-who { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+.call-who h2 { margin: 12px 0 0; font-size: 24px; }
+.call-who span { color: rgba(255, 255, 255, 0.7); }
+.incoming .call-who .avatar { animation: pulse 1.6s infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(46, 158, 91, 0.6); } 100% { box-shadow: 0 0 0 28px rgba(46, 158, 91, 0); } }
+.call-grid { flex: 1; min-height: 0; display: grid; gap: 8px; padding: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); grid-auto-rows: 1fr; position: relative; }
+.call-grid[data-n="1"] { grid-template-columns: 1fr; }
+.call-tile { position: relative; min-height: 0; display: grid; place-items: center; overflow: hidden; border-radius: 16px; background: #1f252c; outline: 3px solid transparent; transition: outline-color 0.15s; }
+.call-tile.speaking { outline-color: #2e9e5b; }
+.call-tile video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.call-tile video.contain { object-fit: contain; background: #000; }
+.call-tile video.mirror { transform: scaleX(-1); }
+.call-name { position: absolute; bottom: 8px; inset-inline-start: 8px; display: flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; background: rgba(0, 0, 0, 0.5); font-size: 13px; }
+/* 1:1: the other side fills the screen, we're a small window in the corner */
+.call-grid.pip { grid-template-columns: 1fr; }
+.call-grid.pip .call-tile.local { position: absolute; z-index: 1; bottom: 16px; inset-inline-end: 16px; width: min(28vw, 180px); aspect-ratio: 3 / 4; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); }
+.call-grid.pip .call-tile.local .avatar { transform: scale(0.6); }
+/* one feed spotlit: it takes the room, the rest shrink to a strip of thumbnails (click one to swap) */
+.call-grid.focus { display: flex; flex-direction: column; }
+.call-tile.main { flex: 1; min-height: 0; }
+.call-strip { flex: none; display: flex; gap: 8px; overflow-x: auto; }
+.call-strip:empty { display: none; }
+.call-strip .call-tile { flex: none; width: 160px; height: 100px; }
+.call-strip .call-tile .avatar { transform: scale(0.5); }
+.call-strip .call-name { bottom: 4px; inset-inline-start: 4px; font-size: 11px; }
+.call-focus { position: absolute; top: 8px; inset-inline-end: 8px; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; background: rgba(0, 0, 0, 0.5); color: #fff; opacity: 0; transition: opacity 0.15s; }
+.call-tile:hover .call-focus, .call-tile.main .call-focus, .call-focus:focus-visible { opacity: 1; }
+@media (hover: none) { .call-focus { opacity: 1; } } /* touch: no hover to reveal it */
+.call-strip .call-focus { inset: 0; width: auto; height: auto; border-radius: 0; background: none; opacity: 0; } /* the whole thumbnail swaps */
+.call-controls { display: flex; justify-content: center; flex-wrap: wrap; gap: 14px; padding: 16px 12px 28px; }
+.call-btn { width: 56px; height: 56px; display: grid; place-items: center; border-radius: 50%; background: rgba(255, 255, 255, 0.14); color: #fff; }
+.call-btn:hover { background: rgba(255, 255, 255, 0.22); }
+.call-btn.on { background: #fff; color: #111418; }
+.call-btn.ok { background: #2e9e5b; }
+.call-btn.end { background: #e53935; }
+.call-btn.ok:hover, .call-btn.end:hover { filter: brightness(1.1); }

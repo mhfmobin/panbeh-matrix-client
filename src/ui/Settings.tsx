@@ -9,7 +9,7 @@ import { num, stamp } from "../logic.ts";
 import { decryptKeyFile, encryptKeyFile } from "../keyfile.ts";
 import { showVerification } from "./Verify.tsx";
 import { desktopVersion, getAutostart, isDesktop, setAutostart } from "../desktop.ts";
-import { isNative, nativeCancelAll, nativeStatus, requestBatteryExemption, requestNotifyPermission, setBackgroundService } from "../native.ts";
+import { isNative, nativeCancelAll, nativeStatus, requestBatteryExemption, requestFullScreen, requestNotifyPermission, setBackgroundService } from "../native.ts";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 
 type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; previews: boolean; shareLastSeen: boolean };
@@ -160,6 +160,12 @@ function AndroidNotifications({ prefs, set }: { prefs: Prefs; set: (p: Partial<P
         <button className="user-row" onClick={() => requestBatteryExemption()}>
           <span className="device-box"><Icon name="bell" /></span>
           <span><b>اجرای بدون محدودیت در پس‌زمینه</b><small>بهینه‌سازی باتری اندروید ممکن است اعلان‌ها را دیر برساند</small></span>
+        </button>
+      )}
+      {on && !st.fullScreen && (
+        <button className="user-row" onClick={() => requestFullScreen()}>
+          <span className="device-box"><Icon name="phone" /></span>
+          <span><b>زنگ تماس روی صفحه‌ی قفل</b><small>اجازه دهید تماس‌های ورودی تمام‌صفحه نشان داده شوند</small></span>
         </button>
       )}
       {st.permission === "denied" && <p className="muted">اجازه‌ی اعلان رد شده است؛ از تنظیمات اندروید، بخش برنامه‌ها، آن را برای پنبه باز کنید.</p>}
