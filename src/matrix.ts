@@ -295,7 +295,7 @@ export async function sendFile(room: Room, file: File, threadId: string | null, 
 // ---------- pending uploads (shown as bubbles until the SDK's local echo takes over) ----------
 
 export type Upload = {
-  id: number; roomId: string; threadId: string | null; file: File; previewUrl?: string;
+  id: number; roomId: string; threadId: string | null; file: File; previewUrl?: string; extra?: Record<string, unknown>;
   loaded: number; total: number; error?: string; abort: AbortController; retry: () => void;
 };
 let uploads: Upload[] = [];
@@ -319,7 +319,7 @@ let nextId = 1;
 
 export function startUpload(room: Room, file: File, threadId: string | null, replyTo?: MatrixEvent, extra?: Record<string, unknown>, caption?: string, asFile?: boolean) {
   const id = nextId++;
-  const preview = !asFile && /^(image|video)\//.test(file.type);
+  const preview = !asFile && /^(image|video|audio)\//.test(file.type); // audio: a voice note plays from here while it uploads
   const run = () => {
     const abort = new AbortController();
     patch(id, { abort, error: undefined, loaded: 0 });
@@ -335,7 +335,7 @@ export function startUpload(room: Room, file: File, threadId: string | null, rep
     });
   };
   emit([...uploads, {
-    id, roomId: room.roomId, threadId, file, previewUrl: preview ? URL.createObjectURL(file) : undefined,
+    id, roomId: room.roomId, threadId, file, extra, previewUrl: preview ? URL.createObjectURL(file) : undefined,
     loaded: 0, total: file.size, abort: new AbortController(), retry: run,
   }]);
   run();

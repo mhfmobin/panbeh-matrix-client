@@ -6,7 +6,8 @@ import { isMessage, useTick, useUploads } from "../hooks.ts";
 import { Icon } from "../icons.tsx";
 import { buildRows, dayLabel, num, type Msg, type Row } from "../logic.ts";
 import { Message, type Actions } from "./Message.tsx";
-import { bdi, formatSize, me, noticeText } from "./common.tsx";
+import { audioDuration, bdi, formatSize, isVoice, me, noticeText } from "./common.tsx";
+import { AudioPlayer } from "./Voice.tsx";
 
 const EVENTS = [
   RoomEvent.Timeline, RoomEvent.TimelineReset, RoomEvent.LocalEchoUpdated, RoomEvent.Redaction, RoomEvent.Receipt,
@@ -263,10 +264,16 @@ function Ring({ u }: { u: Upload }) {
 function PendingUpload({ u }: { u: Upload }) {
   const queued = !u.loaded && !u.error;
   const state = u.error ? "ارسال نشد" : queued ? "در صف…" : `${formatSize(u.loaded)} / ${formatSize(u.total)}`;
+  const voice = !!u.extra && isVoice(u.extra);
   return (
     <div className="row"><div className={"msg mine first last" + (u.error ? " failed" : "")}><div className="msg-col">
-      <div className={"bubble" + (u.previewUrl ? " media" : "")} dir="auto">
-        {u.previewUrl ? (
+      <div className={"bubble" + (u.previewUrl && !voice ? " media" : "")} dir="auto">
+        {voice ? (
+          // looks like the voice note it becomes, the ring where play will be
+          <AudioPlayer track={{ id: "upload:" + u.id, load: () => Promise.resolve(u.previewUrl!), duration: audioDuration(u.extra!),
+            waveform: (u.extra!["org.matrix.msc1767.audio"] as { waveform?: number[] } | undefined)?.waveform }}
+            lead={u.error ? <span className="file-icon"><Icon name="mic" /></span> : <Ring u={u} />} />
+        ) : u.previewUrl ? (
           <div className="media-box up-box">
             {u.file.type.startsWith("video/") ? <video src={u.previewUrl} preload="metadata" muted /> : <img src={u.previewUrl} alt="" />}
             {!u.error && <Ring u={u} />}

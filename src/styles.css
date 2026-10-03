@@ -593,6 +593,8 @@ input[role="switch"]:checked::before { transform: translateX(-18px); }
 .voice { display: flex; align-items: center; gap: 10px; min-width: 220px; max-width: 320px; padding: 2px 0; }
 .voice-play { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--accent); color: #fff; }
 .voice-play .spinner.inline { margin: 0; }
+.voice > .up-ring, .voice > .file-icon { width: 44px; height: 44px; background: var(--accent); color: #fff; } /* an uploading voice note: where play will be */
+.voice > .up-ring .up-track { stroke: rgba(255, 255, 255, 0.3); }
 .voice-body { flex: 1; min-width: 0; display: grid; gap: 3px; }
 .voice-title { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wave { display: flex; align-items: center; gap: 2px; height: 26px; cursor: pointer; }
