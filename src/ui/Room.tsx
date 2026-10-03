@@ -194,7 +194,7 @@ function ThreadView({ room, threadId, view, info, profile, forward }: ThreadProp
   return (
     <DropZone onFiles={(f) => setFiles((x) => [...x, ...f])}>
       <Timeline room={room} thread={room.getThread(threadId)!} actions={actions} jumpRef={jumper} />
-      <Composer room={room} threadId={threadId} mode={mode} setMode={setMode} files={files} setFiles={setFiles} />
+      <Upgraded room={room}><Composer room={room} threadId={threadId} mode={mode} setMode={setMode} files={files} setFiles={setFiles} /></Upgraded>
     </DropZone>
   );
 }
