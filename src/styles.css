@@ -850,9 +850,11 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
   opacity: var(--sp, 0); transform: scale(calc(0.5 + 0.5 * var(--sp, 0)));
 }
 .msg.snap .swipe-ico { transition: opacity 0.2s, transform 0.2s; }
+/* touch: a long-press opens our menus, so it mustn't also start a text selection (copy is in the menu) */
 @media (hover: none) {
-  .bubble { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-  .bubble a, .bubble img { -webkit-touch-callout: none; }
+  body, body * { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  body input, body textarea { user-select: text; -webkit-user-select: text; }
+  .recovery-key { user-select: all; -webkit-user-select: all; }
 }
 .msg-menu { z-index: 46; min-width: 220px; max-width: calc(100vw - 16px); padding: 6px; }
 .msg-menu:focus { outline: none; }
