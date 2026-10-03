@@ -2,6 +2,7 @@ import { client, openDM } from "./matrix.ts";
 import { errText } from "./ui/common.tsx";
 import { requestJump } from "./ui/Search.tsx";
 import { parseMatrixHash, parseMatrixLink, type Target } from "./uri.ts";
+import { alertDialog, confirmDialog } from "./ui/dialog.tsx";
 
 /** Links that arrived before the first sync (cold start): the Shell drains them once it can navigate. */
 const queue: string[] = [];
@@ -15,7 +16,7 @@ export function handleIncomingLink(link: string) {
 
 /** Calls `run` for queued and future links. Only call while synced. Returns an unsubscribe. */
 export function drainLinks() {
-  const flush = () => { for (const l of queue.splice(0)) openLink(l).catch((e) => alert(errText(e))); };
+  const flush = () => { for (const l of queue.splice(0)) openLink(l).catch((e) => alertDialog(errText(e))); };
   window.addEventListener(EVENT, flush);
   flush();
   return () => window.removeEventListener(EVENT, flush);
@@ -33,14 +34,14 @@ async function openLink(link: string) {
 export async function openTarget(t: Target) {
   if (t.kind === "user") {
     if (t.id === client.getUserId()) return;
-    if (!confirm(`گفتگوی خصوصی با ${t.id} باز شود؟`)) return;
+    if (!(await confirmDialog(`گفتگوی خصوصی با ${t.id} باز شود؟`))) return;
     location.hash = await openDM(t.id);
     return;
   }
   let roomId = joinedRoom(t.id)?.roomId;
   let via = t.via;
   if (!roomId) {
-    if (!confirm(`به ${t.id} پیوسته شود؟`)) return;
+    if (!(await confirmDialog(`به ${t.id} پیوسته شود؟`))) return;
     if (t.kind === "roomAlias") {
       const r = await client.getRoomIdForAlias(t.id);
       via = via.length ? via : r.servers;

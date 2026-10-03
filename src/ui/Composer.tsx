@@ -8,6 +8,7 @@ import { isMessage } from "../hooks.ts";
 import { VoiceRecorder } from "./Voice.tsx";
 import { PollForm } from "./Poll.tsx";
 import { EmojiPanel, sendSticker } from "./Emoji.tsx";
+import { alertDialog, confirmDialog } from "./dialog.tsx";
 
 export type Mode = { kind: "reply" | "edit"; ev: MatrixEvent } | null;
 const MEDIA = ["m.image", "m.video", "m.file"];
@@ -156,22 +157,22 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
   }
 
   function shareLocation() {
-    if (!navigator.geolocation) return alert("این مرورگر موقعیت مکانی را پشتیبانی نمی‌کند.");
+    if (!navigator.geolocation) return alertDialog("این مرورگر موقعیت مکانی را پشتیبانی نمی‌کند.");
     setLocating(true);
-    navigator.geolocation.getCurrentPosition((p) => {
+    navigator.geolocation.getCurrentPosition(async (p) => {
       setLocating(false);
       const { latitude: lat, longitude: lon, accuracy } = p.coords;
       const acc = Math.round(accuracy);
-      if (!confirm(`موقعیت فعلی شما (با دقت حدود ${num(acc)} متر) ارسال شود؟`)) return;
+      if (!(await confirmDialog(`موقعیت فعلی شما (با دقت حدود ${num(acc)} متر) ارسال شود؟`))) return;
       const la = +lat.toFixed(6), lo = +lon.toFixed(6);
       // body keeps a map link for clients that don't show locations
       const content: Record<string, unknown> = ContentHelpers.makeLocationContent(`موقعیت مکانی ${osmUrl(la, lo)}`, `geo:${la},${lo};u=${acc}`, Date.now(), null, LocationAssetType.Self);
       if (mode?.kind === "reply") content["m.relates_to"] = { "m.in_reply_to": { event_id: mode.ev.getId() } };
       setMode(null);
-      client.sendMessage(room.roomId, threadId, content as never).catch((e) => alert(errText(e)));
+      client.sendMessage(room.roomId, threadId, content as never).catch((e) => alertDialog(errText(e)));
     }, (e) => {
       setLocating(false);
-      alert(e.code === e.PERMISSION_DENIED ? "اجازه‌ی دسترسی به موقعیت مکانی داده نشد." : "موقعیت مکانی پیدا نشد.");
+      alertDialog(e.code === e.PERMISSION_DENIED ? "اجازه‌ی دسترسی به موقعیت مکانی داده نشد." : "موقعیت مکانی پیدا نشد.");
     }, { enableHighAccuracy: true, timeout: 15_000 });
   }
 
@@ -203,7 +204,7 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
 
   function pickSticker(s: Sticker) {
     setEmoji(false);
-    sendSticker(room, threadId, s, mode?.kind === "reply" ? mode.ev : undefined).catch((e) => alert(errText(e)));
+    sendSticker(room, threadId, s, mode?.kind === "reply" ? mode.ev : undefined).catch((e) => alertDialog(errText(e)));
     setMode(null);
   }
 

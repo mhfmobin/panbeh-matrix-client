@@ -16,6 +16,7 @@ import { ForwardSheet } from "./Forward.tsx";
 import { pendingJump, SearchSheet } from "./Search.tsx";
 import { MediaViewer, timelineMedia } from "./Media.tsx";
 import { Predecessor, Upgraded } from "./Admin.tsx";
+import { alertDialog, confirmDialog } from "./dialog.tsx";
 
 export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
   useTick(client, [RoomMemberEvent.Typing, "Room.myMembership", "Room.name"]);
@@ -77,9 +78,9 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
     setSel(null);
   };
   const canDel = picked.length > 0 && picked.every((e) => e.getSender() === me() || room.currentState.maySendRedactionForEvent(e, me()));
-  const delSel = () => {
-    if (!confirm(`${num(picked.length)} پیام برای همه حذف شود؟`)) return;
-    Promise.all(picked.map((e) => client.redactEvent(room.roomId, e.getId()!))).catch((e) => alert(errText(e)));
+  const delSel = async () => {
+    if (!(await confirmDialog(`${num(picked.length)} پیام برای همه حذف شود؟`, { danger: true }))) return;
+    Promise.all(picked.map((e) => client.redactEvent(room.roomId, e.getId()!))).catch((e) => alertDialog(errText(e)));
     setSel(null);
   };
 
@@ -102,7 +103,7 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
     return jumper.current?.(id, maxPages) ?? false;
   }
 
-  const searchJump = async (id: string, maxPages?: number) => { if (!(await jump(id, maxPages))) alert("این پیام خیلی قدیمی است"); };
+  const searchJump = async (id: string, maxPages?: number) => { if (!(await jump(id, maxPages))) alertDialog("این پیام خیلی قدیمی است"); };
   // a result picked in the sidebar: on mount (room just opened) and via event (room already open)
   const jumpRef = useRef(searchJump);
   jumpRef.current = searchJump;
@@ -201,7 +202,7 @@ function ThreadView({ room, threadId, view, info, profile, forward }: ThreadProp
 
 function Invite({ room }: { room: SdkRoom }) {
   const [busy, setBusy] = useState(false);
-  const act = (fn: () => Promise<unknown>) => { setBusy(true); fn().catch((e) => alert(errText(e))).finally(() => setBusy(false)); };
+  const act = (fn: () => Promise<unknown>) => { setBusy(true); fn().catch((e) => alertDialog(errText(e))).finally(() => setBusy(false)); };
   return (
     <div className="invite">
       <RoomAvatar room={room} size={88} />

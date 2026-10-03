@@ -6,6 +6,7 @@ import { Icon } from "../icons.tsx";
 import { Avatar, errText, me, Sheet } from "./common.tsx";
 import { MemberAdmin } from "./Admin.tsx";
 import { showVerification, useUserTrust } from "./Verify.tsx";
+import { alertDialog, confirmDialog } from "./dialog.tsx";
 
 /** Someone's profile with a shortcut to message them. */
 export function UserProfile({ userId, room, onClose, onOpened }: { userId: string; room?: Room; onClose: () => void; onOpened?: () => void }) {
@@ -20,7 +21,7 @@ export function UserProfile({ userId, room, onClose, onOpened }: { userId: strin
   const blocked = client.isUserIgnored(userId);
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);
-    try { await fn(); } catch (e) { alert(errText(e)); }
+    try { await fn(); } catch (e) { alertDialog(errText(e)); }
     setBusy(false);
   };
   const open = async () => {
@@ -30,7 +31,7 @@ export function UserProfile({ userId, room, onClose, onOpened }: { userId: strin
       onClose();
       onOpened?.();
     } catch (e) {
-      alert(errText(e));
+      alertDialog(errText(e));
       setBusy(false);
     }
   };
@@ -55,7 +56,7 @@ export function UserProfile({ userId, room, onClose, onOpened }: { userId: strin
       )}
       {other && (
         <button className="danger" disabled={busy}
-          onClick={() => (blocked || confirm(`${name} مسدود شود؟ دیگر پیام و دعوتی از او نمی‌بینید.`)) && act(() => setBlocked(userId, !blocked))}>
+          onClick={async () => { if (blocked || await confirmDialog(`${name} مسدود شود؟ دیگر پیام و دعوتی از او نمی‌بینید.`, { danger: true })) act(() => setBlocked(userId, !blocked)); }}>
           {blocked ? "رفع مسدودیت" : "مسدود کردن"}
         </button>
       )}

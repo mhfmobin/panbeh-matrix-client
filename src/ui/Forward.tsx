@@ -5,6 +5,7 @@ import { useRooms } from "../hooks.ts";
 import { num } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 import { errText, RoomAvatar, Sheet } from "./common.tsx";
+import { alertDialog } from "./dialog.tsx";
 
 /** `evs` in timeline order; onSent runs after a successful send (the caller leaves selection mode). */
 export function ForwardSheet({ evs, onClose, onSent }: { evs: MatrixEvent[]; onClose: () => void; onSent?: () => void }) {
@@ -23,7 +24,7 @@ export function ForwardSheet({ evs, onClose, onSent }: { evs: MatrixEvent[]; onC
       onClose();
       if (sel.length === 1) location.hash = sel[0];
     } catch (e) {
-      alert(errText(e));
+      alertDialog(errText(e));
       setBusy(false);
     }
   };

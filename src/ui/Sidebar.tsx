@@ -15,6 +15,7 @@ import { NewChat } from "./NewChat.tsx";
 import { RoomInfo } from "./RoomInfo.tsx";
 import { MessageResults, requestJump } from "./Search.tsx";
 import { QuickSwitch } from "./QuickSwitch.tsx";
+import { alertDialog, confirmDialog } from "./dialog.tsx";
 
 type Props = { selected?: string; onSelect: (id: string) => void; onSettings: () => void; banner?: ReactNode };
 const FOLDER_KEY = () => `panbeh.folder:${client.getUserId()}`;
@@ -238,7 +239,7 @@ function ChatMenu({ row, x, y, onClose }: Menu & { onClose: () => void }) {
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
   }, [onClose]);
-  const run = (fn: () => Promise<unknown>) => { onClose(); fn().catch((e) => alert(errText(e))); };
+  const run = (fn: () => Promise<unknown>) => { onClose(); fn().catch((e) => alertDialog(errText(e))); };
   const ops = chatOps(row), unread = ops.unread;
   const backdrop = useBackdropHold(onClose, ".room-item"); // holding another chat switches the menu to it
   return (
@@ -253,7 +254,7 @@ function ChatMenu({ row, x, y, onClose }: Menu & { onClose: () => void }) {
         <button role="menuitem" onClick={() => run(() => setMuted(room, !row.muted))}>
           <Icon name={row.muted ? "bell" : "bellOff"} /> {row.muted ? "صدادار" : "بی‌صدا"}</button>
         <button role="menuitem" className="danger-item"
-          onClick={() => confirm(`از «${room.name}» خارج می‌شوید و از فهرست حذف می‌شود؟`) && run(() => leaveAndForget(room))}>
+          onClick={() => confirmDialog(`از «${room.name}» خارج می‌شوید و از فهرست حذف می‌شود؟`, { danger: true }).then((y) => y && run(() => leaveAndForget(room)))}>
           <Icon name="trash" /> حذف و خروج</button>
       </div>
     </div>

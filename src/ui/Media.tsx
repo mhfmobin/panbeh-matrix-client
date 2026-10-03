@@ -8,6 +8,7 @@ import { errText, previewText, senderName, Sheet } from "./common.tsx";
 import { FileRow } from "./Message.tsx";
 import { AudioPlayer, trackFor } from "./Voice.tsx";
 import { requestJump } from "./Search.tsx";
+import { alertDialog } from "./dialog.tsx";
 
 type Content = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -106,7 +107,7 @@ export function MediaViewer({ items, start, onClose, onJump }: { items: MatrixEv
       const url = await mediaUrl(c);
       if (url) Object.assign(document.createElement("a"), { href: url, download: fileName(c) }).click();
     } catch (e) {
-      alert(errText(e));
+      alertDialog(errText(e));
     }
   };
 
