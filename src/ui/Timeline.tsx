@@ -186,6 +186,11 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   }, [flash]);
 
   const lastIsMine = lastEv?.getSender() === me();
+  // Virtuoso asks followOutput on every count increase, prepended history included: follow only when the end changed
+  const lastKey = rows.at(-1)?.key;
+  const prevLast = useRef(lastKey);
+  const appended = prevLast.current !== lastKey;
+  useEffect(() => { prevLast.current = lastKey; });
   const toBottom = () => { stuck.current = true; list.current?.scrollToIndex({ index: "LAST", align: "end" }); };
   const unread = thread ? 0 : room.getUnreadNotificationCount();
   // Virtuoso mounted with no data stays hidden waiting for its initial "LAST" scroll, so wait for rows
@@ -208,7 +213,7 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
       firstItemIndex={firstItemIndex}
       initialTopMostItemIndex={divider >= 0 ? { index: divider, align: "start" } : { index: "LAST", align: "end" }}
       alignToBottom
-      followOutput={() => (stuck.current || lastIsMine ? "smooth" : false)}
+      followOutput={() => (appended && (stuck.current || lastIsMine) ? "smooth" : false)}
       ref={list}
       scrollerRef={scrollerRef}
       atBottomStateChange={(b) => { if (b && Date.now() > jumpingUntil.current && Date.now() > pagingUntil.current) stuck.current = true; setAtBottom(b); }}
