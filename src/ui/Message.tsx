@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import DOMPurify from "dompurify";
+import { handleIncomingLink } from "../openTarget.ts";
+import { parseMatrixLink } from "../uri.ts";
 import { EventStatus, EventType, M_POLL_START, RelationType, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { avatarUrl, client, mediaUrl, pinnedIds, seenBy, togglePin } from "../matrix.ts";
 import { usePromise } from "../hooks.ts";
@@ -325,7 +327,12 @@ function Html({ html, room, onUser }: { html: string; room: Room; onUser: (id: s
       return;
     }
     const a = t.closest<HTMLAnchorElement>("a.mention");
-    if (!a) return;
+    if (!a) {
+      // other matrix.to links (events, ?via) and matrix: URIs open inside the app
+      const l = t.closest<HTMLAnchorElement>("a[href]");
+      if (l && parseMatrixLink(l.getAttribute("href")!)) { e.preventDefault(); e.stopPropagation(); handleIncomingLink(l.getAttribute("href")!); }
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     if (a.dataset.mxid!.startsWith("@")) onUser(a.dataset.mxid!);
@@ -335,8 +342,11 @@ function Html({ html, room, onUser }: { html: string; room: Room; onUser: (id: s
 }
 
 function linkify(text: string) {
-  return text.split(/(https?:\/\/[^\s<]+[^\s<.,;:!?)"'])/g).map((part, i) =>
-    i % 2 ? <a key={i} href={part} target="_blank" rel="noreferrer noopener">{part}</a> : part);
+  return text.split(/((?:https?:\/\/|matrix:)[^\s<]+[^\s<.,;:!?)"'])/g).map((part, i) => {
+    if (!(i % 2)) return part;
+    if (part.startsWith("matrix:") && !parseMatrixLink(part)) return part;
+    return <a key={i} href={part} target="_blank" rel="noreferrer noopener" onClick={parseMatrixLink(part) ? (e) => { e.preventDefault(); handleIncomingLink(part); } : undefined}>{part}</a>;
+  });
 }
 
 type Content = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any

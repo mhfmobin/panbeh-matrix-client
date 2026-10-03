@@ -13,7 +13,9 @@ interface PanbehPlugin {
   requestNotifyPermission(): Promise<{ permission: Status["permission"] }>;
   requestBatteryExemption(): Promise<void>;
   takeLaunchRoom(): Promise<{ roomId?: string | null }>;
+  takeLaunchLink(): Promise<{ link?: string | null }>;
   addListener(e: "openRoom", f: (d: { roomId: string }) => void): Promise<PluginListenerHandle>;
+  addListener(e: "openLink", f: (d: { link: string }) => void): Promise<PluginListenerHandle>;
 }
 type Headless = { showNotification(json: string): void; cancel(roomId: string): void; stopService(): void };
 
@@ -47,6 +49,14 @@ export function onOpenRoom(open: (roomId: string) => void) {
   if (!isNative || headless) return () => {};
   plugin.takeLaunchRoom().then((r) => r.roomId && open(r.roomId), () => {});
   const h = plugin.addListener("openRoom", (d) => open(d.roomId));
+  return () => { h.then((x) => x.remove()); };
+}
+
+/** matrix.to / matrix: links opened with the app (VIEW intents): now (cold start) and later. Returns an unsubscribe. */
+export function onOpenLink(open: (link: string) => void) {
+  if (!isNative || headless) return () => {};
+  plugin.takeLaunchLink().then((r) => r.link && open(r.link), () => {});
+  const h = plugin.addListener("openLink", (d) => open(d.link));
   return () => { h.then((x) => x.remove()); };
 }
 

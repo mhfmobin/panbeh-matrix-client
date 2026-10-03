@@ -14,6 +14,8 @@ files:
 protocols:
   - name: Panbeh login
     schemes: [ir.panbeh.app] # OAuth comes back through this; see src/matrix.ts
+  - name: Matrix link
+    schemes: [matrix] # matrix:r/room:server and friends; see src/uri.ts
 publish:
   provider: github
   owner: mhfmobin

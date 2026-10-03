@@ -4,8 +4,11 @@ import { ClientEvent, SyncState } from "matrix-js-sdk";
 import { cancelAdd, client, finishOAuth, isAdding, isOAuthCallback, logout, recoveryState, savedSession, start } from "./matrix.ts";
 import { useTick } from "./hooks.ts";
 import { startNotifications } from "./notify.ts";
-import { isHeadless, isNative, onOpenRoom, requestNotifyPermission, setBackgroundService } from "./native.ts";
+import { isHeadless, isNative, onOpenLink, onOpenRoom, requestNotifyPermission, setBackgroundService } from "./native.ts";
 import { startBackButton } from "./back.ts";
+import { drainLinks, handleIncomingLink } from "./openTarget.ts";
+import { onDesktopLink } from "./desktop.ts";
+import { parseMatrixHash } from "./uri.ts";
 import { isMarkedUnread, setMarkedUnread } from "./chats.ts";
 import { Login } from "./ui/Login.tsx";
 import { Sidebar } from "./ui/Sidebar.tsx";
@@ -18,6 +21,8 @@ import "@fontsource-variable/vazirmatn";
 import "./styles.css";
 
 applyPrefs();
+// web: let the browser offer Panbeh for matrix: links; the hash form is picked up by Shell (see parseMatrixHash)
+try { navigator.registerProtocolHandler?.("matrix", location.origin + location.pathname + "#/?uri=%s"); } catch { /* unsupported or not secure */ }
 
 function App() {
   const [phase, setPhase] = useState<"boot" | "login" | "ready" | "error">((savedSession() && !isAdding()) || isOAuthCallback() ? "boot" : "login");
@@ -63,6 +68,11 @@ function Shell() {
   useEffect(startNotifications, []);
   useEffect(startBackButton, []);
   useEffect(() => onOpenRoom((id) => { location.hash = id; }), []);
+  useEffect(() => { // links from outside (Android intents, desktop protocol handler, web handler) wait here until the first sync
+    const off = [onOpenLink(handleIncomingLink), onDesktopLink(handleIncomingLink)];
+    return () => off.forEach((f) => f());
+  }, []);
+  useEffect(() => (synced ? drainLinks() : undefined), [synced]);
   useEffect(() => { // Android: first start asks for notification permission, then keeps syncing in the background
     if (!isNative || !loadPrefs().notify) return;
     requestNotifyPermission().then((p) => setBackgroundService(p === "granted"), () => {});
@@ -72,7 +82,11 @@ function Shell() {
     if (r && isMarkedUnread(r)) setMarkedUnread(r, false).catch(() => {});
   }, [roomId, synced]);
   useEffect(() => {
-    const onHash = () => setRoomId(location.hash.slice(1) || undefined);
+    const onHash = () => {
+      // a pasted matrix.to-style hash (#/!room:server/$event) is a link, not a room id
+      if (parseMatrixHash(location.hash)) { handleIncomingLink(location.hash); history.replaceState(null, "", location.pathname + location.search); return; }
+      setRoomId(location.hash.slice(1) || undefined);
+    };
     addEventListener("hashchange", onHash);
     return () => removeEventListener("hashchange", onHash);
   }, []);

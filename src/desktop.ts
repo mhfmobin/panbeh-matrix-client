@@ -6,6 +6,7 @@ type Bridge = {
   autostart(on?: boolean): Promise<boolean>;
   info(): Promise<{ version: string; platform: string; visible: boolean }>;
   onVisibility(cb: (visible: boolean) => void): () => void;
+  onLink(cb: (link: string) => void): () => void;
 };
 
 const bridge = (window as unknown as { panbehDesktop?: Bridge }).panbehDesktop;
@@ -35,3 +36,6 @@ export function onWindowVisibility(f: () => void) {
   document.addEventListener("visibilitychange", f);
   return () => { listeners.delete(f); document.removeEventListener("visibilitychange", f); };
 }
+
+/** matrix.to / matrix: links the OS or a click handed to the app. Returns an unsubscribe. */
+export const onDesktopLink = (cb: (link: string) => void) => bridge?.onLink(cb) ?? (() => {});

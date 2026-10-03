@@ -92,3 +92,7 @@ macOS one.
 
 All the libraries the web app uses are `devDependencies`, because vite bundles them into `dist/`: whatever
 is in `dependencies` gets packed into the desktop app as is. Only `electron-updater` belongs there.
+
+## Links
+
+Panbeh registers the `matrix:` scheme (see `protocols` in `electron-builder.yml`), so `matrix:r/room:server`, `matrix:u/user:server` and `matrix:roomid/…/e/…` open in the app. Clicking a `matrix.to` link inside a message opens it in the app too. `matrix.to` links clicked in other apps stay with the browser: a desktop app can't claim an https host it doesn't own.
