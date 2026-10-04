@@ -12,13 +12,16 @@ import { desktopVersion, getAutostart, isDesktop, setAutostart } from "../deskto
 import { isNative, nativeCancelAll, nativeStatus, requestBatteryExemption, requestFullScreen, requestNotifyPermission, setBackgroundService } from "../native.ts";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 
-type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; previews: boolean; shareLastSeen: boolean };
+type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; previews: boolean; shareLastSeen: boolean; dev: boolean; legacyCalls: boolean };
 const ACCENTS = ["#3390ec", "#8774e1", "#40a7a0", "#e5864a", "#e0578b", "#4fae4e"];
 const WALLPAPERS = { doodle: "طرح‌دار", gradient: "گرادیان", plain: "ساده" };
 const THEMES = { system: "سیستم", light: "روشن", dark: "تیره" };
 
 // the Android app defaults to notifying: it asks for permission on first start. The desktop app needs no permission.
-export const loadPrefs = (): Prefs => ({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, previews: true, shareLastSeen: true, ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
+export const loadPrefs = (): Prefs => ({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, previews: true, shareLastSeen: true, dev: false, legacyCalls: false, ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
+
+/** Answering legacy m.call.* calls: developer options only. */
+export const legacyCallsOn = () => { const p = loadPrefs(); return p.dev && p.legacyCalls; };
 
 export function applyPrefs(p = loadPrefs()) {
   const root = document.documentElement;
@@ -112,6 +115,14 @@ export function Settings({ onClose, onSecurityChange }: { onClose: () => void; o
 
       <h3>رمزنگاری</h3>
       <Encryption onChange={onSecurityChange} />
+
+      <h3>گزینه‌های توسعه‌دهنده</h3>
+      <label className="switch-row"><span>گزینه‌های توسعه‌دهنده<small>امکانات آزمایشی و قدیمی</small></span>
+        <input type="checkbox" role="switch" checked={prefs.dev} onChange={(e) => set({ dev: e.target.checked })} /></label>
+      {prefs.dev && (
+        <label className="switch-row"><span>دریافت تماس‌های قدیمی<small>تماس از FluffyChat، Nheko و Element قدیمی</small></span>
+          <input type="checkbox" role="switch" checked={prefs.legacyCalls} onChange={(e) => set({ legacyCalls: e.target.checked })} /></label>
+      )}
 
       <button className="danger" onClick={() => confirmDialog("از این دستگاه خارج می‌شوید؟", { danger: true }).then((y) => y && void logout())}>خروج از این حساب</button>
     </Sheet>

@@ -314,17 +314,6 @@ export const isLegacyRing = (c: Invite, ts: number, me: string, now = Date.now()
   ts + (c.lifetime ?? 0) > now && (!c.invitee || c.invitee === me);
 export const isVideoOffer = (c: Invite) => /^m=video/m.test(c.offer?.sdp ?? "");
 
-/** How to call back in a DM: the way the other side last called us (legacy m.call.invite or MatrixRTC ring), MatrixRTC if they never did. Oldest first. */
-export function pickProtocol(evs: { type: string; sender: string }[], me: string): "legacy" | "rtc" {
-  for (let i = evs.length; i--;) {
-    const { type, sender } = evs[i];
-    if (sender === me) continue;
-    if (type === "m.call.invite") return "legacy";
-    if (type.endsWith("rtc.notification")) return "rtc";
-  }
-  return "rtc";
-}
-
 // ---------- how a call went (for its line in the timeline) ----------
 
 export type CallEv = { id?: string; type: string; sender: string; ts: number; content: Record<string, any> };

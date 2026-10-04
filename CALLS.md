@@ -4,7 +4,7 @@ Panbeh's voice and video calls are MatrixRTC calls, the same kind Element Call a
 
 Calls interoperate with Element X and with Element Web/Desktop when Element Call is enabled.
 
-Legacy 1:1 `m.call.*` calls (FluffyChat, Nheko, SchildiChat, Element without Element Call) ring and can be answered too. In a DM, Panbeh calls back the way the other person last called. Right-click or long-press the call button to pick the other kind. Those calls are peer to peer and don't use LiveKit at all. They only need the TURN server from step 5, and they work in DMs even without steps 1 to 3.
+Legacy 1:1 `m.call.*` calls (FluffyChat, Nheko, SchildiChat, Element without Element Call) are off by default: Panbeh always calls with MatrixRTC, and an incoming legacy call only shows a notification saying it isn't supported. Turn on Settings › Developer options › «دریافت تماس‌های قدیمی» to ring and answer them; with developer options on, right-click or long-press the call button in a DM to place one. Those calls are peer to peer and don't use LiveKit at all. They only need the TURN server from step 5, and they work in DMs even without steps 1 to 3.
 
 ## 1. LiveKit
 

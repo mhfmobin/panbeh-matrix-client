@@ -233,7 +233,7 @@ export function Select<T extends string | number>({ value, options, onChange, di
         <span>{options.find(([v]) => v === value)?.[1] ?? String(value)}</span><Icon name="down" size={18} />
       </button>
       {at && createPortal(
-        <div className="chat-menu-backdrop msg-menu-backdrop" onClick={() => setAt(null)}>
+        <div className="chat-menu-backdrop msg-menu-backdrop select-backdrop" onClick={() => setAt(null)}>
           <div className="chat-menu msg-menu select-menu" role="listbox" tabIndex={-1} ref={menu} onClick={(e) => e.stopPropagation()}
             style={{ minWidth: at.width, ...(pos ?? { left: 0, top: 0, visibility: "hidden" }) }}>
             {options.map(([v, label]) => (

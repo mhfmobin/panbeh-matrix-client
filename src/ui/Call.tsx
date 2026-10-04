@@ -5,27 +5,28 @@ import { CallState } from "matrix-js-sdk/lib/webrtc/call.js";
 import type { CallFeed } from "matrix-js-sdk/lib/webrtc/callFeed.js";
 import { ConnectionQuality, ConnectionState, Track, type VideoTrack } from "livekit-client";
 import { allowCalls, client, isDirect } from "../matrix.ts";
-import { answer, call, decline, flipCam, getCall, handOf, hangup, loadDevices, membershipOf, minimize, myMedia, ourTransport, protocolFor, react, reactionOf, REACTIONS, setAudioRoute, setDevice, setNoiseSuppression, toggleCam, toggleHand, toggleMic, toggleScreen, toggleSpeaker, useCall, type Active, type Incoming } from "../call.ts";
+import { answer, call, decline, flipCam, getCall, handOf, hangup, loadDevices, membershipOf, minimize, myMedia, ourTransport, react, reactionOf, REACTIONS, setAudioRoute, setDevice, setNoiseSuppression, toggleCam, toggleHand, toggleMic, toggleScreen, toggleSpeaker, useCall, type Active, type Incoming } from "../call.ts";
 import { usePromise, useTick } from "../hooks.ts";
 import { fmtDuration, num } from "../logic.ts";
 import { isNative, nativeAudioRoutes, nativePip, type AudioRoute } from "../native.ts";
 import { onPickSource, type ShareSource } from "../desktop.ts";
 import { pushBack } from "../back.ts";
 import { Icon, type IconName } from "../icons.tsx";
-import { Avatar, errText, me, RoomAvatar } from "./common.tsx";
+import { Avatar, errText, me, RoomAvatar, Select } from "./common.tsx";
+import { loadPrefs } from "./Settings.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 
 const run = (p: Promise<unknown> | void) => { p?.catch((e) => alertDialog(errText(e))); };
 const canShare = !isNative && !!navigator.mediaDevices?.getDisplayMedia;
 
 /**
- * Starts a call after ending another one. legacy: a peer-to-peer m.call.* call (DMs only); unset = call back the way they
- * last called, or legacy when our server has no SFU. MatrixRTC needs power to send m.call.member, which an admin can grant.
+ * Starts a call after ending another one. legacy: a peer-to-peer m.call.* call (DMs only); unset = MatrixRTC, or legacy in a DM
+ * when our server has no SFU and developer options are on. MatrixRTC needs power to send m.call.member, which an admin can grant.
  */
 export async function start(room: Room, video: boolean, legacy?: boolean) {
   const { active } = getCall();
   if (active && active.room !== room && !(await confirmDialog("تماس فعلی پایان یابد؟", { ok: "پایان و تماس", danger: true }))) return;
-  legacy ??= isDirect(room) && (protocolFor(room) === "legacy" || !(await ourTransport()));
+  legacy ??= loadPrefs().dev && isDirect(room) && !(await ourTransport());
   if (!legacy && !room.currentState.maySendStateEvent(EventType.GroupCallMemberPrefix, me())) {
     if (!room.currentState.maySendStateEvent(EventType.RoomPowerLevels, me())) return alertDialog("مدیر گروه هنوز تماس را برای اعضا فعال نکرده است");
     if (!(await confirmDialog("تماس در این گروه فعال شود؟ اعضا می‌توانند به تماس بپیوندند."))) return;
@@ -34,25 +35,25 @@ export async function start(room: Room, video: boolean, legacy?: boolean) {
   await call(room, video, true, legacy);
 }
 
-/** Voice and video buttons for the room header. DMs always have them (legacy calls need no SFU); groups only with an SFU. */
+/** Voice and video buttons for the room header: with an SFU, or in a DM with developer options on (legacy calls need none). */
 export function CallButtons({ room }: { room: Room }) {
   const sfu = usePromise(ourTransport());
   const [menu, setMenu] = useState<{ x: number; y: number; video: boolean } | null>(null);
-  const dm = isDirect(room);
-  if (!sfu && !dm) return null;
-  // right-click / long-press in a DM: pick the other kind of call by hand
-  const pick = (video: boolean) => dm && sfu ? (e: React.MouseEvent) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, video }); } : undefined;
+  const dm = isDirect(room), dev = loadPrefs().dev;
+  if (!sfu && !(dm && dev)) return null;
+  // developer options, right-click / long-press in a DM: pick a legacy call by hand
+  const pick = (video: boolean) => dm && sfu && dev ? (e: React.MouseEvent) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, video }); } : undefined;
   return (
     <>
       <button className="icon-btn" onClick={() => run(start(room, false))} onContextMenu={pick(false)} title="تماس صوتی" aria-label="تماس صوتی"><Icon name="phone" /></button>
       <button className="icon-btn" onClick={() => run(start(room, true))} onContextMenu={pick(true)} title="تماس تصویری" aria-label="تماس تصویری"><Icon name="video" /></button>
       {menu && (
-        <div className="chat-menu-backdrop" onClick={() => setMenu(null)}>
-          <div className="chat-menu" role="menu" style={{ left: Math.max(8, Math.min(menu.x - 260, innerWidth - 268)), top: menu.y }}>
+        <div className="chat-menu-backdrop msg-menu-backdrop" onClick={() => setMenu(null)}>
+          <div className="chat-menu msg-menu" role="menu" style={{ left: Math.max(8, Math.min(menu.x - 260, innerWidth - 268)), top: menu.y }}>
             <button role="menuitem" onClick={() => run(start(room, menu.video, false))}>
-              <Icon name={menu.video ? "video" : "phone"} /> تماس به روش جدید (Element X، پنبه)</button>
+              <Icon name={menu.video ? "video" : "phone"} /> تماس</button>
             <button role="menuitem" onClick={() => run(start(room, menu.video, true))}>
-              <Icon name={menu.video ? "video" : "phone"} /> تماس به روش قدیمی (FluffyChat، Element قدیمی)</button>
+              <Icon name={menu.video ? "video" : "phone"} /> تماس با روش قدیمی</button>
           </div>
         </div>
       )}
@@ -209,7 +210,7 @@ function CallScreen({ a }: { a: Active }) {
         {isNative && <CallBtn icon="speaker" label="بلندگو" on={a.speaker} onClick={() => run(speakerBtn())} />}
         {canShare && <CallBtn icon="screen" label="اشتراک صفحه" on={m.screen} onClick={() => run(toggleScreen())} />}
         {group && <CallBtn icon="hand" label="بالا بردن دست" on={handOf(membershipOf(a.session, a.lk.localParticipant.identity)?.eventId)} onClick={() => run(toggleHand())} />}
-        {group && <CallBtn icon="smile" label="واکنش" on={panel === "reactions"} onClick={() => toggle("reactions")} />}
+        {a.kind === "rtc" && <CallBtn icon="smile" label="واکنش" on={panel === "reactions"} onClick={() => toggle("reactions")} />}
         {group && <CallBtn icon="group" label="شرکت‌کنندگان" on={panel === "people"} onClick={() => toggle("people")} />}
         {!isNative && <CallBtn icon="settings" label="میکروفون، دوربین و بلندگو" on={panel === "devices"} onClick={() => toggle("devices")} />}
         <CallBtn icon="hangup" label="پایان" danger onClick={() => run(hangup())} />
@@ -262,16 +263,13 @@ function Devices() {
       if (!list.length || (kind === "audiooutput" && !canPickOutput)) return null;
       return (
         <label key={kind}>{label}
-          <select value={d[kind] ?? ""} onChange={(e) => run(setDevice(kind, e.target.value))}>
-            {!d[kind] && <option value="" disabled>پیش‌فرض سیستم</option>}
-            {list.map((x, i) => <option key={x.deviceId} value={x.deviceId}>{x.label || `${label} ${num(i + 1)}`}</option>)}
-          </select>
+          <Select value={d[kind] ?? ""} onChange={(v) => run(setDevice(kind, v))}
+            options={[...(d[kind] ? [] : [["", "پیش‌فرض سیستم"] as [string, string]]), ...list.map((x, i): [string, string] => [x.deviceId, x.label || `${label} ${num(i + 1)}`])]} />
         </label>
       );
     })}
-    <label className="check">
-      <input type="checkbox" checked={d.noiseSuppression ?? true} onChange={(e) => run(setNoiseSuppression(e.target.checked))} /> حذف نویز
-    </label>
+    <label className="switch-row"><span>حذف نویز</span>
+      <input type="checkbox" role="switch" checked={d.noiseSuppression ?? true} onChange={(e) => run(setNoiseSuppression(e.target.checked))} /></label>
   </>;
 }
 

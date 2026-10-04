@@ -10,7 +10,8 @@ import { avatarUrl, client, isDirect, isEncrypted, loadEvent } from "./matrix.ts
 import { callNotice, isMuted, ringtone, waitingTone } from "./notify.ts";
 import { senderName } from "./ui/common.tsx";
 import { alertDialog } from "./ui/dialog.tsx";
-import { isGroupCallAlert, isLegacyRing, isRing, isVideoOffer, pickProtocol } from "./logic.ts";
+import { isGroupCallAlert, isLegacyRing, isRing, isVideoOffer } from "./logic.ts";
+import { legacyCallsOn } from "./ui/Settings.tsx";
 import { isHeadless, isNative, nativeCallActive, nativeCancelCall, nativeSetAudioRoute, nativeShowCall, nativeSpeaker, toDataUrl, type CallAction } from "./native.ts";
 import { isWindowVisible, showWindow } from "./desktop.ts";
 
@@ -114,10 +115,6 @@ function legacyDevices() {
 // ---------- the call ----------
 
 let cleanup: (() => void)[] = [];
-
-/** In a DM, call back the way the other side last called us; groups are always MatrixRTC. */
-export const protocolFor = (room: Room) => !isDirect(room) ? "rtc"
-  : pickProtocol(room.getLiveTimeline().getEvents().map((e) => ({ type: e.getType(), sender: e.getSender()! })), client.getSafeUserId());
 
 /** Starts (ring = true) or joins the room's call. One call at a time. */
 export async function call(room: Room, video: boolean, ring = true, legacy = false) {
@@ -564,6 +561,8 @@ function ring(room: Room, ev: MatrixEvent) {
 function ringLegacy(room: Room, ev: MatrixEvent, mc?: MatrixCall) {
   const c = ev.getContent<MCallInviteNegotiate>();
   if (mc?.callHasEnded() || !isLegacyRing(c, ev.getTs(), client.getSafeUserId()) || ev.getSender() === client.getUserId() || !shouldRing(room, ev.getSender()!)) return;
+  // off by default: say so instead of ringing. No reject, so the user's other apps still ring.
+  if (!legacyCallsOn()) return void callNotice(room, `${senderName(ev)} با روش قدیمی تماس گرفت که پشتیبانی نمی‌شود. برای دریافت این تماس‌ها، از تنظیمات › گزینه‌های توسعه‌دهنده «دریافت تماس‌های قدیمی» را روشن کنید.`);
   startRinging({ room, ev, mc, video: isVideoOffer(c) }, ev.getTs() + c.lifetime);
   if (!mc) return; // headless: onEvent stops it on the hangup / answer events
   // caller gave up, or answered/declined on another of our devices
@@ -672,6 +671,7 @@ export async function onNativeCall(a: CallAction) {
   const ev = await loadEvent(room, a.eventId).catch(() => null);
   if (!ev) return;
   const legacy = ev.getType() === EventType.CallInvite;
+  if (legacy && !legacyCallsOn()) return nativeCancelCall(room.roomId); // a ring shown before legacy calls were turned off
   const mc = legacy ? await legacyCallFor(room, ev) : undefined;
   if (a.action === "decline") return declineEvent(room, ev, mc);
   if (a.action === "answer") return legacy ? mc && answerLegacy(room, mc, a.video) : call(room, a.video, false);
