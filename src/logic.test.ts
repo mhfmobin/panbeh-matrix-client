@@ -232,3 +232,10 @@ test("isRing: rings only for fresh rings aimed at us or the room", () => {
   assert.equal(isRing({ notification_type: "notification", "m.mentions": { room: true } }, 2000, "@me:x", 1000), false);
   assert.equal(isRing({ notification_type: "ring" }, 2000, "@me:x", 1000), false);
 });
+import { isRingEvent, isLegacyCall } from "./logic.ts";
+test("isRingEvent/isLegacyCall: Element's call event names", () => {
+  assert.equal(isRingEvent("org.matrix.msc4075.call.notify"), true);
+  assert.equal(isRingEvent("m.rtc.notification"), true);
+  assert.equal(isRingEvent("m.room.message"), false);
+  assert.equal(isLegacyCall("m.call.invite"), true);
+});

@@ -4,7 +4,7 @@ import { EventType, M_POLL_START, type MatrixEvent, type Room } from "matrix-js-
 import { PollStartEvent } from "matrix-js-sdk/lib/extensible_events_v1/PollStartEvent.js";
 import { avatarUrl, client, isDirect } from "../matrix.ts";
 import { usePromise } from "../hooks.ts";
-import { fmtDuration, HISTORY, JOIN_RULES, levelChanges, num, roleLabel } from "../logic.ts";
+import { fmtDuration, isLegacyCall, isRingEvent, HISTORY, JOIN_RULES, levelChanges, num, roleLabel } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 
 const COLORS = ["#e17076", "#faa774", "#a695e7", "#7bc862", "#6ec9cb", "#65aadd", "#ee7aae"];
@@ -87,6 +87,8 @@ export function previewText(ev: MatrixEvent): string {
     case VERIFY_REQUEST: return "🔐 درخواست تأیید هویت";
   }
   if (ev.getType() === EventType.Sticker) return "استیکر";
+  if (isLegacyCall(ev.getType())) return "📞 تماس؛ این نسخه از تماس قدیمی پشتیبانی نمی‌کند، در برنامهٔ دیگری پاسخ دهید";
+  if (isRingEvent(ev.getType())) return c.notify_type === "ring" || c.notification_type === "ring" ? "📞 تماس" : "📞 تماس گروهی";
   if (M_POLL_START.matches(ev.getType())) return "📊 " + (parsePoll(ev)?.question.text ?? "نظرسنجی");
   return stripReplyFallback(String(c.body ?? ""));
 }

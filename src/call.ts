@@ -4,7 +4,7 @@ import { getCallNotificationExpiry, isLivekitTransportConfig, MatrixRTCSessionEv
 import { BaseKeyProvider, createKeyMaterialFromBuffer, createLocalTracks, Room as LkRoom, RoomEvent as LkEvent, Track, type LocalVideoTrack, type RemoteTrack } from "livekit-client";
 import { avatarUrl, client, isDirect, isEncrypted, loadEvent } from "./matrix.ts";
 import { isMuted, ringtone } from "./notify.ts";
-import { isRing } from "./logic.ts";
+import { isRing, isRingEvent } from "./logic.ts";
 import { isHeadless, isNative, nativeCallActive, nativeCancelCall, nativeShowCall, nativeSpeaker, toDataUrl, type CallAction } from "./native.ts";
 import { isWindowVisible, showWindow } from "./desktop.ts";
 
@@ -198,8 +198,10 @@ function stopRinging() {
 /** Rings for an m.rtc.notification if it's a ring meant for us, still fresh, and we're not in that call already. */
 // ponytail: our own checks, not the SDK's parseCallNotificationContent: that one rejects rings in rooms without an m.rtc.slot, i.e. most of today's
 function ring(room: Room, ev: MatrixEvent) {
-  const c = ev.getContent<IRTCNotificationContent>(), me = client.getSafeUserId();
-  const until = getCallNotificationExpiry(c, ev.getTs());
+  // Element Call / Element X send org.matrix.msc4075.call.notify: same idea, but notify_type, and often no sender_ts/lifetime
+  const raw = ev.getContent<IRTCNotificationContent & { notify_type?: string }>(), me = client.getSafeUserId();
+  const c = { ...raw, notification_type: raw.notification_type ?? raw.notify_type } as IRTCNotificationContent;
+  const until = c.sender_ts != null && c.lifetime != null ? getCallNotificationExpiry(c, ev.getTs()) : ev.getTs() + 30_000;
   if (!isRing(c, until, me) || ev.getSender() === me) return;
   if (snap.incoming || snap.active || isMuted(room) || client.isUserIgnored(ev.getSender()!)) return; // ponytail: busy = ignore, no call waiting
   const session = client.matrixRTC.getRoomSession(room);
@@ -248,7 +250,7 @@ export async function answer(video: boolean) {
 }
 
 function onEvent(ev: MatrixEvent, room: Room) {
-  if (ev.getType() === EventType.RTCNotification) return ring(room, ev);
+  if (isRingEvent(ev.getType())) return ring(room, ev);
   if (ev.getType() !== EventType.RTCDecline) return;
   const of = ev.getContent()["m.relates_to"]?.event_id;
   // declined on another of our devices
