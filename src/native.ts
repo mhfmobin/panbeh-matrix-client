@@ -23,6 +23,7 @@ interface PanbehPlugin {
   setSpeaker(p: { on: boolean }): Promise<void>;
   audioRoutes(): Promise<{ routes: AudioRoute[]; current: number }>;
   setAudioRoute(p: { id: number }): Promise<void>;
+  setPip(p: { on: boolean }): Promise<void>;
   requestFullScreen(): Promise<void>;
   takeLaunchCall(): Promise<Partial<CallAction>>;
   addListener(e: "openRoom", f: (d: { roomId: string }) => void): Promise<PluginListenerHandle>;
@@ -87,6 +88,8 @@ export const nativeSpeaker = (on: boolean) => { if (!headless) plugin.setSpeaker
 export type AudioRoute = { id: number; kind: "earpiece" | "speaker" | "wired" | "bluetooth"; name: string };
 export const nativeAudioRoutes = () => plugin.audioRoutes().catch(() => ({ routes: [] as AudioRoute[], current: -1 }));
 export const nativeSetAudioRoute = (id: number) => plugin.setAudioRoute({ id });
+/** A video call is on screen: leaving the app shrinks it to picture-in-picture. */
+export const nativePip = (on: boolean) => { if (!headless) plugin.setPip({ on }).catch(() => {}); };
 /** Android 14+: lets the user allow ringing over the lock screen. */
 export const requestFullScreen = () => plugin.requestFullScreen();
 

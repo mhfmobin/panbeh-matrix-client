@@ -181,6 +181,14 @@ public class PanbehPlugin extends Plugin {
         call.resolve();
     }
 
+    /** A video call is on screen: picture-in-picture when the app is left. */
+    @PluginMethod
+    public void setPip(PluginCall call) {
+        MainActivity.pipAllowed = call.getBoolean("on", false);
+        getActivity().runOnUiThread(() -> MainActivity.updatePip(getActivity()));
+        call.resolve();
+    }
+
     /** Loudspeaker vs earpiece (or whatever headset is plugged in). */
     @PluginMethod
     public void setSpeaker(PluginCall call) {

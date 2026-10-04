@@ -8,7 +8,7 @@ import { allowCalls, client, isDirect } from "../matrix.ts";
 import { answer, call, decline, flipCam, getCall, hangup, loadDevices, minimize, myMedia, ourTransport, protocolFor, setAudioRoute, setDevice, setNoiseSuppression, toggleCam, toggleMic, toggleScreen, toggleSpeaker, useCall, userOf, type Active, type Incoming } from "../call.ts";
 import { usePromise, useTick } from "../hooks.ts";
 import { fmtDuration, num } from "../logic.ts";
-import { isNative, nativeAudioRoutes, type AudioRoute } from "../native.ts";
+import { isNative, nativeAudioRoutes, nativePip, type AudioRoute } from "../native.ts";
 import { onPickSource, type ShareSource } from "../desktop.ts";
 import { pushBack } from "../back.ts";
 import { Icon, type IconName } from "../icons.tsx";
@@ -84,6 +84,8 @@ export function CallBar({ room }: { room?: Room }) {
 /** The incoming ring and the call screen; mounted once by the app shell. */
 export function CallLayer() {
   const { active, incoming } = useCall();
+  const showing = !!active && !active.min;
+  useEffect(() => { if (showing || !active) void leavePip(); }, [showing, !active]); // back on the call screen, or it ended
   const [pick, setPick] = useState<{ sources: ShareSource[]; done: (id: string | null) => void } | null>(null);
   useEffect(() => onPickSource((sources) => new Promise((done) => setPick({ sources, done }))), []);
   if (incoming && !active) return <IncomingCall room={incoming.room} video={incoming.video} />;
@@ -149,6 +151,7 @@ function IncomingCall({ room, video }: { room: Room; video: boolean }) {
 
 function CallScreen({ a }: { a: Active }) {
   useEffect(() => pushBack(() => { minimize(true); }), []);
+  const hide = () => { minimize(true); if (!isNative) void enterPip(a); }; // the click is the user gesture PiP needs
   const now = useClock(!!a.since);
   const { tiles, others } = tilesOf(a);
   const m = myMedia(a);
@@ -160,6 +163,12 @@ function CallScreen({ a }: { a: Active }) {
   const [focus, setFocus] = useState<string | null>(null); // a feed blown up to most of the screen
   const main = tiles.find((t) => t.key === focus); // gone (left, stopped sharing) = back to the grid
   const pip = !main && tiles.length === 2 && others === 1; // 1:1: the other side fills the screen, we're in the corner
+  const hasVideo = m.cam || tiles.some((t) => t.video && !t.local);
+  useEffect(() => { // Android: leaving the app during a video call shrinks it to picture-in-picture
+    if (!isNative || !hasVideo) return;
+    nativePip(true);
+    return () => nativePip(false);
+  }, [hasVideo]);
   const [panel, setPanel] = useState<"devices" | { routes: AudioRoute[]; current: number } | null>(null);
   // Android: with a headset around, the speaker button picks where audio goes; otherwise it just toggles the speaker
   const speakerBtn = async () => {
@@ -172,7 +181,7 @@ function CallScreen({ a }: { a: Active }) {
   return (
     <div className="call-screen" role="dialog" aria-label="تماس">
       <header className="call-head">
-        <button className="icon-btn" onClick={() => minimize(true)} title="کوچک کردن" aria-label="کوچک کردن"><Icon name="down" /></button>
+        <button className="icon-btn" onClick={hide} title="کوچک کردن" aria-label="کوچک کردن"><Icon name="down" /></button>
         <div><b>{a.room.name}</b><span>{status}</span></div>
       </header>
       {main ? (
@@ -242,6 +251,20 @@ function Routes({ routes, current, onPick }: { routes: AudioRoute[]; current: nu
     </button>
   ))}</>;
 }
+
+/** Desktop/web: the other side's video (a shared screen first) in a floating window while the call is minimized. */
+async function enterPip(a: Active) {
+  if (!document.pictureInPictureEnabled) return;
+  const remote = tilesOf(a).tiles.filter((t) => t.video && !t.local).sort((x, y) => Number(y.screen) - Number(x.screen))[0]?.video;
+  if (!remote) return;
+  const v = Object.assign(document.createElement("video"), { muted: true, playsInline: true });
+  v.srcObject = remote instanceof MediaStream ? remote : new MediaStream([remote.mediaStreamTrack]);
+  try {
+    await v.play();
+    await v.requestPictureInPicture();
+  } catch { /* refused: the minimized bar is enough */ }
+}
+const leavePip = () => document.pictureInPictureElement ? document.exitPictureInPicture().catch(() => {}) : undefined;
 
 /** One feed on the call screen: a camera or a shared screen, from LiveKit (track) or a legacy call (stream). */
 type TileData = { key: string; userId: string; local: boolean; screen: boolean; video?: VideoTrack | MediaStream; micOff: boolean; speaking: boolean };

@@ -1,9 +1,11 @@
 package ir.panbeh.app;
 
 import android.app.Activity;
+import android.app.PictureInPictureParams;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Rational;
 import android.view.WindowManager;
 import android.webkit.WebView;
 import com.getcapacitor.BridgeActivity;
@@ -11,6 +13,33 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     /** Resumed and on screen: no notification for the chat being looked at. */
     static boolean visible;
+    /** A video call is on screen: leaving the app shrinks it to picture-in-picture. Set by PanbehPlugin.setPip. */
+    static boolean pipAllowed;
+
+    private static PictureInPictureParams.Builder pipParams() {
+        return new PictureInPictureParams.Builder().setAspectRatio(new Rational(9, 16));
+    }
+
+    /** Android 12+ enters PiP by itself when we're left (smoother with gesture navigation); older ones go in onUserLeaveHint. */
+    static void updatePip(Activity a) {
+        if (Build.VERSION.SDK_INT < 31) return;
+        try {
+            a.setPictureInPictureParams(pipParams().setAutoEnterEnabled(pipAllowed).build());
+        } catch (RuntimeException e) {
+            // no PiP on this device
+        }
+    }
+
+    @Override
+    protected void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        if (!pipAllowed || Build.VERSION.SDK_INT < 26 || Build.VERSION.SDK_INT >= 31) return;
+        try {
+            enterPictureInPictureMode(pipParams().build());
+        } catch (RuntimeException e) {
+            // no PiP on this device, or turned off for the app
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
