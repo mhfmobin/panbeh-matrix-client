@@ -1,8 +1,8 @@
-import { ClientEvent, createClient, EventTimeline, EventType, SearchOrderBy, HttpApiEvent, IndexedDBStore, MatrixEvent, Method, OAuth2, Preset, SetPresence, Visibility, type ICreateRoomStateEvent, type MatrixClient, type MatrixError, type Room } from "matrix-js-sdk";
+import { ClientEvent, createClient, EventTimeline, EventType, Filter, SearchOrderBy, HttpApiEvent, IndexedDBStore, MatrixEvent, Method, OAuth2, Preset, SetPresence, Visibility, type ICreateRoomStateEvent, type MatrixClient, type MatrixError, type Room } from "matrix-js-sdk";
 import { decodeRecoveryKey, deriveRecoveryKeyFromPassphrase } from "matrix-js-sdk/lib/crypto-api/index.js";
 import { decryptAttachment, encryptAttachment, type IEncryptedFile } from "matrix-encrypt-attachment";
-import { fitSize, hasGif, isGif, normalizeServer, roomName, withGif, withoutGif, type Gif } from "./logic.ts";
-import { isHeadless, isNative, nativeCancelAll, setBackgroundService } from "./native.ts";
+import { endpointOf, fitSize, hasGif, isGif, normalizeServer, roomName, withGif, withoutGif, type Gif } from "./logic.ts";
+import { isHeadless, isNative, nativeCancelAll, nativeLog, nativeSyncState, onKick, setBackgroundService } from "./native.ts";
 import { isDesktop, isWindowVisible, onWindowVisibility, openExternal } from "./desktop.ts";
 import { confirmDialog } from "./ui/dialog.tsx";
 
@@ -48,6 +48,62 @@ let ssKey: [string, Uint8Array<ArrayBuffer>] | null = null;
 export const savedSession = (): Session | null => sessions().find((x) => x.userId === localStorage.getItem(ACTIVE_KEY)) ?? null;
 export const isOAuth = () => !!savedSession()?.oauthClientId;
 
+// ---------- background sync health ----------
+
+/** Pending incremental /sync requests → when they started. The server answers a long-poll within ~30s. */
+const syncs = new Map<(e: Error) => void, number>();
+const STALL_MS = 50_000;
+/** Per-endpoint requests and bytes this minute, logged with developer options on (adb logcat on Android). */
+const net = new Map<string, { n: number; bytes: number; decoded: boolean }>();
+// loadPrefs lives in Settings.tsx, which imports this module
+const devOn = () => { try { return !!JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}").dev; } catch { return false; } };
+
+function count(url: string, res: Response) {
+  const k = endpointOf(url), e = net.get(k) ?? { n: 0, bytes: 0, decoded: false };
+  net.set(k, e);
+  e.n++;
+  const len = +(res.headers.get("content-length") ?? NaN);
+  if (len >= 0) e.bytes += len; // what came over the wire, compressed or not
+  else { e.decoded = true; res.clone().arrayBuffer().then((b) => { e.bytes += b.byteLength; }, () => {}); } // chunked: uncompressed size
+}
+setInterval(() => {
+  if (!net.size) return;
+  nativeLog("[net] " + [...net].sort((a, b) => b[1].bytes - a[1].bytes)
+    .map(([k, e]) => `${k} ${e.n}× ${(e.bytes / 1024).toFixed(0)}${e.decoded ? "~" : ""}KB`).join(", "));
+  net.clear();
+}, 60_000);
+
+/** The SDK's fetch. A /sync whose socket died while the phone slept can hang for minutes (its timeout is a frozen JS
+ *  timer), so kick() can fail it, which drops the SDK into its normal reconnect. */
+const netFetch: typeof fetch = (input, init) => {
+  const url = input instanceof Request ? input.url : String(input);
+  const res = fetch(input, init);
+  if (devOn()) res.then((r) => count(url, r), () => {});
+  if (!/\/sync\?.*since=/.test(url)) return res; // not an incremental sync; the initial one may rightly take minutes
+  return new Promise((resolve, reject) => {
+    syncs.set(reject, Date.now());
+    res.then(resolve, reject).finally(() => syncs.delete(reject));
+  });
+};
+
+/** Native nudge (network back, watchdog, interval alarm): reconnect now rather than when the frozen timers get to it. */
+function kick() {
+  if (client.retryImmediately()) return; // was waiting to retry
+  const stalled = [...syncs].filter(([, t]) => Date.now() - t > STALL_MS);
+  if (!stalled.length) return;
+  // ponytail: the dead request isn't aborted, only abandoned; its socket is gone anyway
+  for (const [reject] of stalled) reject(new TypeError("stalled /sync"));
+  setTimeout(() => client.retryImmediately()); // after the SDK has scheduled its reconnect
+}
+
+/** The invisible background page only notifies: no presence or typing traffic. Receipts stay (they clear notifications). */
+function headlessFilter(userId: string) {
+  const f = new Filter(userId);
+  f.setDefinition({ presence: { not_types: ["*"] }, room: { ephemeral: { not_types: ["m.typing"] } } });
+  f.setUnreadThreadNotifications(true); // as the SDK's default filter
+  return f;
+}
+
 export async function start(s: Session) {
   current = s;
   // cached sync state: reopening the app shows chats instantly instead of waiting for a full initial sync
@@ -57,6 +113,7 @@ export async function start(s: Session) {
     // OAuth sessions: the SDK refreshes short-lived tokens itself and revokes them on logout
     onTokenRefresh: (t) => save({ ...sessions().find((x) => x.userId === s.userId)!, accessToken: t.accessToken, refreshToken: t.refreshToken }),
     store,
+    fetchFn: netFetch,
     timelineSupport: true,
     // legacy 1:1 m.call.* calls (call.ts). Not in the headless page: it shares our device with the app's page, and two MatrixCalls would answer as one party
     disableVoip: isHeadless,
@@ -73,7 +130,11 @@ export async function start(s: Session) {
   c.once(HttpApiEvent.SessionLoggedOut, () => logout());
   c.on(ClientEvent.Room, (r) => { if (r.getMyMembership() === "invite") r.recalculate(); });
   await c.initRustCrypto({ cryptoDatabasePrefix: dbNames(s).crypto });
-  await c.startClient({ threadSupport: true, lazyLoadMembers: true, initialSyncLimit: 30 });
+  if (isNative) {
+    c.on(ClientEvent.Sync, (state) => nativeSyncState(state));
+    onKick(kick);
+  }
+  await c.startClient({ threadSupport: true, lazyLoadMembers: true, initialSyncLimit: 30, filter: isHeadless ? headlessFilter(s.userId) : undefined });
   if (!shareLastSeen()) await setShareLastSeen(false);
   if (isNative) { // the app syncs in the background too: that mustn't show the user as online
     const away = () => { if (shareLastSeen()) void c.setSyncPresence(isHeadless || document.visibilityState === "hidden" ? SetPresence.Unavailable : undefined); };

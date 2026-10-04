@@ -337,3 +337,6 @@ export function rtcOutcome(ring: CallEv, until: number, after: CallEv[], now = D
   const gaveUp = members.some((e) => e.sender === ring.sender && isEmpty(e.content));
   return gaveUp || until <= now ? { state: "missed" } : { state: "ringing" };
 }
+
+/** Endpoint name for the net log: /_matrix/client/v3/rooms/!x/send/… → rooms. */
+export const endpointOf = (url: string) => new URL(url).pathname.split("/").slice(2).find((x) => !/^(client|media|v\d+|r0|unstable)$/.test(x)) ?? "?";

@@ -2,7 +2,8 @@ import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor
 
 /** The Android app: our own WebView (Capacitor plugin) or the background service's headless one (JS interface). */
 type Payload = { roomId: string; title: string; body: string; icon?: string; sound: boolean; openRoom?: string };
-type Status = { permission: "granted" | "denied" | "default"; service: boolean; batteryOptimized: boolean; fullScreen: boolean };
+/** interval: minutes between background checks, 0 = real-time. */
+type Status = { permission: "granted" | "denied" | "default"; service: boolean; batteryOptimized: boolean; fullScreen: boolean; interval: number };
 type CallPayload = { roomId: string; eventId: string; caller: string; video: boolean; timeout: number; icon?: string };
 /** A button on the incoming-call notification; "open" = the notification itself (full-screen on the lock screen). */
 /** "Share with Panbeh" from another app: text and/or content:// files. */
@@ -12,7 +13,9 @@ interface PanbehPlugin {
   showNotification(p: Payload): Promise<void>;
   cancel(p: { roomId: string }): Promise<void>;
   cancelAll(): Promise<void>;
-  startService(): Promise<void>;
+  startService(p?: { interval?: number }): Promise<void>;
+  syncState(p: { state: string }): Promise<void>;
+  log(p: { msg: string }): Promise<void>;
   stopService(): Promise<void>;
   status(): Promise<Status>;
   requestNotifyPermission(): Promise<{ permission: Status["permission"] }>;
@@ -35,7 +38,7 @@ interface PanbehPlugin {
   addListener(e: "callAction", f: (d: CallAction) => void): Promise<PluginListenerHandle>;
   addListener(e: "share", f: (d: Shared) => void): Promise<PluginListenerHandle>;
 }
-type Headless = { showNotification(json: string): void; cancel(roomId: string): void; stopService(): void; showCall(json: string): void; cancelCall(roomId: string): void };
+type Headless = { showNotification(json: string): void; cancel(roomId: string): void; stopService(): void; showCall(json: string): void; cancelCall(roomId: string): void; syncState(state: string): void };
 
 const headless = (window as unknown as { PanbehAndroid?: Headless }).PanbehAndroid;
 const plugin = registerPlugin<PanbehPlugin>("Panbeh");
@@ -60,6 +63,23 @@ export const requestBatteryExemption = () => plugin.requestBatteryExemption();
 export function setBackgroundService(on: boolean) {
   if (headless) { if (!on) headless.stopService(); return; }
   (on ? plugin.startService() : plugin.stopService()).catch(() => {});
+}
+/** Real-time (0) or a check every N minutes; restarts the service in that mode. */
+export const setBackgroundInterval = (minutes: number) => plugin.startService({ interval: minutes });
+
+/** The client's sync state, shown in the background service's notification. */
+export function nativeSyncState(state: string) {
+  if (headless) headless.syncState(state);
+  else plugin.syncState({ state }).catch(() => {});
+}
+/** A diagnostics line: logcat tag PanbehSync on Android (the headless page's console is forwarded there), else the console. */
+export function nativeLog(msg: string) {
+  if (Capacitor.isNativePlatform() && !headless) plugin.log({ msg }).catch(() => {});
+  else console.info(msg);
+}
+/** The service asks the page to reconnect now: network back, its watchdog, or an interval check. */
+export function onKick(f: () => void) {
+  if (isNative) (window as unknown as { panbehKick?: () => void }).panbehKick = f;
 }
 
 /** Notification taps: the room it was for, now (cold start) and later. Returns an unsubscribe. */

@@ -17,6 +17,7 @@ import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
 import android.util.Base64;
+import android.webkit.WebView;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -120,6 +121,12 @@ public class PanbehPlugin extends Plugin {
         JSObject a = callAction(intent);
         if (!deliverCall(a)) launchCall = a;
         return true;
+    }
+
+    /** The app's WebView, for SyncService to nudge its sync loop. */
+    static WebView webView() {
+        PanbehPlugin p = instance;
+        return p == null || p.getBridge() == null ? null : p.getBridge().getWebView();
     }
 
     @Override
@@ -377,7 +384,24 @@ public class PanbehPlugin extends Plugin {
 
     @PluginMethod
     public void startService(PluginCall call) {
+        Integer interval = call.getInt("interval");
+        if (interval != null) SyncService.setInterval(getContext(), interval);
         SyncService.start(getContext());
+        call.resolve();
+    }
+
+    /** The page's sync state, for the background notification. */
+    @PluginMethod
+    public void syncState(PluginCall call) {
+        String state = call.getString("state");
+        if (state != null) SyncService.reportSync(state);
+        call.resolve();
+    }
+
+    /** Developer-option diagnostics (the [net] line) into logcat: release builds don't forward the console. */
+    @PluginMethod
+    public void log(PluginCall call) {
+        android.util.Log.i("PanbehSync", call.getString("msg", ""));
         call.resolve();
     }
 
@@ -392,6 +416,7 @@ public class PanbehPlugin extends Plugin {
         JSObject r = new JSObject();
         r.put("permission", permission());
         r.put("service", SyncService.isEnabled(getContext()));
+        r.put("interval", SyncService.interval(getContext()));
         r.put("batteryOptimized", batteryOptimized());
         r.put("fullScreen", Build.VERSION.SDK_INT < 34 || getContext().getSystemService(NotificationManager.class).canUseFullScreenIntent());
         call.resolve(r);

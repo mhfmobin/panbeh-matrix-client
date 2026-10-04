@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { byListOrder, inArchive, isUnread } from "./logic.ts";
+import { byListOrder, endpointOf, inArchive, isUnread } from "./logic.ts";
 import { aliasLocalpart, buildRows, roomName, dayLabel, downsample, fmtDuration, inFolder, isUserId, formatMessage, parseGeoUri, spaceRooms, stamp, normalizeServer, normalize, lastSeen, tallyPoll, fitSize, type Msg } from "./logic.ts";
 
 const T = new Date("2026-09-30T12:00:00").getTime();
@@ -264,4 +264,12 @@ test("rtcOutcome: from call memberships after the ring", () => {
   assert.deepEqual(rtcOutcome(ring, 31000, [], 100000), { state: "missed" });
   assert.deepEqual(rtcOutcome(ring, 31000, [], 2000), { state: "ringing" });
   assert.deepEqual(rtcOutcome(ring, 31000, [m("@b:x", 40000, true)], 100000), { state: "missed" }); // joined after it stopped ringing
+});
+
+test("endpointOf names the endpoint for the net log", () => {
+  assert.equal(endpointOf("https://hs.x/_matrix/client/v3/sync?since=s1&timeout=30000"), "sync");
+  assert.equal(endpointOf("https://hs.x/_matrix/client/versions"), "versions");
+  assert.equal(endpointOf("https://hs.x/_matrix/client/v3/rooms/!a:x/send/m.room.message/1"), "rooms");
+  assert.equal(endpointOf("https://hs.x/_matrix/client/v1/media/thumbnail/x/y?width=96"), "thumbnail");
+  assert.equal(endpointOf("https://hs.x/_matrix/client/unstable/org.matrix.msc3575/sync"), "org.matrix.msc3575");
 });

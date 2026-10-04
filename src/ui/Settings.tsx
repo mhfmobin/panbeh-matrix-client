@@ -9,7 +9,7 @@ import { num, stamp } from "../logic.ts";
 import { decryptKeyFile, encryptKeyFile } from "../keyfile.ts";
 import { showVerification } from "./Verify.tsx";
 import { desktopVersion, getAutostart, isDesktop, setAutostart } from "../desktop.ts";
-import { isNative, nativeCancelAll, nativeStatus, requestBatteryExemption, requestFullScreen, requestNotifyPermission, saveFile, setBackgroundService } from "../native.ts";
+import { isNative, nativeCancelAll, nativeStatus, requestBatteryExemption, requestFullScreen, requestNotifyPermission, saveFile, setBackgroundInterval, setBackgroundService } from "../native.ts";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 
 type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; previews: boolean; shareLastSeen: boolean; dev: boolean; legacyCalls: boolean; enterSends: boolean };
@@ -148,6 +148,9 @@ const KindSwitches = ({ prefs, set }: { prefs: Prefs; set: (p: Partial<Prefs>) =
   </>
 );
 
+/** Background check modes: minutes between checks, 0 = real-time. */
+const INTERVALS: [number, string][] = [[0, "فوری"], [5, "۵ دقیقه"], [15, "۱۵ دقیقه"], [30, "۳۰ دقیقه"], [60, "ساعتی"]];
+
 /** In the app: Android notifications, delivered by a background service that keeps the client syncing. */
 function AndroidNotifications({ prefs, set }: { prefs: Prefs; set: (p: Partial<Prefs>) => void }) {
   const [st, setSt] = useState<Awaited<ReturnType<typeof nativeStatus>>>();
@@ -173,6 +176,15 @@ function AndroidNotifications({ prefs, set }: { prefs: Prefs; set: (p: Partial<P
       <label className="switch-row"><span>اعلان پیام‌های تازه<small>پنبه در پس‌زمینه متصل می‌ماند، حتی وقتی بسته است</small></span>
         <input type="checkbox" role="switch" checked={on} onChange={(e) => toggle(e.target.checked)} /></label>
       {on && <KindSwitches prefs={prefs} set={set} />}
+      {on && <>
+        <p className="muted">دریافت پیام در پس‌زمینه: «فوری» باتری بیشتری مصرف می‌کند. در حالت دوره‌ای، اگر گوشی مدتی قفل بماند، اندروید ممکن است فاصله‌ی بررسی‌ها را تا حدود ۱۵ دقیقه بیشتر کند.</p>
+        <div className="segmented">
+          {INTERVALS.map(([m, label]) => (
+            <button key={m} className={st.interval === m ? "on" : ""} onClick={() => { setSt({ ...st, interval: m }); void setBackgroundInterval(m); }}>{label}</button>
+          ))}
+        </div>
+        <p className="muted">اگر اعلان‌ها پس از مدتی نمی‌رسند (شیائومی، سامسونگ، هوآوی…)، در تنظیمات باتری گوشی اجرای خودکار (Autostart) پنبه را هم روشن کنید.</p>
+      </>}
       {on && st.batteryOptimized && (
         <button className="user-row" onClick={() => requestBatteryExemption()}>
           <span className="device-box"><Icon name="bell" /></span>
