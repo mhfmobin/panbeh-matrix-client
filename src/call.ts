@@ -6,7 +6,7 @@ import type { CallFeed } from "matrix-js-sdk/lib/webrtc/callFeed.js";
 import type { MCallInviteNegotiate } from "matrix-js-sdk/lib/webrtc/callEventTypes.js";
 import { getCallNotificationExpiry, isLivekitTransportConfig, MatrixRTCSessionEvent, type IRTCNotificationContent, type LivekitTransportConfig, type MatrixRTCSession } from "matrix-js-sdk/lib/matrixrtc/index.js";
 import { BaseKeyProvider, createKeyMaterialFromBuffer, createLocalTracks, Room as LkRoom, RoomEvent as LkEvent, Track, type LocalAudioTrack, type LocalVideoTrack, type Participant, type RemoteTrack } from "livekit-client";
-import { avatarUrl, client, isDirect, isEncrypted, loadEvent } from "./matrix.ts";
+import { avatarUrl, client, isDirect, isEncrypted, loadEvent, pastFirstSync } from "./matrix.ts";
 import { callNotice, isMuted, ringtone, waitingTone } from "./notify.ts";
 import { senderName } from "./ui/common.tsx";
 import { alertDialog } from "./ui/dialog.tsx";
@@ -649,7 +649,7 @@ function onEvent(ev: MatrixEvent, room: Room) {
 /** Listens for rings and declines. Returns an unsubscribe. */
 export function startCalls() {
   const onTimeline = (ev: MatrixEvent, room: Room | undefined, toStart: boolean | undefined, _removed: boolean, data: IRoomTimelineData) => {
-    if (toStart || !data?.liveEvent || !room || !client.isInitialSyncComplete()) return;
+    if (toStart || !data?.liveEvent || !room || !pastFirstSync()) return;
     if (ev.getType() === EventType.RoomMessageEncrypted && !ev.isDecryptionFailure()) ev.once(MatrixEventEvent.Decrypted, () => onEvent(ev, room));
     else onEvent(ev, room);
   };

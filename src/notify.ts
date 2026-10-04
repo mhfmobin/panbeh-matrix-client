@@ -1,5 +1,5 @@
 import { EventType, MatrixEventEvent, PushRuleActionName, PushRuleKind, ReceiptType, RoomEvent, type IRoomTimelineData, type MatrixEvent, type Room } from "matrix-js-sdk";
-import { avatarUrl, client } from "./matrix.ts";
+import { avatarUrl, client, pastFirstSync } from "./matrix.ts";
 import { isGroupChat, previewText, senderName, roomAvatarMxc } from "./ui/common.tsx";
 import { loadPrefs } from "./ui/Settings.tsx";
 import { isHeadless, isNative, nativeCancel, nativeNotify, toDataUrl } from "./native.ts";
@@ -20,7 +20,7 @@ const shown = new Set<string>();
 /** Notifications for new messages: desktop ones while the tab is open, Android ones in the app. Returns an unsubscribe. */
 export function startNotifications() {
   const onTimeline = (ev: MatrixEvent, room: Room | undefined, toStart: boolean | undefined, _removed: boolean, data: IRoomTimelineData) => {
-    if (toStart || !data?.liveEvent || !room || !client.isInitialSyncComplete() || ev.getSender() === client.getUserId() || client.isUserIgnored(ev.getSender()!)) return;
+    if (toStart || !data?.liveEvent || !room || !pastFirstSync() || ev.getSender() === client.getUserId() || client.isUserIgnored(ev.getSender()!)) return;
     // push rules need the decrypted type and body
     if (ev.getType() === EventType.RoomMessageEncrypted && !ev.isDecryptionFailure()) ev.once(MatrixEventEvent.Decrypted, () => notify(ev, room));
     else notify(ev, room);

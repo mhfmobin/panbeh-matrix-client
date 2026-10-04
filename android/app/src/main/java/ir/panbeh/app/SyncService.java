@@ -75,6 +75,8 @@ public class SyncService extends Service {
     /** Last sync state the page reported (SyncState in matrix-js-sdk), and whether Android sees a network. */
     private String syncState;
     private boolean online = true;
+    /** The default network: a different one means the page's pending /sync went out on a network that's gone. */
+    private Network current;
     private boolean foreground;
     private ConnectivityManager.NetworkCallback network;
 
@@ -159,9 +161,14 @@ public class SyncService extends Service {
 
     /** Asks whichever page is syncing to reconnect now, instead of waiting on JS timers that froze while the phone slept. */
     void kick() {
+        kick(false);
+    }
+
+    /** newNetwork: drop the pending /sync even if it's young; it was sent on the old network and will never answer. */
+    void kick(boolean newNetwork) {
         main.post(() -> {
             WebView w = headless != null ? headless : activityAlive ? PanbehPlugin.webView() : null;
-            if (w != null) w.evaluateJavascript("window.panbehKick && panbehKick()", null);
+            if (w != null) w.evaluateJavascript("window.panbehKick && panbehKick(" + newNetwork + ")", null);
         });
     }
 
@@ -173,18 +180,28 @@ public class SyncService extends Service {
         network = new ConnectivityManager.NetworkCallback() {
             @Override
             public void onAvailable(Network n) {
-                main.post(() -> { online = true; refreshNotification(); });
-                kick();
+                main.post(() -> {
+                    boolean changed = !online || !n.equals(current);
+                    online = true;
+                    current = n;
+                    refreshNotification();
+                    kick(changed);
+                });
             }
 
             @Override
             public void onLost(Network n) {
-                main.post(() -> { online = false; refreshNotification(); });
+                main.post(() -> {
+                    if (!n.equals(current)) return; // an old default network going away after the switch
+                    online = false;
+                    refreshNotification();
+                });
             }
         };
         try {
             ConnectivityManager cm = getSystemService(ConnectivityManager.class);
-            online = cm.getActiveNetwork() != null;
+            current = cm.getActiveNetwork();
+            online = current != null;
             cm.registerDefaultNetworkCallback(network);
         } catch (RuntimeException e) { // too many callbacks, or no permission
             Log.w(TAG, "no network callback", e);

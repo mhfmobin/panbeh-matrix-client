@@ -78,8 +78,8 @@ export function nativeLog(msg: string) {
   else console.info(msg);
 }
 /** The service asks the page to reconnect now: network back, its watchdog, or an interval check. */
-export function onKick(f: () => void) {
-  if (isNative) (window as unknown as { panbehKick?: () => void }).panbehKick = f;
+export function onKick(f: (newNetwork: boolean) => void) {
+  if (isNative) (window as unknown as { panbehKick?: (n?: boolean) => void }).panbehKick = (n) => f(!!n);
 }
 
 /** Notification taps: the room it was for, now (cold start) and later. Returns an unsubscribe. */

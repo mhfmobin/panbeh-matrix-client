@@ -1,4 +1,4 @@
-import { ClientEvent, createClient, EventTimeline, EventType, Filter, SearchOrderBy, HttpApiEvent, IndexedDBStore, MatrixEvent, Method, OAuth2, Preset, SetPresence, Visibility, type ICreateRoomStateEvent, type MatrixClient, type MatrixError, type Room } from "matrix-js-sdk";
+import { ClientEvent, createClient, EventTimeline, EventType, Filter, SearchOrderBy, HttpApiEvent, IndexedDBStore, MatrixEvent, Method, OAuth2, Preset, SetPresence, SyncState, Visibility, type ICreateRoomStateEvent, type MatrixClient, type MatrixError, type Room } from "matrix-js-sdk";
 import { decodeRecoveryKey, deriveRecoveryKeyFromPassphrase } from "matrix-js-sdk/lib/crypto-api/index.js";
 import { decryptAttachment, encryptAttachment, type IEncryptedFile } from "matrix-encrypt-attachment";
 import { endpointOf, fitSize, hasGif, isGif, normalizeServer, roomName, withGif, withoutGif, type Gif } from "./logic.ts";
@@ -86,10 +86,16 @@ const netFetch: typeof fetch = (input, init) => {
   });
 };
 
-/** Native nudge (network back, watchdog, interval alarm): reconnect now rather than when the frozen timers get to it. */
-function kick() {
+/** Past the first sync: live events are new from here on. Unlike isInitialSyncComplete() this stays true while
+ *  reconnecting, so the messages a reconnect brings in still notify. */
+let firstSyncDone = false;
+export const pastFirstSync = () => firstSyncDone;
+
+/** Native nudge (network back, watchdog, interval alarm): reconnect now rather than when the frozen timers get to it.
+ *  newNetwork: a pending /sync went out on the old network and will never answer, however young it is. */
+function kick(newNetwork = false) {
   if (client.retryImmediately()) return; // was waiting to retry
-  const stalled = [...syncs].filter(([, t]) => Date.now() - t > STALL_MS);
+  const stalled = [...syncs].filter(([, t]) => newNetwork || Date.now() - t > STALL_MS);
   if (!stalled.length) return;
   // ponytail: the dead request isn't aborted, only abandoned; its socket is gone anyway
   for (const [reject] of stalled) reject(new TypeError("stalled /sync"));
@@ -130,6 +136,8 @@ export async function start(s: Session) {
   c.once(HttpApiEvent.SessionLoggedOut, () => logout());
   c.on(ClientEvent.Room, (r) => { if (r.getMyMembership() === "invite") r.recalculate(); });
   await c.initRustCrypto({ cryptoDatabasePrefix: dbNames(s).crypto });
+  firstSyncDone = false;
+  c.on(ClientEvent.Sync, (state) => { if (state === SyncState.Prepared || state === SyncState.Syncing) firstSyncDone = true; });
   if (isNative) {
     c.on(ClientEvent.Sync, (state) => nativeSyncState(state));
     onKick(kick);
