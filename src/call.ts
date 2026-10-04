@@ -9,6 +9,7 @@ import { BaseKeyProvider, createKeyMaterialFromBuffer, createLocalTracks, Room a
 import { avatarUrl, client, isDirect, isEncrypted, loadEvent } from "./matrix.ts";
 import { callNotice, isMuted, ringtone, waitingTone } from "./notify.ts";
 import { senderName } from "./ui/common.tsx";
+import { alertDialog } from "./ui/dialog.tsx";
 import { isGroupCallAlert, isLegacyRing, isRing, isVideoOffer, pickProtocol } from "./logic.ts";
 import { isHeadless, isNative, nativeCallActive, nativeCancelCall, nativeSetAudioRoute, nativeShowCall, nativeSpeaker, toDataUrl, type CallAction } from "./native.ts";
 import { isWindowVisible, showWindow } from "./desktop.ts";
@@ -379,6 +380,17 @@ async function legacyStart(mc: MatrixCall, go: () => Promise<void>) {
   if (err) throw err; // getUserMedia's NotAllowedError etc., which errText understands
 }
 
+/**
+ * TURN credentials arrive a moment after startup, and a legacy call keeps the ICE servers it was created with. A call made or
+ * answered right after a cold start (Android answering from the notification) would get none, not even STUN, and never connect
+ * across NATs. Wait for them, and hand them to an incoming call's peer connection before it starts gathering.
+ */
+async function withTurn(mc?: MatrixCall) {
+  await client.checkTurnServers().catch(() => false);
+  const ice = client.getTurnServers(), pc = mc?.peerConn;
+  if (pc && ice.length) pc.setConfiguration({ ...pc.getConfiguration(), iceServers: ice });
+}
+
 /** Puts a legacy call on screen and follows it until it ends. */
 function showLegacy(room: Room, mc: MatrixCall, video: boolean) {
   set({ active: { kind: "legacy", room, mc, video, min: false, speaker: video, facing: "user" } });
@@ -392,7 +404,22 @@ function showLegacy(room: Room, mc: MatrixCall, video: boolean) {
     if (audio.srcObject !== (mc.remoteUsermediaStream ?? null)) audio.srcObject = mc.remoteUsermediaStream ?? null;
     bump();
   };
+  // stuck before connecting (no mic, or ICE finds no way through): say why instead of "connecting…" forever
+  let stuck: ReturnType<typeof setTimeout> | undefined;
+  const watch = (s: CallState) => {
+    clearTimeout(stuck);
+    if ([CallState.InviteSent, CallState.Ringing, CallState.Connected, CallState.Ended].includes(s) || snap.active?.since) return;
+    stuck = setTimeout(() => {
+      const a = snap.active;
+      if (a?.kind !== "legacy" || a.mc !== mc || a.since) return;
+      void hangup();
+      alertDialog(mc.state === CallState.WaitLocalMedia
+        ? "میکروفون یا دوربین در دسترس نیست. اجازه‌ی دسترسی پنبه به آن‌ها را بررسی کنید."
+        : "اتصال تماس برقرار نشد. احتمالاً سرور ماتریکس شما سرور TURN ندارد یا به آن دسترسی نیست؛ با مدیر سرور در میان بگذارید.");
+    }, 30_000);
+  };
   const onState = (s: CallState) => {
+    watch(s);
     if (s === CallState.Connected && !snap.active?.since) patch({ since: Date.now() });
     else if (s === CallState.Ended) void hangup();
     else bump();
@@ -414,13 +441,16 @@ function showLegacy(room: Room, mc: MatrixCall, video: boolean) {
   cleanup = [() => {
     mc.off(CallEvent.FeedsChanged, onFeeds).off(CallEvent.State, onState).off(CallEvent.Hangup, onHangup).off(CallEvent.Replaced, onReplaced).off(CallEvent.PeerConnectionCreated, onPc);
     pc?.removeEventListener("iceconnectionstatechange", onIce);
+    clearTimeout(stuck);
   }, leaveOnUnload()];
+  watch(mc.state);
   onFeeds();
   if (isNative) { nativeCallActive(true, video); nativeSpeaker(video); }
 }
 
 async function placeLegacy(room: Room, video: boolean) {
   legacyDevices();
+  await withTurn(); // createCall copies the TURN servers we have now
   const mc = client.createCall(room.roomId);
   if (!mc) throw new Error("این دستگاه از تماس پشتیبانی نمی‌کند");
   showLegacy(room, mc, video);
@@ -437,6 +467,7 @@ async function answerLegacy(room: Room, mc: MatrixCall, video: boolean) {
   stopRinging();
   if (mc.callHasEnded()) return;
   legacyDevices();
+  await withTurn(mc);
   showLegacy(room, mc, video);
   try {
     await legacyStart(mc, () => mc.answer(true, video));
