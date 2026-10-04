@@ -2,7 +2,7 @@
 
 Panbeh's voice and video calls are MatrixRTC calls, the same kind Element Call and Element X make. The homeserver only relays signalling. Audio and video go through a **LiveKit SFU**, which hands out access through **lk-jwt-service**. These steps are the same for Synapse and Conduit/Tuwunel/Continuwuity.
 
-Calls interoperate with Element X and with Element Web/Desktop when Element Call is enabled. Legacy 1:1 `m.call.*` calls (old Element) are not supported.
+Calls interoperate with Element X and with Element Web/Desktop when Element Call is enabled. Legacy 1:1 `m.call.*` calls (Element Web's DM calls) are supported too, see [Legacy calls](#legacy-calls).
 
 ## 1. LiveKit
 
@@ -78,3 +78,17 @@ Joining a call sends an `org.matrix.msc3401.call.member` state event, which need
 - Groups created by Panbeh allow it for everyone (power 0).
 - In older groups, an admin is asked once to enable calls.
 - In DMs both people are admins, so nothing is needed.
+
+## Legacy calls
+
+Panbeh answers legacy 1:1 `m.call.invite` calls in DMs, and places them when your server has no SFU (no `/rtc/transports`, no `rtc_foci`). These calls are peer to peer, so they need a **TURN server** that your homeserver hands out through `/voip/turnServer`. LiveKit's built-in TURN does not do that. Without one, calls only connect on the same network or with open UDP.
+
+Synapse (`homeserver.yaml`) with a coturn that uses `use-auth-secret`:
+
+```yaml
+turn_uris: ["turns:turn.example.org:443?transport=tcp", "turn:turn.example.org:3478?transport=udp"]
+turn_shared_secret: "same as static-auth-secret in turnserver.conf"
+turn_user_lifetime: 86400000
+```
+
+Panbeh never falls back to turn.matrix.org, since that would leak IP addresses. Check `https://your.server/_matrix/client/v3/voip/turnServer` (with an access token) returns credentials.

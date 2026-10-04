@@ -58,7 +58,7 @@ export async function start(s: Session) {
     onTokenRefresh: (t) => save({ ...sessions().find((x) => x.userId === s.userId)!, accessToken: t.accessToken, refreshToken: t.refreshToken }),
     store,
     timelineSupport: true,
-    disableVoip: true, // legacy 1:1 m.call.* stack; our calls are MatrixRTC (call.ts)
+    // the SDK's legacy 1:1 m.call.* stack is on (Element Web DM calls); call.ts wraps it next to our MatrixRTC calls. No turn.matrix.org fallback: it'd leak IPs
     verificationMethods: ["m.sas.v1"], // emoji only: we can't show or scan QR codes, so don't let the other side pick them
     roomNameGenerator: (roomId, state) => roomName(state, inviter(c.getRoom(roomId))),
     cryptoCallbacks: {

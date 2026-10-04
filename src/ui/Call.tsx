@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EventType, type Room } from "matrix-js-sdk";
 import { MatrixRTCSessionEvent } from "matrix-js-sdk/lib/matrixrtc/index.js";
 import { ConnectionState, Track, type Participant } from "livekit-client";
 import { allowCalls, client, isDirect } from "../matrix.ts";
-import { answer, call, decline, flipCam, getCall, hangup, minimize, ourTransport, toggleCam, toggleMic, toggleScreen, toggleSpeaker, useCall, type Active } from "../call.ts";
+import { answer, call, callLegacy, decline, flipCam, getCall, hangup, minimize, ourTransport, toggleCam, toggleMic, toggleScreen, toggleSpeaker, legacyCalls, useCall, type Active, type Legacy } from "../call.ts";
 import { usePromise, useTick } from "../hooks.ts";
 import { fmtDuration, num } from "../logic.ts";
 import { isNative } from "../native.ts";
@@ -27,31 +27,46 @@ async function start(room: Room, video: boolean) {
   await call(room, video);
 }
 
-/** Voice and video buttons for the room header; hidden when the server has no SFU. */
+/** Voice and video buttons for the room header: MatrixRTC when the server has an SFU, else a legacy call in DMs. */
 export function CallButtons({ room }: { room: Room }) {
-  const sfu = usePromise(ourTransport());
-  if (!sfu) return null;
+  const found = usePromise(useMemo(() => ourTransport().then((sfu) => ({ sfu })), []));
+  if (!found) return null;
+  let go = (video: boolean) => start(room, video);
+  if (!found.sfu) {
+    if (!isDirect(room) || !legacyCalls()) return null;
+    go = async (video) => {
+      const { legacy, active } = getCall();
+      if ((legacy && legacy.room !== room || active) && !(await confirmDialog("تماس فعلی پایان یابد؟", { ok: "پایان و تماس", danger: true }))) return;
+      await callLegacy(room, video);
+    };
+  }
   return (
     <>
-      <button className="icon-btn" onClick={() => run(start(room, false))} title="تماس صوتی" aria-label="تماس صوتی"><Icon name="phone" /></button>
-      <button className="icon-btn" onClick={() => run(start(room, true))} title="تماس تصویری" aria-label="تماس تصویری"><Icon name="video" /></button>
+      <button className="icon-btn" onClick={() => run(go(false))} title="تماس صوتی" aria-label="تماس صوتی"><Icon name="phone" /></button>
+      <button className="icon-btn" onClick={() => run(go(true))} title="تماس تصویری" aria-label="تماس تصویری"><Icon name="video" /></button>
     </>
   );
 }
 
 /** Thin bar under the header: back to a minimized call, or join the one going on in this room. */
 export function CallBar({ room }: { room?: Room }) {
-  const { active } = useCall();
+  const { active, legacy } = useCall();
   const session = room ? client.matrixRTC.getRoomSession(room) : undefined;
   useTick(session, [MatrixRTCSessionEvent.MembershipsChanged]);
-  const now = useClock(!!active?.since);
+  const now = useClock(!!(active?.since ?? legacy?.since));
+  if (legacy?.min) return (
+    <button className="call-bar" onClick={() => minimize(false)}>
+      <Icon name="phone" size={18} /> <b>{legacy.room.name}</b>
+      <span>{legacy.since ? fmtDuration(now - legacy.since) : "در حال اتصال…"}</span>
+    </button>
+  );
   if (active?.min) return (
     <button className="call-bar" onClick={() => minimize(false)}>
       <Icon name="phone" size={18} /> <b>{active.room.name}</b>
       <span>{active.since ? fmtDuration(now - active.since) : "در حال اتصال…"}</span>
     </button>
   );
-  if (!room || active || !session?.memberships.length) return null;
+  if (!room || active || legacy || !session?.memberships.length) return null;
   return (
     <button className="call-bar" onClick={() => run(start(room, false))}>
       <Icon name="phone" size={18} /> <b>تماس در جریان است</b>
@@ -62,9 +77,10 @@ export function CallBar({ room }: { room?: Room }) {
 
 /** The incoming ring and the call screen; mounted once by the app shell. */
 export function CallLayer() {
-  const { active, incoming } = useCall();
+  const { active, legacy, incoming } = useCall();
   if (active && !active.min) return <CallScreen a={active} />;
-  if (incoming && !active) return <IncomingCall room={incoming.room} video={incoming.video} />;
+  if (legacy && !legacy.min) return <LegacyScreen l={legacy} />;
+  if (incoming && !active && !legacy) return <IncomingCall room={incoming.room} video={incoming.video} />;
   return null;
 }
 
@@ -127,6 +143,52 @@ function CallScreen({ a }: { a: Active }) {
         {canShare && <CallBtn icon="screen" label="اشتراک صفحه" on={lp.isScreenShareEnabled} onClick={() => run(toggleScreen())} />}
         <CallBtn icon="hangup" label="پایان" danger onClick={() => run(hangup())} />
       </div>
+    </div>
+  );
+}
+
+/** A legacy 1:1 call: the other side's video fills the screen, ours sits in the corner. */
+function LegacyScreen({ l }: { l: Legacy }) {
+  useEffect(() => pushBack(() => { minimize(true); }), []);
+  const now = useClock(!!l.since);
+  const { mx } = l;
+  const remote = mx.remoteUsermediaStream, local = mx.localUsermediaStream;
+  const showRemote = !!remote?.getVideoTracks().some((t) => t.enabled && !t.muted);
+  const camOn = !mx.isLocalVideoMuted() && !!local?.getVideoTracks().length;
+  const micOn = !mx.isMicrophoneMuted();
+  const peer = mx.getOpponentMember();
+  const status = l.since ? fmtDuration(now - l.since) : mx.state === "ringing" || mx.state === "invite_sent" ? "در حال زنگ زدن…" : "در حال اتصال…";
+  return (
+    <div className="call-screen" role="dialog" aria-label="تماس">
+      <header className="call-head">
+        <button className="icon-btn" onClick={() => minimize(true)} title="کوچک کردن" aria-label="کوچک کردن"><Icon name="down" /></button>
+        <div><b>{l.room.name}</b><span>{status}</span></div>
+      </header>
+      <div className="call-grid pip" data-n={2}>
+        <StreamTile stream={remote} show={showRemote} name={peer?.name ?? l.room.name} id={peer?.userId ?? ""} mxc={peer?.getMxcAvatarUrl()} />
+        <StreamTile stream={local} show={camOn} local name="شما" id={me()} mxc={l.room.getMember(me())?.getMxcAvatarUrl()} mic={micOn} />
+      </div>
+      <div className="call-controls">
+        <CallBtn icon={micOn ? "mic" : "micOff"} label="میکروفون" on={!micOn} onClick={() => run(toggleMic())} />
+        <CallBtn icon={camOn ? "video" : "videoOff"} label="دوربین" on={!camOn} onClick={() => run(toggleCam())} />
+        {isNative && <CallBtn icon="speaker" label="بلندگو" on={l.speaker} onClick={toggleSpeaker} />}
+        <CallBtn icon="hangup" label="پایان" danger onClick={() => run(hangup())} />
+      </div>
+    </div>
+  );
+}
+
+function StreamTile({ stream, show, local, name, id, mxc, mic = true }: { stream?: MediaStream; show: boolean; local?: boolean; name: string; id: string; mxc?: string | null; mic?: boolean }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el && show) el.srcObject = stream ?? null; // remote audio plays through the call-audio element, so the video stays muted
+  }, [stream, show]);
+  return (
+    <div className={"call-tile" + (local ? " local" : "")}>
+      {show ? <video ref={ref} autoPlay playsInline muted className={local ? "mirror" : ""} />
+        : <Avatar mxc={mxc} name={name} id={id} size={88} />}
+      <span className="call-name">{name}{!mic && <Icon name="micOff" size={14} />}</span>
     </div>
   );
 }

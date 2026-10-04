@@ -3,7 +3,7 @@ import { avatarUrl, client } from "./matrix.ts";
 import { isGroupChat, previewText, senderName, roomAvatarMxc } from "./ui/common.tsx";
 import { loadPrefs } from "./ui/Settings.tsx";
 import { isHeadless, isNative, nativeCancel, nativeNotify, toDataUrl } from "./native.ts";
-import { isRingEvent } from "./logic.ts";
+import { isLegacyCall, isRingEvent } from "./logic.ts";
 import { showWindow } from "./desktop.ts";
 
 /** Muted = a room or override rule for this room that doesn't notify (ours, or Element's). */
@@ -46,6 +46,7 @@ async function notify(ev: MatrixEvent, room: Room) {
   // call.ts rings for these with its own UI/notification: a second, message-style one would be empty
   const cc = ev.getContent();
   if (isRingEvent(ev.getType()) && (cc.notification_type ?? cc.notify_type) === "ring") return;
+  if (isLegacyCall(ev.getType()) && client.supportsVoip()) return; // the SDK hands the invite to call.ts
   if (!isNative && (!("Notification" in window) || Notification.permission !== "granted")) return;
   const actions = client.getPushActionsForEvent(ev, true); // server push rules: mute, mentions, keywords, edits…
   if (!actions?.notify) return;

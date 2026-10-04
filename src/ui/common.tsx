@@ -87,7 +87,7 @@ export function previewText(ev: MatrixEvent): string {
     case VERIFY_REQUEST: return "🔐 درخواست تأیید هویت";
   }
   if (ev.getType() === EventType.Sticker) return "استیکر";
-  if (isLegacyCall(ev.getType())) return "📞 تماس؛ این نسخه از تماس قدیمی پشتیبانی نمی‌کند، در برنامهٔ دیگری پاسخ دهید";
+  if (isLegacyCall(ev.getType())) return (c.offer?.sdp?.includes("m=video") ? "📞 تماس تصویری" : "📞 تماس صوتی");
   if (isRingEvent(ev.getType())) return c.notify_type === "ring" || c.notification_type === "ring" ? "📞 تماس" : "📞 تماس گروهی";
   if (M_POLL_START.matches(ev.getType())) return "📊 " + (parsePoll(ev)?.question.text ?? "نظرسنجی");
   return stripReplyFallback(String(c.body ?? ""));
