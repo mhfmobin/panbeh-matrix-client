@@ -5,7 +5,7 @@ import { CallState } from "matrix-js-sdk/lib/webrtc/call.js";
 import type { CallFeed } from "matrix-js-sdk/lib/webrtc/callFeed.js";
 import { ConnectionState, Track, type VideoTrack } from "livekit-client";
 import { allowCalls, client, isDirect } from "../matrix.ts";
-import { answer, call, decline, flipCam, getCall, hangup, minimize, myMedia, ourTransport, protocolFor, toggleCam, toggleMic, toggleScreen, toggleSpeaker, useCall, type Active } from "../call.ts";
+import { answer, call, decline, flipCam, getCall, hangup, minimize, myMedia, ourTransport, protocolFor, toggleCam, toggleMic, toggleScreen, toggleSpeaker, useCall, userOf, type Active, type Incoming } from "../call.ts";
 import { usePromise, useTick } from "../hooks.ts";
 import { fmtDuration, num } from "../logic.ts";
 import { isNative } from "../native.ts";
@@ -83,9 +83,23 @@ export function CallBar({ room }: { room?: Room }) {
 /** The incoming ring and the call screen; mounted once by the app shell. */
 export function CallLayer() {
   const { active, incoming } = useCall();
-  if (active && !active.min) return <CallScreen a={active} />;
   if (incoming && !active) return <IncomingCall room={incoming.room} video={incoming.video} />;
-  return null;
+  return <>
+    {active && !active.min && <CallScreen a={active} />}
+    {active && incoming && <Waiting i={incoming} />}
+  </>;
+}
+
+/** Call waiting: someone else rings while we're in a call. */
+function Waiting({ i }: { i: Incoming }) {
+  return (
+    <div className="call-waiting" role="alertdialog" aria-label="تماس ورودی">
+      <RoomAvatar room={i.room} size={40} />
+      <div><b>{i.room.name}</b><span>{i.video ? "تماس تصویری ورودی…" : "تماس صوتی ورودی…"}</span></div>
+      <button className="call-btn end" onClick={decline} title="رد کردن" aria-label="رد کردن"><Icon name="hangup" size={22} /></button>
+      <button className="call-btn ok" onClick={() => run(answer(false))} title="پایان تماس فعلی و پاسخ" aria-label="پایان تماس فعلی و پاسخ"><Icon name="phone" size={22} /></button>
+    </div>
+  );
 }
 
 function IncomingCall({ room, video }: { room: Room; video: boolean }) {
@@ -111,7 +125,7 @@ function CallScreen({ a }: { a: Active }) {
   const now = useClock(!!a.since);
   const { tiles, others } = tilesOf(a);
   const m = myMedia(a);
-  const status = a.kind === "legacy"
+  const status = a.reconnecting ? "در حال اتصال دوباره…" : a.notice ? a.notice : a.kind === "legacy"
     ? (a.since ? fmtDuration(now - a.since) : a.mc.state === CallState.InviteSent ? "در حال زنگ زدن…" : "در حال اتصال…")
     : a.lk.state !== ConnectionState.Connected ? "در حال اتصال…"
     : !a.since ? (isDirect(a.room) ? "در حال زنگ زدن…" : "در انتظار دیگران…")
@@ -167,8 +181,7 @@ function tilesOf(a: Active): { tiles: TileData[]; others: number } {
   }
   const others = [...a.lk.remoteParticipants.values()];
   const tiles = [...others, a.lk.localParticipant].flatMap((p) => {
-    // LiveKit identities are "@user:server:DEVICE" (or hashed, for newer clients: ask the session)
-    const userId = a.session.memberships.find((m) => m.rtcBackendIdentity === p.identity)?.userId ?? p.identity.slice(0, p.identity.lastIndexOf(":"));
+    const userId = userOf(a.session, p.identity);
     const video = (src: Track.Source) => { const pub = p.getTrackPublication(src); return pub && !pub.isMuted ? pub.videoTrack : undefined; };
     const t = { userId, local: p.isLocal, micOff: !p.isMicrophoneEnabled, speaking: p.isSpeaking };
     return [{ ...t, key: p.identity + Track.Source.Camera, screen: false, video: video(Track.Source.Camera) }]

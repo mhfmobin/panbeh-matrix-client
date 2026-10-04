@@ -5,9 +5,9 @@ import { CallEventHandlerEvent } from "matrix-js-sdk/lib/webrtc/callEventHandler
 import type { CallFeed } from "matrix-js-sdk/lib/webrtc/callFeed.js";
 import type { MCallInviteNegotiate } from "matrix-js-sdk/lib/webrtc/callEventTypes.js";
 import { getCallNotificationExpiry, isLivekitTransportConfig, MatrixRTCSessionEvent, type IRTCNotificationContent, type LivekitTransportConfig, type MatrixRTCSession } from "matrix-js-sdk/lib/matrixrtc/index.js";
-import { BaseKeyProvider, createKeyMaterialFromBuffer, createLocalTracks, Room as LkRoom, RoomEvent as LkEvent, Track, type LocalVideoTrack, type RemoteTrack } from "livekit-client";
+import { BaseKeyProvider, createKeyMaterialFromBuffer, createLocalTracks, Room as LkRoom, RoomEvent as LkEvent, Track, type LocalVideoTrack, type Participant, type RemoteTrack } from "livekit-client";
 import { avatarUrl, client, isDirect, isEncrypted, loadEvent } from "./matrix.ts";
-import { callNotice, isMuted, ringtone } from "./notify.ts";
+import { callNotice, isMuted, ringtone, waitingTone } from "./notify.ts";
 import { senderName } from "./ui/common.tsx";
 import { isGroupCallAlert, isLegacyRing, isRing, isVideoOffer, pickProtocol } from "./logic.ts";
 import { isHeadless, isNative, nativeCallActive, nativeCancelCall, nativeShowCall, nativeSpeaker, toDataUrl, type CallAction } from "./native.ts";
@@ -23,6 +23,8 @@ type Common = {
   room: Room; video: boolean;
   since?: number; // first time someone else was in the call
   min: boolean; speaker: boolean; facing: "user" | "environment";
+  reconnecting?: boolean; // network dropped; LiveKit / ICE is trying to get it back
+  notice?: string; // "X joined" for a few seconds (groups)
 };
 export type Active = Common & ({ kind: "rtc"; session: MatrixRTCSession; lk: LkRoom } | { kind: "legacy"; mc: MatrixCall });
 /** ev: the m.rtc.notification or m.call.invite. mc: the SDK's legacy call (not in Android's headless page, which leaves VoIP off). */
@@ -119,8 +121,12 @@ export async function call(room: Room, video: boolean, ring = true, legacy = fal
     if (!snap.active?.since && lk.remoteParticipants.size) patch({ since: Date.now() });
     else bump();
   };
+  const said = (verb: string) => (p: Participant) => { if (!isDirect(room)) notice(`${nameOf(room, userOf(session, p.identity))} ${verb}`); };
   lk.on(LkEvent.TrackSubscribed, onTrack).on(LkEvent.TrackUnsubscribed, offTrack)
     .on(LkEvent.ParticipantConnected, onPeople).on(LkEvent.ParticipantDisconnected, bump)
+    .on(LkEvent.ParticipantConnected, said("پیوست")).on(LkEvent.ParticipantDisconnected, said("رفت"))
+    .on(LkEvent.Reconnecting, () => patch({ reconnecting: true })).on(LkEvent.SignalReconnecting, () => patch({ reconnecting: true }))
+    .on(LkEvent.Reconnected, () => patch({ reconnecting: false }))
     .on(LkEvent.TrackMuted, bump).on(LkEvent.TrackUnmuted, bump).on(LkEvent.ActiveSpeakersChanged, bump)
     .on(LkEvent.LocalTrackPublished, bump).on(LkEvent.LocalTrackUnpublished, bump)
     .on(LkEvent.ConnectionStateChanged, bump).on(LkEvent.Disconnected, () => void hangup())
@@ -180,6 +186,19 @@ export async function hangup() {
 }
 
 export const minimize = (min: boolean) => patch({ min });
+
+/** A LiveKit identity's user: "@user:server:DEVICE", or hashed for newer clients (then ask the session). */
+export const userOf = (session: MatrixRTCSession, identity: string) =>
+  session.memberships.find((m) => m.rtcBackendIdentity === identity)?.userId ?? identity.slice(0, identity.lastIndexOf(":"));
+const nameOf = (room: Room, userId: string) => room.getMember(userId)?.name ?? userId;
+
+let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+/** Shows `text` in the call's status line for 3s. */
+function notice(text: string) {
+  patch({ notice: text });
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => patch({ notice: undefined }), 3000);
+}
 
 /** What we're sending, for the control buttons. */
 export function myMedia(a: Active) {
@@ -255,13 +274,23 @@ function showLegacy(room: Room, mc: MatrixCall, video: boolean) {
     else bump();
   };
   const onHangup = () => void hangup(); // their hangup, decline, no answer, ICE failure
+  // ICE dropping after we were connected = the network went; the SDK restarts ICE by itself
+  const onIce = function (this: RTCPeerConnection) {
+    if (snap.active?.since) patch({ reconnecting: ["disconnected", "failed"].includes(this.iceConnectionState) });
+  };
+  let pc: RTCPeerConnection | undefined;
+  const onPc = (p: RTCPeerConnection) => { pc?.removeEventListener("iceconnectionstatechange", onIce); pc = p; p.addEventListener("iceconnectionstatechange", onIce); };
+  if (mc.peerConn) onPc(mc.peerConn); // incoming calls have one already
   const onReplaced = (next: MatrixCall) => { // glare: we called each other at once and the SDK kept their call
     cleanup.forEach((f) => f());
     audio.remove();
     showLegacy(room, next, video);
   };
-  mc.on(CallEvent.FeedsChanged, onFeeds).on(CallEvent.State, onState).on(CallEvent.Hangup, onHangup).on(CallEvent.Replaced, onReplaced);
-  cleanup = [() => { mc.off(CallEvent.FeedsChanged, onFeeds).off(CallEvent.State, onState).off(CallEvent.Hangup, onHangup).off(CallEvent.Replaced, onReplaced); }, leaveOnUnload()];
+  mc.on(CallEvent.FeedsChanged, onFeeds).on(CallEvent.State, onState).on(CallEvent.Hangup, onHangup).on(CallEvent.Replaced, onReplaced).on(CallEvent.PeerConnectionCreated, onPc);
+  cleanup = [() => {
+    mc.off(CallEvent.FeedsChanged, onFeeds).off(CallEvent.State, onState).off(CallEvent.Hangup, onHangup).off(CallEvent.Replaced, onReplaced).off(CallEvent.PeerConnectionCreated, onPc);
+    pc?.removeEventListener("iceconnectionstatechange", onIce);
+  }, leaveOnUnload()];
   onFeeds();
   if (isNative) { nativeCallActive(true, video); nativeSpeaker(video); }
 }
@@ -336,9 +365,8 @@ function stopRinging(missed = false) {
   if (snap.incoming) set({ incoming: undefined });
 }
 
-/** Busy, muted, ignored or already in that call on another device: don't ring. */
-// ponytail: busy = ignore, no call waiting
-const shouldRing = (room: Room, from: string) => !snap.incoming && !snap.active && !isMuted(room) && !client.isUserIgnored(from);
+/** Already ringing, in a call in that same room, muted or ignored: don't ring. In another call, it rings as call waiting. */
+const shouldRing = (room: Room, from: string) => !snap.incoming && snap.active?.room !== room && !isMuted(room) && !client.isUserIgnored(from);
 
 /** Rings for an m.rtc.notification if it's a ring meant for us, still fresh, and we're not in that call already. */
 // ponytail: our own checks, not the SDK's parseCallNotificationContent: that one rejects rings in rooms without an m.rtc.slot, i.e. most of today's
@@ -380,6 +408,8 @@ function startRinging(i: Incoming, until: number) {
   const t = setTimeout(() => stopRinging(true), until - Date.now());
   stopRing = [() => clearTimeout(t)];
 
+  // ponytail: call waiting is only our banner and beep, even with the app in the background (where the call keeps the page alive)
+  if (snap.active) return void stopRing.push(waitingTone());
   if (isNative && (isHeadless || document.visibilityState === "hidden")) {
     void (async () => {
       const icon = await avatarUrl(room.getAvatarFallbackMember()?.getMxcAvatarUrl() ?? room.getMxcAvatarUrl(), 96)?.catch(() => undefined);
