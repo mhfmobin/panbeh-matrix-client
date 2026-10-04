@@ -28,8 +28,8 @@ Android notifications. Since our own client sees the messages, encrypted ones sh
 - Settings → اعلان‌ها → «دریافت پیام در پس‌زمینه»:
   - **فوری** (real-time, the default) keeps the CPU awake with a partial wake lock, so messages arrive at once. This costs
     battery, and Doze only honours the lock with the battery exemption on.
-  - **۵ / ۱۵ / ۳۰ دقیقه / ساعتی** wakes the phone with an alarm, catches up, and lets it sleep again. In deep Doze Android
-    allows such alarms only about every 9–15 minutes, so "5 minutes" is exact only while the phone isn't dozing.
+  - **هر ۱ تا ۶۰ دقیقه** (any number of minutes from 1 to 60) wakes the phone with an alarm, catches up, and lets it sleep again. In deep Doze Android
+    allows such alarms only about every 9–15 minutes, so short intervals are exact only while the phone isn't dozing.
 - The invisible background page syncs without presence or typing notifications, to save data.
 
 ### Data usage and debugging

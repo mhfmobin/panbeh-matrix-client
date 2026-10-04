@@ -4,7 +4,7 @@ import { CryptoEvent, type DeviceVerificationStatus } from "matrix-js-sdk/lib/cr
 import { accountManageUrl, addAccount, client, sessions, switchAccount, deleteDevices, deviceManageUrl, isOAuth, logout, NeedsPassword, recoveryState, setBlocked, setMyAvatar, setShareLastSeen, setupRecovery, unlock, withPassword } from "../matrix.ts";
 import { useTick } from "../hooks.ts";
 import { Icon, type IconName } from "../icons.tsx";
-import { Avatar, errText, me, Sheet } from "./common.tsx";
+import { Avatar, errText, me, Select, Sheet } from "./common.tsx";
 import { num, stamp } from "../logic.ts";
 import { decryptKeyFile, encryptKeyFile } from "../keyfile.ts";
 import { showVerification } from "./Verify.tsx";
@@ -149,7 +149,8 @@ const KindSwitches = ({ prefs, set }: { prefs: Prefs; set: (p: Partial<Prefs>) =
 );
 
 /** Background check modes: minutes between checks, 0 = real-time. */
-const INTERVALS: [number, string][] = [[0, "فوری"], [5, "۵ دقیقه"], [15, "۱۵ دقیقه"], [30, "۳۰ دقیقه"], [60, "ساعتی"]];
+const INTERVALS: [number, string][] = [[0, "فوری"],
+  ...Array.from({ length: 59 }, (_, i): [number, string] => [i + 1, `هر ${(i + 1).toLocaleString("fa-IR")} دقیقه`]), [60, "هر ساعت"]];
 
 /** In the app: Android notifications, delivered by a background service that keeps the client syncing. */
 function AndroidNotifications({ prefs, set }: { prefs: Prefs; set: (p: Partial<Prefs>) => void }) {
@@ -177,12 +178,10 @@ function AndroidNotifications({ prefs, set }: { prefs: Prefs; set: (p: Partial<P
         <input type="checkbox" role="switch" checked={on} onChange={(e) => toggle(e.target.checked)} /></label>
       {on && <KindSwitches prefs={prefs} set={set} />}
       {on && <>
-        <p className="muted">دریافت پیام در پس‌زمینه: «فوری» باتری بیشتری مصرف می‌کند. در حالت دوره‌ای، اگر گوشی مدتی قفل بماند، اندروید ممکن است فاصله‌ی بررسی‌ها را تا حدود ۱۵ دقیقه بیشتر کند.</p>
-        <div className="segmented">
-          {INTERVALS.map(([m, label]) => (
-            <button key={m} className={st.interval === m ? "on" : ""} onClick={() => { setSt({ ...st, interval: m }); void setBackgroundInterval(m); }}>{label}</button>
-          ))}
-        </div>
+        <label className="select-row">دریافت پیام در پس‌زمینه
+          <Select value={st.interval} options={INTERVALS} onChange={(m) => { setSt({ ...st, interval: m }); void setBackgroundInterval(m); }} />
+        </label>
+        <p className="muted">«فوری» باتری بیشتری مصرف می‌کند. اگر گوشی مدتی قفل بماند، اندروید بررسی‌های کوتاه‌تر از حدود ۱۵ دقیقه را عقب می‌اندازد.</p>
         <p className="muted">اگر اعلان‌ها پس از مدتی نمی‌رسند (شیائومی، سامسونگ، هوآوی…)، در تنظیمات باتری گوشی اجرای خودکار (Autostart) پنبه را هم روشن کنید.</p>
       </>}
       {on && st.batteryOptimized && (
