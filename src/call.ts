@@ -51,8 +51,12 @@ export const ourTransport = () => transport ??= (async () => {
   return (Array.isArray(list) ? list : []).find(isLivekitTransportConfig);
 })();
 
-/** LiveKit JWT from lk-jwt-service. The legacy endpoint names us "@user:server:DEVICE", the identity our m.call.member keys are filed under. */
-// ponytail: lk-jwt-service's /sfu/get only; move to /get_token (hashed identities) together with sticky m.rtc.member events
+/**
+ * LiveKit JWT from lk-jwt-service. The legacy endpoint names us "@user:server:DEVICE", the identity our m.call.member keys are filed under.
+ * Clients on sticky m.rtc.member events (/get_token, hashed identities) still end up in the same LiveKit room, which lk-jwt-service
+ * names after the Matrix room and slot for both endpoints. The SDK reads both kinds of membership, so calls mix.
+ */
+// ponytail: /sfu/get only; switch to sticky m.rtc.member + /get_token together once our servers support MSC4354 sticky events
 async function sfuToken(t: LivekitTransportConfig, roomId: string): Promise<{ url: string; jwt: string }> {
   const openid_token = await client.getOpenIdToken();
   const r = await fetch(t.livekit_service_url.replace(/\/+$/, "") + "/sfu/get", {

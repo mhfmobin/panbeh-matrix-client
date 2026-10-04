@@ -40,7 +40,7 @@ docker run -d --name lk-jwt -p 8080:8080 \
   ghcr.io/element-hq/lk-jwt-service:latest
 ```
 
-Reverse-proxy `https://livekit-jwt.example.org` to it. Only users of the servers listed in `LIVEKIT_FULL_ACCESS_HOMESERVERS` can start calls on your SFU. Others can still join calls that are already running.
+Reverse-proxy `https://livekit-jwt.example.org` to it. Keep it up to date: since the Rust rewrite, its old `/sfu/get` (Panbeh) and new `/get_token` (newer Element Call and Element X) put everyone in the same LiveKit room. Older Go versions split those clients into separate calls. Only users of the servers listed in `LIVEKIT_FULL_ACCESS_HOMESERVERS` can start calls on your SFU. Others can still join calls that are already running.
 
 ## 3. Tell clients where it is
 
