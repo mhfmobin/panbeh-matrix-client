@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent, type WheelEvent } from "react";
+import { createPortal } from "react-dom";
 import { Direction, Filter, type MatrixEvent, type Room } from "matrix-js-sdk";
-import { client, mediaUrl } from "../matrix.ts";
+import { avatarUrl, client, mediaUrl } from "../matrix.ts";
 import { usePromise } from "../hooks.ts";
 import { contentLinks, mediaKind, num, stamp, type MediaKind } from "../logic.ts";
 import { Icon } from "../icons.tsx";
@@ -138,6 +139,35 @@ export function MediaViewer({ items, start, onClose, onJump }: { items: MatrixEv
       {i < items.length - 1 && <button className="icon-btn mv-nav mv-next" onClick={() => go(1)} aria-label="بعدی"><Icon name="chevron" size={28} /></button>}
       {caption(c) && <p className="mv-caption" dir="auto">{caption(c)}</p>}
     </div>
+  );
+}
+
+/** A room's or person's photo, full size. ponytail: no zoom/download; borrow MediaViewer's if wanted. */
+export function PhotoViewer({ mxc, name, onClose }: { mxc: string; name: string; onClose: () => void }) {
+  const full = usePromise(mediaUrl({ url: mxc }));
+  const thumb = usePromise(avatarUrl(mxc, 96 * 2)); // the avatar's own cached size, shown until the original loads
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopImmediatePropagation(); // mustn't also close the sheet underneath
+      onClose();
+    };
+    addEventListener("keydown", onKey, true);
+    return () => removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+  const src = full ?? thumb;
+  return createPortal(
+    <div className="lightbox" role="dialog" aria-label="نمایش عکس">
+      <header className="mv-bar">
+        <button className="icon-btn" onClick={onClose} aria-label="بستن"><Icon name="close" /></button>
+        <span className="mv-who"><b dir="auto">{name}</b></span>
+      </header>
+      <div className="mv-stage" onClick={(e) => e.target === e.currentTarget && onClose()}>
+        {src ? <img src={src} alt={name} draggable={false} style={{ cursor: "default" }} /> : <span className="spinner" />}
+      </div>
+    </div>,
+    document.body,
   );
 }
 

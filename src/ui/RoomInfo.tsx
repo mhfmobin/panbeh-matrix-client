@@ -1,14 +1,14 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { ClientEvent, EventType, RoomEvent, RoomStateEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { addToSpace, client, removeFromSpace, seenBy, setRoomAvatar } from "../matrix.ts";
 import { usePresence, useTick } from "../hooks.ts";
 import { JOIN_RULES, num, roleLabel, stamp } from "../logic.ts";
 import { Icon } from "../icons.tsx";
-import { Avatar, errText, me, RoomAvatar, Sheet } from "./common.tsx";
+import { Avatar, errText, me, RoomAvatar, roomAvatarMxc, Sheet } from "./common.tsx";
 import { UserProfile } from "./Profile.tsx";
 import { ChatForm, UserPicker } from "./NewChat.tsx";
 import { isMuted, setMuted } from "../notify.ts";
-import { SharedMedia } from "./Media.tsx";
+import { PhotoViewer, SharedMedia } from "./Media.tsx";
 import { BannedList, canManage, GroupSettings, KnockRequests } from "./Admin.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 
@@ -21,6 +21,9 @@ export function RoomInfo({ room, onClose }: { room: Room; onClose: () => void })
   const [busy, setBusy] = useState(false);
   const [profile, setProfile] = useState<string | null>(null);
   const [media, setMedia] = useState(false);
+  const [viewing, setViewing] = useState(false);
+  const closeViewer = useCallback(() => setViewing(false), []);
+  const photo = roomAvatarMxc(room);
   const act = (fn: () => Promise<unknown>, then?: () => void) => {
     setBusy(true);
     fn().then(then, (e) => alertDialog(errText(e))).finally(() => setBusy(false));
@@ -69,15 +72,21 @@ export function RoomInfo({ room, onClose }: { room: Room; onClose: () => void })
   return (
     <Sheet title={title} onClose={onClose}>
       <div className="info-head">
-        {can(EventType.RoomAvatar) ? (
-          <label className="avatar-edit" title="تغییر عکس">
-            <input type="file" accept="image/*" hidden disabled={busy}
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) act(() => setRoomAvatar(room.roomId, f)); }} />
-            <RoomAvatar room={room} size={96} />
-          </label>
+        {photo ? (
+          <button className="avatar-view" onClick={() => setViewing(true)} title="نمایش عکس" aria-label="نمایش عکس"><RoomAvatar room={room} size={96} /></button>
         ) : <RoomAvatar room={room} size={96} />}
-        {can(EventType.RoomAvatar) && room.getMxcAvatarUrl() && (
-          <button className="photo-remove" disabled={busy} onClick={() => confirmDialog("عکس گفتگو حذف شود؟", { danger: true }).then((y) => y && act(() => client.sendStateEvent(room.roomId, EventType.RoomAvatar, {}, "")))}>حذف عکس</button>
+        {viewing && photo && <PhotoViewer mxc={photo} name={room.name} onClose={closeViewer} />}
+        {can(EventType.RoomAvatar) && (
+          <span>
+            <label className="photo-remove photo-change">
+              <input type="file" accept="image/*" hidden disabled={busy}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) act(() => setRoomAvatar(room.roomId, f)); }} />
+              {room.getMxcAvatarUrl() ? "تغییر عکس" : "افزودن عکس"}
+            </label>
+            {room.getMxcAvatarUrl() && (
+              <button className="photo-remove" disabled={busy} onClick={() => confirmDialog("عکس گفتگو حذف شود؟", { danger: true }).then((y) => y && act(() => client.sendStateEvent(room.roomId, EventType.RoomAvatar, {}, "")))}>حذف عکس</button>
+            )}
+          </span>
         )}
         {room.getCanonicalAlias() && <bdi dir="ltr" className="muted">{room.getCanonicalAlias()}</bdi>}
       </div>

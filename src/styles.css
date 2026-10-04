@@ -231,7 +231,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 .room-head-text span.typing, .room-preview.typing { color: var(--accent); }
 
 .timeline-wrap { position: relative; flex: 1; min-height: 0; }
-.timeline { height: 100%; }
+.timeline { height: 100%; overflow-x: hidden; } /* a swiped row (translateX) mustn't scroll the RTL list sideways */
 .row { max-width: 760px; margin: 0 auto; display: flow-root; } /* flow-root: child margins count toward the measured height */
 
 .pill {
@@ -840,6 +840,8 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .photo-remove { background: none; border: 0; padding: 2px 8px; font-size: 13px; cursor: pointer; }
 .avatar-col { justify-items: center; gap: 2px; }
 .photo-remove { color: #e53935; }
+.photo-change { color: var(--accent); }
+.avatar-view { padding: 0; border: 0; background: none; border-radius: 50%; cursor: zoom-in; }
 
 .avatar-wrap { position: relative; display: inline-flex; flex: none; }
 .online-dot { position: absolute; inset-inline-end: 1px; bottom: 1px; width: 12px; height: 12px; border-radius: 50%; background: #4fae4e; border: 2px solid var(--bg); }
