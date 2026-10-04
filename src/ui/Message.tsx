@@ -282,7 +282,7 @@ function Body({ ev, room, onView, onUser }: { ev: MatrixEvent; room: Room; onVie
   if (M_POLL_START.matches(ev.getType())) return <PollBody ev={ev} room={room} />;
   const caption = c.msgtype !== "m.audio" && captionOf(c) && <p className="msg-text caption" dir={textDir(c.body)}>{linkify(c.body)}</p>;
   if (c.msgtype === "m.image" || ev.getType() === EventType.Sticker) return <><Image c={c} onView={() => onView(ev)} />{caption}</>;
-  if (c.msgtype === "m.video" && isGif(c)) return <><div className="media-box" style={fit(c.info)}><GifView c={c as Gif} /></div>{caption}</>;
+  if (c.msgtype === "m.video" && isGif(c)) return <><div className="media-box gif" style={c.info?.w && c.info?.h ? fit(c.info) : undefined}><GifView c={c as Gif} /></div>{caption}</>;
   if (c.msgtype === "m.video") return <><Video c={c} />{caption}</>;
   if (c.msgtype === "m.audio") return (
     <div onClick={(e) => e.stopPropagation()}>

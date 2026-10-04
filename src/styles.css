@@ -227,7 +227,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 .room-head-info:active { transform: none; }
 .room-head-text { flex: 1; min-width: 0; display: grid; }
 .room-head-text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.room-head-text span { font-size: 13px; color: var(--muted); }
+.room-head-text span { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .room-head-text span.typing, .room-preview.typing { color: var(--accent); }
 
 .timeline-wrap { position: relative; flex: 1; min-height: 0; }
@@ -302,6 +302,10 @@ div.msg-text blockquote { margin: 4px 0; padding-inline-start: 10px; border-inli
 .bubble.media .msg-meta { background: rgba(0, 0, 0, 0.45); color: #fff; padding: 2px 6px; border-radius: 10px; }
 .media-box { display: block; position: relative; border-radius: inherit; overflow: hidden; background: rgba(127, 127, 127, 0.15); }
 .media-box img, .media-box video { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* a gif with no stored size (videos sent as gif) takes its own shape */
+.media-box.gif:not([style]) { width: fit-content; }
+.media-box.gif:not([style]) :is(img, video) { width: auto; height: auto; max-width: min(320px, 100%); max-height: 320px; }
+.media-box.gif:not([style]) .shimmer { display: block; width: 240px; height: 180px; }
 .shimmer {
   position: absolute; inset: 0;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);

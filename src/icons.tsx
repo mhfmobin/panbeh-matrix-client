@@ -58,7 +58,7 @@ export type IconName = keyof typeof P;
 /** The same outline icon as markup, for DOM built outside React (sanitized message HTML). */
 export const iconSvg = (name: IconName, size = 20) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${P[name]}"/></svg>`;
-const FLIP = new Set<IconName>(["back", "send", "reply", "forward", "chevron"]); // directional, mirrored for RTL
+const FLIP = new Set<IconName>(["back", "reply", "forward", "chevron"]); // directional, mirrored for RTL
 const FILLED = new Set<IconName>(["send", "play", "pause", "stop", "hangup"]);
 
 export const Icon = ({ name, size = 20 }: { name: IconName; size?: number }) => (

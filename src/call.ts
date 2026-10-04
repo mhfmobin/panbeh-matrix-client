@@ -5,13 +5,13 @@ import { CallEventHandlerEvent } from "matrix-js-sdk/lib/webrtc/callEventHandler
 import type { CallFeed } from "matrix-js-sdk/lib/webrtc/callFeed.js";
 import type { MCallInviteNegotiate } from "matrix-js-sdk/lib/webrtc/callEventTypes.js";
 import { getCallNotificationExpiry, isLivekitTransportConfig, MatrixRTCSessionEvent, type IRTCNotificationContent, type LivekitTransportConfig, type MatrixRTCSession } from "matrix-js-sdk/lib/matrixrtc/index.js";
-import { BaseKeyProvider, createKeyMaterialFromBuffer, createLocalTracks, Room as LkRoom, RoomEvent as LkEvent, Track, type LocalAudioTrack, type LocalVideoTrack, type Participant, type RemoteTrack } from "livekit-client";
+import { BaseKeyProvider, createKeyMaterialFromBuffer, AudioPresets, createLocalTracks, Room as LkRoom, ScreenSharePresets, VideoPresets, RoomEvent as LkEvent, Track, type LocalAudioTrack, type Participant, type RemoteTrack } from "livekit-client";
 import { avatarUrl, client, isDirect, isEncrypted, loadEvent, pastFirstSync } from "./matrix.ts";
 import { callNotice, isMuted, ringtone, waitingTone } from "./notify.ts";
 import { senderName } from "./ui/common.tsx";
 import { alertDialog } from "./ui/dialog.tsx";
 import { isGroupCallAlert, isLegacyRing, isRing, isVideoOffer } from "./logic.ts";
-import { legacyCallsOn } from "./ui/Settings.tsx";
+import { legacyCallsOn, loadPrefs } from "./ui/Settings.tsx";
 import { isHeadless, isNative, nativeCallActive, nativeCancelCall, nativeSetAudioRoute, nativeShowCall, nativeSpeaker, toDataUrl, type CallAction } from "./native.ts";
 import { isWindowVisible, showWindow } from "./desktop.ts";
 
@@ -86,6 +86,12 @@ export const loadDevices = (): Devices => { try { return JSON.parse(localStorage
 const saveDevices = (p: Devices) => { try { localStorage.setItem(DEVICES_KEY, JSON.stringify({ ...loadDevices(), ...p })); } catch { /* not remembered */ } };
 const audioCapture = (d = loadDevices()) => ({ deviceId: d.audioinput, noiseSuppression: d.noiseSuppression ?? true, echoCancellation: true, autoGainControl: true });
 
+/** What we send, picked in settings: camera, screen share and audio (calls and voice messages). */
+const CAM_PRESETS = { "360": VideoPresets.h360, "540": VideoPresets.h540, "720": VideoPresets.h720, "1080": VideoPresets.h1080 };
+const SCREEN_PRESETS = { "720": ScreenSharePresets.h720fps15, "1080": ScreenSharePresets.h1080fps15, "1080hi": ScreenSharePresets.h1080fps30 };
+export const AUDIO_BPS = { low: AudioPresets.speech.maxBitrate, normal: AudioPresets.music.maxBitrate, high: AudioPresets.musicHighQuality.maxBitrate };
+const cam = () => ({ resolution: CAM_PRESETS[loadPrefs().camQuality].resolution });
+
 /** Switches a device now and for later calls. */
 export async function setDevice(kind: MediaDeviceKind, deviceId: string) {
   saveDevices({ [kind]: deviceId });
@@ -126,7 +132,7 @@ export async function call(room: Room, video: boolean, ring = true, legacy = fal
   if (legacy) return placeLegacy(room, video);
   // mic (and camera) first: if they're refused, nobody gets rung for nothing
   const d = loadDevices();
-  const media = await createLocalTracks({ audio: audioCapture(d), video: video ? { facingMode: "user", deviceId: d.videoinput } : false });
+  const media = await createLocalTracks({ audio: audioCapture(d), video: video ? { ...cam(), facingMode: "user", deviceId: d.videoinput } : false });
   const mine = await ourTransport();
   const session = client.matrixRTC.getRoomSession(room);
   // everyone meets on the SFU of whoever was in the call first
@@ -136,9 +142,15 @@ export async function call(room: Room, video: boolean, ring = true, legacy = fal
   if (!sfu) { media.forEach((t) => t.stop()); throw new Error("سرور شما از تماس پشتیبانی نمی‌کند"); }
   const e2ee = isEncrypted(room);
   const keys = new Keys();
+  const p = loadPrefs();
   const lk = new LkRoom({
     adaptiveStream: true, dynacast: true,
-    audioCaptureDefaults: audioCapture(d), videoCaptureDefaults: { deviceId: d.videoinput }, audioOutput: { deviceId: d.audiooutput },
+    publishDefaults: {
+      audioPreset: { maxBitrate: AUDIO_BPS[p.audioQuality] }, dtx: false,
+      videoEncoding: CAM_PRESETS[p.camQuality].encoding,
+      screenShareEncoding: SCREEN_PRESETS[p.screenQuality].encoding, screenShareSimulcastLayers: [],
+    },
+    audioCaptureDefaults: audioCapture(d), videoCaptureDefaults: { ...cam(), deviceId: d.videoinput }, audioOutput: { deviceId: d.audiooutput },
     e2ee: e2ee ? { keyProvider: keys, worker: new Worker(new URL("livekit-client/e2ee-worker", import.meta.url), { type: "module" }) } : undefined,
   });
   set({ active: { kind: "rtc", room, session, lk, video, min: false, speaker: video, facing: "user" } });
@@ -261,28 +273,28 @@ export async function toggleMic() {
 export async function toggleCam() {
   const a = snap.active;
   if (a?.kind === "legacy") await a.mc.setLocalVideoMuted(myMedia(a).cam); // unmuting a voice call upgrades it to video
-  else if (a) await a.lk.localParticipant.setCameraEnabled(!a.lk.localParticipant.isCameraEnabled, { facingMode: a.facing, deviceId: loadDevices().videoinput });
+  else if (a) await a.lk.localParticipant.setCameraEnabled(!a.lk.localParticipant.isCameraEnabled, { ...cam(), facingMode: a.facing, deviceId: loadDevices().videoinput });
   if (a && isNative) nativeCallActive(true, myMedia(a).cam); // camera in the background service, proximity sensor off for video
   bump();
 }
 export async function flipCam() {
   const a = snap.active;
   if (!a) return;
-  const facing = a.facing === "user" ? "environment" : "user";
-  if (a.kind === "legacy") { // the SDK picks cameras by device id: take the next one
-    const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
-    const now = a.mc.localUsermediaStream?.getVideoTracks()[0]?.getSettings().deviceId;
-    const next = cams[(cams.findIndex((d) => d.deviceId === now) + 1) % cams.length];
-    if (next) await client.getMediaHandler().setVideoInput(next.deviceId);
-  } else {
-    await (a.lk.localParticipant.getTrackPublication(Track.Source.Camera)?.videoTrack as LocalVideoTrack | undefined)?.restartTrack({ facingMode: facing });
-  }
-  patch({ facing });
+  // every camera in turn (front, back, the other back ones…), by device id
+  // ponytail: only the cameras Android's WebView lists; some phones hide ultra-wide/tele behind one logical camera
+  const track = () => a.kind === "legacy" ? a.mc.localUsermediaStream?.getVideoTracks()[0]
+    : a.lk.localParticipant.getTrackPublication(Track.Source.Camera)?.videoTrack?.mediaStreamTrack;
+  const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput" && d.deviceId);
+  const next = cams[(cams.findIndex((d) => d.deviceId === track()?.getSettings().deviceId) + 1) % cams.length];
+  if (!next) return;
+  if (a.kind === "legacy") await client.getMediaHandler().setVideoInput(next.deviceId);
+  else await a.lk.switchActiveDevice("videoinput", next.deviceId);
+  patch({ facing: track()?.getSettings().facingMode === "environment" ? "environment" : "user" }); // mirrors the preview
 }
 export async function toggleScreen() {
   const a = snap.active;
   if (a?.kind === "legacy") await a.mc.setScreensharingEnabled(!a.mc.isScreensharing());
-  else if (a) await a.lk.localParticipant.setScreenShareEnabled(!a.lk.localParticipant.isScreenShareEnabled, { audio: true });
+  else if (a) await a.lk.localParticipant.setScreenShareEnabled(!a.lk.localParticipant.isScreenShareEnabled, { audio: true, contentHint: "detail" });
   bump();
 }
 /** Android 12+: call audio to the earpiece, speaker, a wired or a Bluetooth headset. */
