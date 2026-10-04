@@ -2,7 +2,9 @@
 
 Panbeh's voice and video calls are MatrixRTC calls, the same kind Element Call and Element X make. The homeserver only relays signalling. Audio and video go through a **LiveKit SFU**, which hands out access through **lk-jwt-service**. These steps are the same for Synapse and Conduit/Tuwunel/Continuwuity.
 
-Calls interoperate with Element X and with Element Web/Desktop when Element Call is enabled. Legacy 1:1 `m.call.*` calls (old Element) are not supported.
+Calls interoperate with Element X and with Element Web/Desktop when Element Call is enabled.
+
+Legacy 1:1 `m.call.*` calls (FluffyChat, Nheko, SchildiChat, Element without Element Call) ring and can be answered too. In a DM, Panbeh calls back the way the other person last called. Right-click or long-press the call button to pick the other kind. Those calls are peer to peer and don't use LiveKit at all. They only need the TURN server from step 5, and they work in DMs even without steps 1 to 3.
 
 ## 1. LiveKit
 
@@ -71,6 +73,44 @@ rc_delayed_event_mgmt:
 ```
 
 Without delayed events (Conduit family), calls still work. A member whose app crashed simply shows as "in the call" until their membership expires.
+
+## 5. TURN for legacy 1:1 calls
+
+LiveKit's built-in TURN only serves LiveKit. Peer-to-peer legacy calls get TURN credentials from the homeserver (`/voip/turnServer`), so run coturn:
+
+```
+# /etc/turnserver.conf
+use-auth-secret
+static-auth-secret=TURN_SECRET
+realm=turn.example.org
+listening-port=3478
+tls-listening-port=5349
+cert=/certs/turn.crt
+pkey=/certs/turn.key
+no-multicast-peers
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+```
+
+If LiveKit's TURN already uses 3478 and 5349 on this host, give coturn other ports or its own IP.
+
+Synapse:
+
+```yaml
+turn_uris: ["turn:turn.example.org:3478?transport=udp", "turn:turn.example.org:3478?transport=tcp", "turns:turn.example.org:5349?transport=tcp"]
+turn_shared_secret: TURN_SECRET
+turn_user_lifetime: 86400000
+```
+
+Conduit / Tuwunel / Continuwuity:
+
+```toml
+turn_uris = ["turn:turn.example.org:3478?transport=udp", "turn:turn.example.org:3478?transport=tcp", "turns:turn.example.org:5349?transport=tcp"]
+turn_secret = "TURN_SECRET"
+```
+
+Without TURN, legacy calls only connect when both sides can reach each other directly (same network, open NAT). Panbeh never falls back to a public TURN server.
 
 ## Rooms
 

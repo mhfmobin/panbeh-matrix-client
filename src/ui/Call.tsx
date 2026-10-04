@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { EventType, type Room } from "matrix-js-sdk";
 import { MatrixRTCSessionEvent } from "matrix-js-sdk/lib/matrixrtc/index.js";
-import { ConnectionState, Track, type Participant } from "livekit-client";
+import { CallState } from "matrix-js-sdk/lib/webrtc/call.js";
+import type { CallFeed } from "matrix-js-sdk/lib/webrtc/callFeed.js";
+import { ConnectionState, Track, type VideoTrack } from "livekit-client";
 import { allowCalls, client, isDirect } from "../matrix.ts";
-import { answer, call, decline, flipCam, getCall, hangup, minimize, ourTransport, toggleCam, toggleMic, toggleScreen, toggleSpeaker, useCall, type Active } from "../call.ts";
+import { answer, call, decline, flipCam, getCall, hangup, minimize, myMedia, ourTransport, protocolFor, toggleCam, toggleMic, toggleScreen, toggleSpeaker, useCall, type Active } from "../call.ts";
 import { usePromise, useTick } from "../hooks.ts";
 import { fmtDuration, num } from "../logic.ts";
 import { isNative } from "../native.ts";
@@ -15,26 +17,44 @@ import { alertDialog, confirmDialog } from "./dialog.tsx";
 const run = (p: Promise<unknown> | void) => { p?.catch((e) => alertDialog(errText(e))); };
 const canShare = !isNative && !!navigator.mediaDevices?.getDisplayMedia;
 
-/** Starts a call, after making sure we may (members need power to send m.call.member) and ending another one. */
-async function start(room: Room, video: boolean) {
+/**
+ * Starts a call after ending another one. legacy: a peer-to-peer m.call.* call (DMs only); unset = call back the way they
+ * last called, or legacy when our server has no SFU. MatrixRTC needs power to send m.call.member, which an admin can grant.
+ */
+async function start(room: Room, video: boolean, legacy?: boolean) {
   const { active } = getCall();
   if (active && active.room !== room && !(await confirmDialog("تماس فعلی پایان یابد؟", { ok: "پایان و تماس", danger: true }))) return;
-  if (!room.currentState.maySendStateEvent(EventType.GroupCallMemberPrefix, me())) {
+  legacy ??= isDirect(room) && (protocolFor(room) === "legacy" || !(await ourTransport()));
+  if (!legacy && !room.currentState.maySendStateEvent(EventType.GroupCallMemberPrefix, me())) {
     if (!room.currentState.maySendStateEvent(EventType.RoomPowerLevels, me())) return alertDialog("مدیر گروه هنوز تماس را برای اعضا فعال نکرده است");
     if (!(await confirmDialog("تماس در این گروه فعال شود؟ اعضا می‌توانند به تماس بپیوندند."))) return;
     await allowCalls(room.roomId);
   }
-  await call(room, video);
+  await call(room, video, true, legacy);
 }
 
-/** Voice and video buttons for the room header; hidden when the server has no SFU. */
+/** Voice and video buttons for the room header. DMs always have them (legacy calls need no SFU); groups only with an SFU. */
 export function CallButtons({ room }: { room: Room }) {
   const sfu = usePromise(ourTransport());
-  if (!sfu) return null;
+  const [menu, setMenu] = useState<{ x: number; y: number; video: boolean } | null>(null);
+  const dm = isDirect(room);
+  if (!sfu && !dm) return null;
+  // right-click / long-press in a DM: pick the other kind of call by hand
+  const pick = (video: boolean) => dm && sfu ? (e: React.MouseEvent) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, video }); } : undefined;
   return (
     <>
-      <button className="icon-btn" onClick={() => run(start(room, false))} title="تماس صوتی" aria-label="تماس صوتی"><Icon name="phone" /></button>
-      <button className="icon-btn" onClick={() => run(start(room, true))} title="تماس تصویری" aria-label="تماس تصویری"><Icon name="video" /></button>
+      <button className="icon-btn" onClick={() => run(start(room, false))} onContextMenu={pick(false)} title="تماس صوتی" aria-label="تماس صوتی"><Icon name="phone" /></button>
+      <button className="icon-btn" onClick={() => run(start(room, true))} onContextMenu={pick(true)} title="تماس تصویری" aria-label="تماس تصویری"><Icon name="video" /></button>
+      {menu && (
+        <div className="chat-menu-backdrop" onClick={() => setMenu(null)}>
+          <div className="chat-menu" role="menu" style={{ left: Math.max(8, Math.min(menu.x - 260, innerWidth - 268)), top: menu.y }}>
+            <button role="menuitem" onClick={() => run(start(room, menu.video, false))}>
+              <Icon name={menu.video ? "video" : "phone"} /> تماس به روش جدید (Element X، پنبه)</button>
+            <button role="menuitem" onClick={() => run(start(room, menu.video, true))}>
+              <Icon name={menu.video ? "video" : "phone"} /> تماس به روش قدیمی (FluffyChat، Element قدیمی)</button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -53,7 +73,7 @@ export function CallBar({ room }: { room?: Room }) {
   );
   if (!room || active || !session?.memberships.length) return null;
   return (
-    <button className="call-bar" onClick={() => run(start(room, false))}>
+    <button className="call-bar" onClick={() => run(start(room, false, false))}>
       <Icon name="phone" size={18} /> <b>تماس در جریان است</b>
       <span>{num(new Set(session.memberships.map((m) => m.userId)).size)} نفر · پیوستن</span>
     </button>
@@ -89,18 +109,18 @@ function IncomingCall({ room, video }: { room: Room; video: boolean }) {
 function CallScreen({ a }: { a: Active }) {
   useEffect(() => pushBack(() => { minimize(true); }), []);
   const now = useClock(!!a.since);
-  const lp = a.lk.localParticipant;
-  const others = [...a.lk.remoteParticipants.values()];
-  const status = a.lk.state !== ConnectionState.Connected ? "در حال اتصال…"
+  const { tiles, others } = tilesOf(a);
+  const m = myMedia(a);
+  const status = a.kind === "legacy"
+    ? (a.since ? fmtDuration(now - a.since) : a.mc.state === CallState.InviteSent ? "در حال زنگ زدن…" : "در حال اتصال…")
+    : a.lk.state !== ConnectionState.Connected ? "در حال اتصال…"
     : !a.since ? (isDirect(a.room) ? "در حال زنگ زدن…" : "در انتظار دیگران…")
-    : !others.length ? "تنها هستید" : fmtDuration(now - a.since);
-  // tiles: everyone's camera (or avatar), plus any screen being shared
-  const tiles: [Participant, Track.Source][] = [...others, lp].flatMap((p) =>
-    [[p, Track.Source.Camera] as [Participant, Track.Source]].concat(p.isScreenShareEnabled ? [[p, Track.Source.ScreenShare]] : []));
+    : !others ? "تنها هستید" : fmtDuration(now - a.since);
   const [focus, setFocus] = useState<string | null>(null); // a feed blown up to most of the screen
-  const key = ([p, src]: [Participant, Track.Source]) => p.identity + src;
-  const main = tiles.find((t) => key(t) === focus); // gone (left, stopped sharing) = back to the grid
-  const pip = !main && tiles.length === 2 && others.length === 1; // 1:1: the other side fills the screen, we're in the corner
+  const main = tiles.find((t) => t.key === focus); // gone (left, stopped sharing) = back to the grid
+  const pip = !main && tiles.length === 2 && others === 1; // 1:1: the other side fills the screen, we're in the corner
+  const tile = (t: TileData, focused = false) =>
+    <Tile key={t.key} room={a.room} t={t} mirror={t.local && !t.screen && a.facing === "user"} focused={focused} onFocus={() => setFocus(focused ? null : t.key)} />;
   return (
     <div className="call-screen" role="dialog" aria-label="تماس">
       <header className="call-head">
@@ -109,47 +129,73 @@ function CallScreen({ a }: { a: Active }) {
       </header>
       {main ? (
         <div className="call-grid focus">
-          <Tile key={key(main)} a={a} p={main[0]} source={main[1]} focused onFocus={() => setFocus(null)} />
-          <div className="call-strip">
-            {tiles.filter((t) => t !== main).map((t) => <Tile key={key(t)} a={a} p={t[0]} source={t[1]} onFocus={() => setFocus(key(t))} />)}
-          </div>
+          {tile(main, true)}
+          <div className="call-strip">{tiles.filter((t) => t !== main).map((t) => tile(t))}</div>
         </div>
       ) : (
         <div className={"call-grid" + (pip ? " pip" : "")} data-n={tiles.length}>
-          {tiles.map((t) => <Tile key={key(t)} a={a} p={t[0]} source={t[1]} onFocus={() => setFocus(key(t))} />)}
+          {tiles.map((t) => tile(t))}
         </div>
       )}
       <div className="call-controls">
-        <CallBtn icon={lp.isMicrophoneEnabled ? "mic" : "micOff"} label="میکروفون" on={!lp.isMicrophoneEnabled} onClick={() => run(toggleMic())} />
-        <CallBtn icon={lp.isCameraEnabled ? "video" : "videoOff"} label="دوربین" on={!lp.isCameraEnabled} onClick={() => run(toggleCam())} />
-        {isNative && lp.isCameraEnabled && <CallBtn icon="flip" label="چرخش دوربین" onClick={() => run(flipCam())} />}
+        <CallBtn icon={m.mic ? "mic" : "micOff"} label="میکروفون" on={!m.mic} onClick={() => run(toggleMic())} />
+        <CallBtn icon={m.cam ? "video" : "videoOff"} label="دوربین" on={!m.cam} onClick={() => run(toggleCam())} />
+        {isNative && m.cam && <CallBtn icon="flip" label="چرخش دوربین" onClick={() => run(flipCam())} />}
         {isNative && <CallBtn icon="speaker" label="بلندگو" on={a.speaker} onClick={toggleSpeaker} />}
-        {canShare && <CallBtn icon="screen" label="اشتراک صفحه" on={lp.isScreenShareEnabled} onClick={() => run(toggleScreen())} />}
+        {canShare && <CallBtn icon="screen" label="اشتراک صفحه" on={m.screen} onClick={() => run(toggleScreen())} />}
         <CallBtn icon="hangup" label="پایان" danger onClick={() => run(hangup())} />
       </div>
     </div>
   );
 }
 
-function Tile({ a, p, source, focused, onFocus }: { a: Active; p: Participant; source: Track.Source; focused?: boolean; onFocus: () => void }) {
+/** One feed on the call screen: a camera or a shared screen, from LiveKit (track) or a legacy call (stream). */
+type TileData = { key: string; userId: string; local: boolean; screen: boolean; video?: VideoTrack | MediaStream; micOff: boolean; speaking: boolean };
+
+/** Everyone's camera (or avatar), plus any screen being shared; others = how many other people are in the call. */
+function tilesOf(a: Active): { tiles: TileData[]; others: number } {
+  if (a.kind === "legacy") {
+    const mc = a.mc, them = mc.getOpponentMember()?.userId ?? mc.invitee ?? "";
+    const feed = (f: CallFeed | undefined, local: boolean, screen: boolean): TileData[] => !f ? [] : [{
+      key: (local ? "me" : "them") + (screen ? ":screen" : ""), userId: local ? me() : them, local, screen,
+      video: !f.isVideoMuted() && f.stream.getVideoTracks().length ? f.stream : undefined, micOff: f.isAudioMuted(), speaking: false,
+    }];
+    const remote = feed(mc.remoteUsermediaFeed, false, false);
+    return { others: 1, tiles: [ // while it rings, the other side is their avatar
+      ...(remote.length ? remote : [{ key: "them", userId: them, local: false, screen: false, micOff: false, speaking: false }]),
+      ...feed(mc.remoteScreensharingFeed, false, true), ...feed(mc.localUsermediaFeed, true, false), ...feed(mc.localScreensharingFeed, true, true)] };
+  }
+  const others = [...a.lk.remoteParticipants.values()];
+  const tiles = [...others, a.lk.localParticipant].flatMap((p) => {
+    // LiveKit identities are "@user:server:DEVICE" (or hashed, for newer clients: ask the session)
+    const userId = a.session.memberships.find((m) => m.rtcBackendIdentity === p.identity)?.userId ?? p.identity.slice(0, p.identity.lastIndexOf(":"));
+    const video = (src: Track.Source) => { const pub = p.getTrackPublication(src); return pub && !pub.isMuted ? pub.videoTrack : undefined; };
+    const t = { userId, local: p.isLocal, micOff: !p.isMicrophoneEnabled, speaking: p.isSpeaking };
+    return [{ ...t, key: p.identity + Track.Source.Camera, screen: false, video: video(Track.Source.Camera) }]
+      .concat(p.isScreenShareEnabled ? [{ ...t, key: p.identity + Track.Source.ScreenShare, screen: true, video: video(Track.Source.ScreenShare) }] : []);
+  });
+  return { tiles, others: others.length };
+}
+
+function Tile({ room, t, mirror, focused, onFocus }: { room: Room; t: TileData; mirror: boolean; focused: boolean; onFocus: () => void }) {
   const ref = useRef<HTMLVideoElement>(null);
-  const pub = p.getTrackPublication(source);
-  const track = pub && !pub.isMuted ? pub.videoTrack : undefined;
+  const { video } = t;
   useEffect(() => {
     const el = ref.current;
-    if (!track || !el) return;
-    track.attach(el);
-    return () => { track.detach(el); };
-  }, [track]);
-  // LiveKit identities are "@user:server:DEVICE" (or hashed, for newer clients: ask the session)
-  const userId = a.session.memberships.find((m) => m.rtcBackendIdentity === p.identity)?.userId ?? p.identity.slice(0, p.identity.lastIndexOf(":"));
-  const m = a.room.getMember(userId);
-  const mirror = p.isLocal && source === Track.Source.Camera && a.facing === "user";
+    if (!video || !el) return;
+    if (video instanceof MediaStream) {
+      el.srcObject = video;
+      return () => { el.srcObject = null; };
+    }
+    video.attach(el);
+    return () => { video.detach(el); };
+  }, [video]);
+  const m = room.getMember(t.userId);
   return (
-    <div className={"call-tile" + (p.isLocal ? " local" : "") + (p.isSpeaking ? " speaking" : "") + (focused ? " main" : "")}>
-      {track ? <video ref={ref} autoPlay playsInline muted className={(source === Track.Source.ScreenShare || focused ? "contain" : "") + (mirror ? " mirror" : "")} />
-        : <Avatar mxc={m?.getMxcAvatarUrl()} name={m?.name ?? userId} id={userId} size={88} />}
-      <span className="call-name">{p.isLocal ? "شما" : m?.name ?? userId}{!p.isMicrophoneEnabled && <Icon name="micOff" size={14} />}</span>
+    <div className={"call-tile" + (t.local ? " local" : "") + (t.speaking ? " speaking" : "") + (focused ? " main" : "")}>
+      {video ? <video ref={ref} autoPlay playsInline muted className={(t.screen || focused ? "contain" : "") + (mirror ? " mirror" : "")} />
+        : <Avatar mxc={m?.getMxcAvatarUrl()} name={m?.name ?? t.userId} id={t.userId} size={88} />}
+      <span className="call-name">{t.local ? "شما" : m?.name ?? t.userId}{t.micOff && <Icon name="micOff" size={14} />}</span>
       <button className="call-focus" onClick={onFocus} title={focused ? "بازگشت به همه" : "بزرگ‌نمایی"} aria-label={focused ? "بازگشت به همه" : "بزرگ‌نمایی"}>
         <Icon name={focused ? "shrink" : "expand"} size={18} />
       </button>

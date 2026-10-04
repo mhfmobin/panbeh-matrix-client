@@ -232,3 +232,23 @@ test("isRing: rings only for fresh rings aimed at us or the room", () => {
   assert.equal(isRing({ notification_type: "notification", "m.mentions": { room: true } }, 2000, "@me:x", 1000), false);
   assert.equal(isRing({ notification_type: "ring" }, 2000, "@me:x", 1000), false);
 });
+
+import { isLegacyRing, isVideoOffer, pickProtocol } from "./logic.ts";
+test("isLegacyRing: fresh invites for us or anyone in the room", () => {
+  assert.equal(isLegacyRing({ lifetime: 60000 }, 1000, "@me:x", 2000), true);
+  assert.equal(isLegacyRing({ lifetime: 60000 }, 1000, "@me:x", 62000), false); // expired
+  assert.equal(isLegacyRing({}, 1000, "@me:x", 1000), false); // no lifetime
+  assert.equal(isLegacyRing({ lifetime: 60000, invitee: "@me:x" }, 1000, "@me:x", 2000), true);
+  assert.equal(isLegacyRing({ lifetime: 60000, invitee: "@you:x" }, 1000, "@me:x", 2000), false);
+  assert.equal(isVideoOffer({ offer: { sdp: "v=0\r\nm=audio 9 UDP\r\nm=video 9 UDP\r\n" } }), true);
+  assert.equal(isVideoOffer({ offer: { sdp: "v=0\r\nm=audio 9 UDP\r\n" } }), false);
+});
+
+test("pickProtocol: call back the way they last called", () => {
+  const rtc = "org.matrix.msc4075.rtc.notification";
+  assert.equal(pickProtocol([], "@me:x"), "rtc");
+  assert.equal(pickProtocol([{ type: "m.call.invite", sender: "@you:x" }], "@me:x"), "legacy");
+  assert.equal(pickProtocol([{ type: "m.call.invite", sender: "@you:x" }, { type: rtc, sender: "@you:x" }], "@me:x"), "rtc");
+  assert.equal(pickProtocol([{ type: rtc, sender: "@you:x" }, { type: "m.call.invite", sender: "@me:x" }], "@me:x"), "rtc"); // ours don't count
+  assert.equal(pickProtocol([{ type: "m.call.invite", sender: "@you:x" }, { type: "m.room.message", sender: "@you:x" }], "@me:x"), "legacy");
+});

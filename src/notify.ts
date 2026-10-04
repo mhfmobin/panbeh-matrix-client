@@ -39,6 +39,7 @@ export function startNotifications() {
 }
 
 async function notify(ev: MatrixEvent, room: Room) {
+  if (/^m\.call\.|\.rtc\./.test(ev.getType())) return; // call.ts rings for calls (and .m.rule.call would turn every invite into a message)
   const id = ev.getId()!;
   const prefs = loadPrefs();
   if (!prefs.notify || shown.has(id)) return;

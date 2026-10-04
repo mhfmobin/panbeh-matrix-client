@@ -303,3 +303,20 @@ type RingContent = { notification_type?: string; "m.mentions"?: { room?: boolean
 /** An m.rtc.notification (MSC4075) that should ring `me` now: a "ring" (not a group "notification"), aimed at us or the room, before `until`. */
 export const isRing = (c: RingContent, until: number, me: string, now = Date.now()) =>
   c.notification_type === "ring" && !!(c["m.mentions"]?.room || c["m.mentions"]?.user_ids?.includes(me)) && until > now; // NaN until = no
+
+type Invite = { lifetime?: number; invitee?: string; offer?: { sdp?: string } };
+/** A legacy 1:1 m.call.invite (old Element, FluffyChat, Nheko…) that should ring `me` now: unexpired and not aimed at someone else. */
+export const isLegacyRing = (c: Invite, ts: number, me: string, now = Date.now()) =>
+  ts + (c.lifetime ?? 0) > now && (!c.invitee || c.invitee === me);
+export const isVideoOffer = (c: Invite) => /^m=video/m.test(c.offer?.sdp ?? "");
+
+/** How to call back in a DM: the way the other side last called us (legacy m.call.invite or MatrixRTC ring), MatrixRTC if they never did. Oldest first. */
+export function pickProtocol(evs: { type: string; sender: string }[], me: string): "legacy" | "rtc" {
+  for (let i = evs.length; i--;) {
+    const { type, sender } = evs[i];
+    if (sender === me) continue;
+    if (type === "m.call.invite") return "legacy";
+    if (type.endsWith("rtc.notification")) return "rtc";
+  }
+  return "rtc";
+}
