@@ -227,11 +227,11 @@ button:disabled { opacity: 0.6; cursor: default; }
 .room-head-info:active { transform: none; }
 .room-head-text { flex: 1; min-width: 0; display: grid; }
 .room-head-text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.room-head-text span { font-size: 13px; color: var(--muted); }
+.room-head-text span { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .room-head-text span.typing, .room-preview.typing { color: var(--accent); }
 
 .timeline-wrap { position: relative; flex: 1; min-height: 0; }
-.timeline { height: 100%; }
+.timeline { height: 100%; overflow-x: hidden; } /* a swiped row (translateX) mustn't scroll the RTL list sideways */
 .row { max-width: 760px; margin: 0 auto; display: flow-root; } /* flow-root: child margins count toward the measured height */
 
 .pill {
@@ -302,6 +302,10 @@ div.msg-text blockquote { margin: 4px 0; padding-inline-start: 10px; border-inli
 .bubble.media .msg-meta { background: rgba(0, 0, 0, 0.45); color: #fff; padding: 2px 6px; border-radius: 10px; }
 .media-box { display: block; position: relative; border-radius: inherit; overflow: hidden; background: rgba(127, 127, 127, 0.15); }
 .media-box img, .media-box video { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* a gif with no stored size (videos sent as gif) takes its own shape */
+.media-box.gif:not([style]) { width: fit-content; }
+.media-box.gif:not([style]) :is(img, video) { width: auto; height: auto; max-width: min(320px, 100%); max-height: 320px; }
+.media-box.gif:not([style]) .shimmer { display: block; width: 240px; height: 180px; }
 .shimmer {
   position: absolute; inset: 0;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
@@ -485,6 +489,7 @@ button.user-row:hover { background: var(--hover); }
 .select[aria-expanded="true"] { border-color: var(--accent); }
 .select > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .select > svg { flex: none; color: var(--muted); }
+.msg-menu-backdrop.select-backdrop { z-index: 49; } /* over the call screen too */
 .select-menu { max-height: 60vh; overflow-y: auto; }
 .select-menu button svg { visibility: hidden; color: var(--accent); }
 .select-menu button.on { color: var(--accent); }
@@ -569,7 +574,7 @@ input[role="switch"]:checked::before { transform: translateX(-18px); }
   position: absolute; z-index: 21; padding: 6px; background: var(--panel); border-radius: 14px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18); animation: pop 0.14s;
 }
-.attach-menu { bottom: calc(100% + 8px); inset-inline-start: 0; min-width: 200px; display: grid; }
+.attach-menu { bottom: calc(100% + 8px); inset-inline-end: 0; min-width: 200px; display: grid; }
 .attach-menu > * { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; cursor: pointer; text-align: start; }
 .attach-menu > *:hover { background: var(--hover); }
 .attach-menu svg { color: var(--accent); }
@@ -605,7 +610,7 @@ input[role="switch"]:checked::before { transform: translateX(-18px); }
 .voice-meta { display: flex; align-items: center; gap: 8px; padding-right: 64px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .msg.mine .voice-meta { padding-right: 76px; color: var(--out-meta); }
 .speed { padding: 0 6px; border-radius: 8px; font-size: 11px; font-weight: 700; line-height: 18px; color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
-.recorder { align-items: center; }
+.recorder { align-items: center; flex-direction: row-reverse; } /* stop/send where the mic was: the right */
 .recorder > .icon-btn { color: #e53935; }
 .recorder-live, .recorder-preview {
   flex: 1; min-width: 0; min-height: 54px; display: flex; align-items: center; gap: 10px; padding: 0 16px;
@@ -684,6 +689,9 @@ button.msg-sender { display: block; max-width: 100%; text-align: start; }
 div.msg-text code { padding: 1px 4px; border-radius: 4px; background: rgba(127, 127, 127, 0.15); }
 div.msg-text pre code { padding: 0; background: none; }
 div.msg-text pre { direction: ltr; text-align: left; }
+div.msg-text pre { position: relative; padding-right: 34px; }
+.code-copy { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 6px; color: inherit; opacity: 0.55; }
+.code-copy:hover { opacity: 1; background: rgba(127, 127, 127, 0.18); }
 div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparent); border-radius: 2px; }
 [data-mx-spoiler] { cursor: pointer; border-radius: 4px; background: rgba(127, 127, 127, 0.45); color: transparent; filter: blur(3px); transition: filter 0.15s; }
 [data-mx-spoiler] * { color: transparent; }
@@ -756,10 +764,10 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .quick-list { display: grid; gap: 2px; margin-top: 6px; }
 .quick-list .user-row.on { background: var(--hover); }
 .kbd-hint { color: var(--muted); font-size: 12px; text-align: center; margin: 10px 0 0; }
-/* ---------- emoji / stickers ---------- */
+/* ---------- emoji / gifs ---------- */
 .emoji-toggle { flex: none; margin-bottom: 7px; background: var(--panel); box-shadow: var(--shadow); }
 .emoji-panel {
-  position: absolute; z-index: 21; bottom: calc(100% + 4px); inset-inline-start: 12px; width: min(360px, calc(100% - 24px)); height: 380px;
+  position: absolute; z-index: 21; bottom: calc(100% + 4px); inset-inline-end: 12px; width: min(360px, calc(100% - 24px)); height: 380px;
   display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--panel); border-radius: 14px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18); animation: pop 0.14s;
 }
@@ -771,14 +779,14 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .emoji-cats button { flex: none; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; font-size: 20px; opacity: 0.55; }
 .emoji-cats button.on, .emoji-cats button:hover { opacity: 1; background: var(--hover); }
 .emoji-cats img { width: 26px; height: 26px; object-fit: contain; }
-.emoji-grid, .sticker-grid { position: relative; flex: 1; min-height: 0; overflow-y: auto; display: grid; align-content: start; }
+.emoji-grid, .gif-grid { position: relative; flex: 1; min-height: 0; overflow-y: auto; display: grid; align-content: start; }
 .emoji-grid { grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); }
 .emoji-grid button { height: 38px; font-size: 26px; line-height: 1; border-radius: 8px; }
-.emoji-grid button:hover, .sticker-grid button:hover { background: var(--hover); }
-.sticker-grid { grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 4px; }
-.sticker-grid button { position: relative; aspect-ratio: 1; padding: 4px; display: grid; place-items: center; border-radius: 10px; overflow: hidden; }
-.sticker-grid img { max-width: 100%; max-height: 100%; object-fit: contain; }
-.sticker-grid .shimmer { width: 100%; height: 100%; }
+.emoji-grid button:hover, .gif-grid button:hover { background: var(--hover); }
+.gif-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 4px; }
+.gif-grid button { position: relative; aspect-ratio: 1; padding: 4px; display: grid; place-items: center; border-radius: 10px; overflow: hidden; }
+.gif-grid img, .gif-grid video { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
+.gif-grid .shimmer { width: 100%; height: 100%; }
 .quick-react button.more { display: grid; place-items: center; color: var(--muted); }
 /* ---------- timeline: unread / jump / link preview ---------- */
 .unread-divider {
@@ -816,6 +824,8 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .row-btn { flex: none; padding: 6px 10px; border-radius: 10px; color: var(--accent); font-weight: 500; }
 .row-btn:hover { background: var(--hover); }
 .sheet > button.secondary { width: 100%; height: 44px; margin-top: 8px; border-radius: 12px; font-weight: 600; color: var(--accent); background: var(--hover); }
+.profile-calls { display: flex; gap: 8px; margin-top: 8px; }
+.profile-calls button.secondary { flex: 1; height: 44px; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 12px; font-weight: 600; color: var(--accent); background: var(--hover); }
 .card button + button { margin-top: 0; }
 .verify { display: grid; gap: 14px; text-align: center; }
 .verify p { margin: 0; }
@@ -837,6 +847,8 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .photo-remove { background: none; border: 0; padding: 2px 8px; font-size: 13px; cursor: pointer; }
 .avatar-col { justify-items: center; gap: 2px; }
 .photo-remove { color: #e53935; }
+.photo-change { color: var(--accent); }
+.avatar-view { padding: 0; border: 0; background: none; border-radius: 50%; cursor: zoom-in; }
 
 .avatar-wrap { position: relative; display: inline-flex; flex: none; }
 .online-dot { position: absolute; inset-inline-end: 1px; bottom: 1px; width: 12px; height: 12px; border-radius: 50%; background: #4fae4e; border: 2px solid var(--bg); }
@@ -951,6 +963,58 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 @media (hover: none) { .call-focus { opacity: 1; } } /* touch: no hover to reveal it */
 .call-strip .call-focus { inset: 0; width: auto; height: auto; border-radius: 0; background: none; opacity: 0; } /* the whole thumbnail swaps */
 .call-controls { display: flex; justify-content: center; flex-wrap: wrap; gap: 14px; padding: 16px 12px 28px; }
+/* group extras: hands, reactions, connection, the participant list, "+N" */
+.call-hand { position: absolute; top: 8px; inset-inline-start: 8px; font-size: 22px; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6)); }
+.call-reaction { position: absolute; inset: 0; display: grid; place-items: center; font-size: 64px; pointer-events: none; animation: rise 3s ease-out forwards; }
+@keyframes rise { 0% { transform: scale(0.4); opacity: 0; } 15% { transform: scale(1); opacity: 1; } 80% { opacity: 1; } 100% { transform: translateY(-30%); opacity: 0; } }
+.call-quality { width: 8px; height: 8px; border-radius: 50%; background: #f4b400; }
+.call-quality.lost { background: #e53935; }
+.call-more { font-size: 28px; font-weight: 600; color: #fff; }
+.call-more:hover { background: #2a323b; }
+.call-people { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow: auto; }
+.call-people > div { display: flex; align-items: center; gap: 10px; }
+.call-people > div > span:first-of-type { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.call-people small { color: #f4b400; font-size: 12px; }
+.call-reactions { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.call-reactions button { justify-content: center; font-size: 28px; padding: 8px; }
+/* devices / audio route card, above the controls */
+.call-panel-backdrop { position: absolute; inset: 0; z-index: 2; display: flex; align-items: flex-end; justify-content: center; padding: 0 12px calc(110px + env(safe-area-inset-bottom)); }
+.call-panel { width: min(100%, 360px); display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 16px; background: #1f252c; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); animation: fade 0.15s; }
+.call-panel label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: rgba(255, 255, 255, 0.7); }
+.call-panel label.switch-row { flex-direction: row; color: #fff; font-size: 14px; }
+.call-panel input[role="switch"]:not(:checked) { background: rgba(255, 255, 255, 0.2); }
+.call-panel .select { max-width: none; width: 100%; padding: 0 12px; border-color: rgba(255, 255, 255, 0.15); background: #111418; color: #fff; }
+.call-panel .select > svg { color: rgba(255, 255, 255, 0.6); }
+.call-panel button { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; color: #fff; text-align: start; }
+.call-panel button:hover { background: rgba(255, 255, 255, 0.08); }
+.call-panel button.on { background: rgba(46, 158, 91, 0.35); }
+/* Android picture-in-picture: a tiny window with just the other side's video */
+@media (max-width: 420px) and (max-height: 420px) {
+  .call-head, .call-controls, .call-strip, .call-name, .call-focus, .call-panel-backdrop, .call-waiting { display: none; }
+  .call-grid { display: block; padding: 0; }
+  .call-grid > .call-tile { height: 100%; border-radius: 0; }
+  .call-grid > .call-tile:not(:first-child) { display: none; }
+}
+/* desktop screen-share picker */
+.source-picker { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, 0.6); animation: fade 0.15s; }
+.source-picker > div { width: min(100%, 760px); max-height: 100%; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 18px; border-radius: 16px; background: #1f252c; color: #fff; }
+.source-picker h3 { margin: 0; font-size: 17px; }
+.source-picker h4 { margin: 6px 0 0; font-size: 13px; font-weight: normal; color: rgba(255, 255, 255, 0.7); }
+.source-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.source-grid button { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 12px; color: #fff; text-align: start; }
+.source-grid button:hover, .source-grid button:focus-visible { background: rgba(255, 255, 255, 0.08); }
+.source-grid img { width: 100%; aspect-ratio: 16 / 9; object-fit: contain; border-radius: 8px; background: #000; }
+.source-grid span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.source-cancel { align-self: flex-end; padding: 8px 16px; border-radius: 10px; color: #fff; background: rgba(255, 255, 255, 0.12); }
+/* call waiting: a card over whatever is on screen */
+.call-waiting {
+  position: fixed; z-index: 49; top: calc(12px + env(safe-area-inset-top)); inset-inline: 12px; max-width: 420px; margin-inline: auto; display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 16px; background: #1f252c; color: #fff; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); animation: fade 0.18s;
+}
+.call-waiting div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.call-waiting b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.call-waiting span { font-size: 13px; color: rgba(255, 255, 255, 0.7); }
+.call-waiting .call-btn { width: 44px; height: 44px; flex: none; }
 .call-btn { width: 56px; height: 56px; display: grid; place-items: center; border-radius: 50%; background: rgba(255, 255, 255, 0.14); color: #fff; }
 .call-btn:hover { background: rgba(255, 255, 255, 0.22); }
 .call-btn.on { background: #fff; color: #111418; }

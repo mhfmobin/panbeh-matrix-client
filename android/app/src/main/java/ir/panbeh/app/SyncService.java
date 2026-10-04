@@ -1,6 +1,7 @@
 package ir.panbeh.app;
 
 import android.annotation.SuppressLint;
+import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.PendingIntent;
 import android.app.Service;
@@ -8,18 +9,25 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
+import android.net.ConnectivityManager;
+import android.net.Network;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
+import android.os.SystemClock;
 import android.util.Log;
+import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 import androidx.core.app.ServiceCompat;
 import androidx.core.content.ContextCompat;
 import androidx.webkit.WebViewAssetLoader;
@@ -37,7 +45,10 @@ import org.json.JSONObject;
 public class SyncService extends Service {
     static final int NOTIFICATION_ID = 7;
     private static final String TAG = "PanbehSync";
-    private static final String PREFS = "panbeh", PREF_ENABLED = "background";
+    private static final String PREFS = "panbeh", PREF_ENABLED = "background", PREF_INTERVAL = "interval";
+    /** Alarm in "every N minutes" mode: wake up, let the page catch up, sleep again. */
+    private static final String ACTION_CHECK = "ir.panbeh.app.CHECK";
+    private static final long CHECK_MAX_MS = 45_000, WATCHDOG_MS = 60_000;
     /** Same origin as Capacitor's local server, so both WebViews share IndexedDB and localStorage. */
     private static final String ORIGIN = "https://localhost";
 
@@ -50,6 +61,24 @@ public class SyncService extends Service {
     private final Handler main = new Handler(Looper.getMainLooper());
     private WebView headless;
     private final Runnable startHeadless = this::createHeadless;
+    /** Real-time mode keeps the CPU awake so the page's long-poll and timers never freeze; interval mode holds one per check. */
+    private PowerManager.WakeLock realtimeLock, checkLock;
+    private final Runnable endCheck = () -> { if (checkLock != null && checkLock.isHeld()) checkLock.release(); };
+    /** While the CPU is awake: nudge the page every minute; it reconnects if its /sync stalled (see kick in src/matrix.ts). */
+    private final Runnable watchdog = new Runnable() {
+        @Override
+        public void run() {
+            kick();
+            main.postDelayed(this, WATCHDOG_MS);
+        }
+    };
+    /** Last sync state the page reported (SyncState in matrix-js-sdk), and whether Android sees a network. */
+    private String syncState;
+    private boolean online = true;
+    /** The default network: a different one means the page's pending /sync went out on a network that's gone. */
+    private Network current;
+    private boolean foreground;
+    private ConnectivityManager.NetworkCallback network;
 
     static boolean isEnabled(Context ctx) {
         return ctx.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(PREF_ENABLED, false);
@@ -62,6 +91,15 @@ public class SyncService extends Service {
         } catch (RuntimeException e) { // ForegroundServiceStartNotAllowedException from the background
             Log.w(TAG, "could not start", e);
         }
+    }
+
+    /** Minutes between background checks; 0 = real-time. */
+    static int interval(Context ctx) {
+        return ctx.getSharedPreferences(PREFS, MODE_PRIVATE).getInt(PREF_INTERVAL, 0);
+    }
+
+    static void setInterval(Context ctx, int minutes) {
+        ctx.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(PREF_INTERVAL, Math.max(0, minutes)).apply();
     }
 
     static void stop(Context ctx) {
@@ -105,43 +143,165 @@ public class SyncService extends Service {
         if (instance != null) instance.scheduleHeadless();
     }
 
+    /** The page's sync state changed (every ClientEvent.Sync). Updates the notification and ends an interval check once caught up. */
+    static void reportSync(String state) {
+        SyncService s = instance;
+        if (s != null) s.main.post(() -> s.onSync(state));
+    }
+
+    private void onSync(String state) {
+        if ("SYNCING".equals(state) && checkLock != null && checkLock.isHeld()) {
+            main.removeCallbacks(endCheck);
+            main.postDelayed(endCheck, 5000); // a moment for the batch's notifications to be posted
+        }
+        if (state.equals(syncState)) return;
+        syncState = state;
+        refreshNotification();
+    }
+
+    /** Asks whichever page is syncing to reconnect now, instead of waiting on JS timers that froze while the phone slept. */
+    void kick() {
+        kick(false);
+    }
+
+    /** newNetwork: drop the pending /sync even if it's young; it was sent on the old network and will never answer. */
+    void kick(boolean newNetwork) {
+        main.post(() -> {
+            WebView w = headless != null ? headless : activityAlive ? PanbehPlugin.webView() : null;
+            if (w != null) w.evaluateJavascript("window.panbehKick && panbehKick(" + newNetwork + ")", null);
+        });
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
         instance = this;
         Notifier.createChannels(this);
+        network = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable(Network n) {
+                main.post(() -> {
+                    boolean changed = !online || !n.equals(current);
+                    online = true;
+                    current = n;
+                    refreshNotification();
+                    kick(changed);
+                });
+            }
+
+            @Override
+            public void onLost(Network n) {
+                main.post(() -> {
+                    if (!n.equals(current)) return; // an old default network going away after the switch
+                    online = false;
+                    refreshNotification();
+                });
+            }
+        };
+        try {
+            ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+            current = cm.getActiveNetwork();
+            online = current != null;
+            cm.registerDefaultNetworkCallback(network);
+        } catch (RuntimeException e) { // too many callbacks, or no permission
+            Log.w(TAG, "no network callback", e);
+            network = null;
+        }
+        main.postDelayed(watchdog, WATCHDOG_MS);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        goForeground();
+        boolean check = intent != null && ACTION_CHECK.equals(intent.getAction());
+        // an alarm may not start a foreground service from the background; we already are one unless the system restarted us
+        if (!check || !foreground) goForeground();
         if (!isEnabled(this) && !inCall) { // restarted by the system after being switched off
             stopSelf();
             return START_NOT_STICKY;
+        }
+        applyMode();
+        if (check) {
+            Log.i(TAG, "check");
+            checkLock().acquire(CHECK_MAX_MS);
+            main.removeCallbacks(endCheck);
+            kick();
         }
         if (!activityAlive) scheduleHeadless();
         return START_STICKY;
     }
 
-    private void goForeground() {
+    private PowerManager.WakeLock checkLock() {
+        if (checkLock == null) {
+            checkLock = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "panbeh:check");
+            checkLock.setReferenceCounted(false);
+        }
+        return checkLock;
+    }
+
+    /** Real-time: hold the CPU. Every N minutes: no lock, an alarm instead (Doze stretches it to ~9-15 min at most). */
+    @SuppressLint("WakelockTimeout") // held for as long as the user wants real-time messages
+    private void applyMode() {
+        int minutes = isEnabled(this) ? interval(this) : 0;
+        boolean realtime = isEnabled(this) && minutes == 0;
+        if (realtime) {
+            if (realtimeLock == null) {
+                realtimeLock = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "panbeh:sync");
+                realtimeLock.setReferenceCounted(false);
+            }
+            if (!realtimeLock.isHeld()) realtimeLock.acquire();
+        } else if (realtimeLock != null && realtimeLock.isHeld()) realtimeLock.release();
+        AlarmManager am = getSystemService(AlarmManager.class);
+        if (minutes > 0) am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + minutes * 60_000L, checkIntent());
+        else am.cancel(checkIntent());
+    }
+
+    private PendingIntent checkIntent() {
+        Intent i = new Intent(this, SyncService.class).setAction(ACTION_CHECK);
+        return PendingIntent.getService(this, 1, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    /** «متصل» / «در حال اتصال…» / «قطع؛ تلاش دوباره…» in the permanent notification. */
+    private int statusText() {
+        if (!online || "ERROR".equals(syncState)) return R.string.service_offline;
+        if ("SYNCING".equals(syncState) || "PREPARED".equals(syncState)) return R.string.service_title;
+        return R.string.service_connecting;
+    }
+
+    @SuppressLint("MissingPermission") // without it the notification just doesn't update
+    private void refreshNotification() {
+        if (!foreground) return;
+        try {
+            NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, buildNotification());
+        } catch (SecurityException e) {
+            // notifications refused
+        }
+    }
+
+    private Notification buildNotification() {
         Intent open = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        Notification n = new NotificationCompat.Builder(this, Notifier.CH_SERVICE)
+        return new NotificationCompat.Builder(this, Notifier.CH_SERVICE)
             .setSmallIcon(R.drawable.ic_stat_panbeh)
-            .setContentTitle(getString(inCall ? R.string.call_ongoing : R.string.service_title))
+            .setContentTitle(getString(inCall ? R.string.call_ongoing : statusText()))
             .setContentText(inCall ? null : getString(R.string.service_text))
             .setPriority(inCall ? NotificationCompat.PRIORITY_DEFAULT : NotificationCompat.PRIORITY_MIN)
             .setOngoing(true)
             .setShowWhen(false)
             .setContentIntent(PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE))
             .build();
+    }
+
+    private void goForeground() {
+        Notification n = buildNotification();
         int type = Build.VERSION.SDK_INT >= 34 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING : 0;
         int call = !inCall || Build.VERSION.SDK_INT < 30 ? 0
             : ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE | (inVideoCall ? ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA : 0);
         try {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, n, type | call);
+            foreground = true;
         } catch (RuntimeException e) { // e.g. camera permission refused: keep the mic at least
             try {
                 ServiceCompat.startForeground(this, NOTIFICATION_ID, n, type | (call & ~ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA));
+                foreground = true;
             } catch (RuntimeException e2) {
                 Log.w(TAG, "startForeground failed", e2);
                 stopSelf();
@@ -180,6 +340,13 @@ public class SyncService extends Service {
                 return !ORIGIN.equals(request.getUrl().getScheme() + "://" + request.getUrl().getHost());
             }
         });
+        w.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onConsoleMessage(ConsoleMessage m) { // adb logcat -s PanbehSync; the SDK's debug chatter stays out
+                if (m.messageLevel() != ConsoleMessage.MessageLevel.DEBUG) Log.i(TAG, m.message());
+                return true;
+            }
+        });
         w.addJavascriptInterface(new HeadlessBridge(), "PanbehAndroid");
         w.loadUrl(ORIGIN + "/?headless=1");
         headless = w;
@@ -198,6 +365,13 @@ public class SyncService extends Service {
     @Override
     public void onDestroy() {
         destroyHeadless();
+        main.removeCallbacks(watchdog);
+        main.removeCallbacks(endCheck);
+        if (network != null) getSystemService(ConnectivityManager.class).unregisterNetworkCallback(network);
+        if (realtimeLock != null && realtimeLock.isHeld()) realtimeLock.release();
+        if (checkLock != null && checkLock.isHeld()) checkLock.release();
+        getSystemService(AlarmManager.class).cancel(checkIntent());
+        foreground = false;
         instance = null;
         super.onDestroy();
     }
@@ -239,6 +413,11 @@ public class SyncService extends Service {
         @JavascriptInterface
         public void cancelCall(String roomId) {
             Notifier.cancelCall(SyncService.this, roomId);
+        }
+
+        @JavascriptInterface
+        public void syncState(String state) {
+            reportSync(state);
         }
 
         @JavascriptInterface

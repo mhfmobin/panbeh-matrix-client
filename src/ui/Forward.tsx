@@ -46,3 +46,23 @@ export function ForwardSheet({ evs, onClose, onSent }: { evs: MatrixEvent[]; onC
     </Sheet>
   );
 }
+
+/** Picks the chat for something shared from another app. */
+export function ShareSheet({ onPick, onClose }: { onPick: (roomId: string) => void; onClose: () => void }) {
+  const { rows } = useRooms();
+  const [q, setQ] = useState("");
+  const shown = rows.filter((r) => !r.invite && r.room.name.toLowerCase().includes(q.trim().toLowerCase()));
+  return (
+    <Sheet title="ارسال به…" onClose={onClose}>
+      <label className="search">
+        <Icon name="search" size={16} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="جستجو" aria-label="جستجو" autoFocus />
+      </label>
+      {shown.map(({ room }) => (
+        <button key={room.roomId} className="user-row" onClick={() => onPick(room.roomId)}>
+          <RoomAvatar room={room} size={42} /><span><b>{room.name}</b></span>
+        </button>
+      ))}
+    </Sheet>
+  );
+}

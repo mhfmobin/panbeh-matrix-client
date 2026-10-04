@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { byListOrder, inArchive, isUnread } from "./logic.ts";
+import { byListOrder, endpointOf, inArchive, isUnread } from "./logic.ts";
 import { aliasLocalpart, buildRows, roomName, dayLabel, downsample, fmtDuration, inFolder, isUserId, formatMessage, parseGeoUri, spaceRooms, stamp, normalizeServer, normalize, lastSeen, tallyPoll, fitSize, type Msg } from "./logic.ts";
 
 const T = new Date("2026-09-30T12:00:00").getTime();
@@ -146,25 +146,17 @@ test("archive, marked unread and list order", () => {
   assert.deepEqual(rows.sort(byListOrder).map((r) => r.id), ["inv", "pin", "new", "old"]);
 });
 
-import { stickerPack } from "./logic.ts";
+import { isGif, withGif, withoutGif, hasGif } from "./logic.ts";
 
-test("MSC2545 sticker packs: image usage overrides the pack's, unset means both", () => {
-  const p = stickerPack("p", {
-    pack: { display_name: "Cats", usage: ["emoticon"] },
-    images: {
-      a: { url: "mxc://hs/a" },                             // pack says emoticon only
-      b: { url: "mxc://hs/b", usage: ["sticker"], body: "Hi" },
-      c: { url: "mxc://hs/c", usage: [] },                  // empty = fall back to the pack
-      d: { url: "https://x/d", usage: ["sticker"] },        // not an mxc
-      e: { usage: ["sticker"] },                            // no url
-    },
-  }, "fallback");
-  assert.deepEqual(p, { id: "p", name: "Cats", avatar: undefined, stickers: [{ shortcode: "b", url: "mxc://hs/b", body: "Hi" }] });
-  const q = stickerPack("q", { images: { x: { url: "mxc://hs/x", info: { w: 10, h: 10 } } } }, "Room");
-  assert.deepEqual(q?.stickers, [{ shortcode: "x", url: "mxc://hs/x", body: "x", info: { w: 10, h: 10 } }]);
-  assert.equal(q?.name, "Room");
-  assert.equal(stickerPack("z", { images: { a: { url: "mxc://hs/a", usage: ["emoticon"] } } }, "Z"), null);
-  assert.equal(stickerPack("n", null, "N"), null);
+test("gifs: mau flag or gif image; saving moves to the front without duplicates", () => {
+  assert.ok(isGif({ msgtype: "m.video", info: { "fi.mau.gif": true } }));
+  assert.ok(isGif({ msgtype: "m.image", info: { mimetype: "image/gif" } }));
+  assert.ok(!isGif({ msgtype: "m.video", info: { mimetype: "video/mp4" } }));
+  const a = { msgtype: "m.video", body: "a", url: "mxc://hs/a" }, b = { msgtype: "m.video", body: "b", file: { url: "mxc://hs/b" } };
+  const list = withGif(withGif(withGif([], a), b), a);
+  assert.deepEqual(list.map((g) => g.body), ["a", "b"]);
+  assert.ok(hasGif(list, b) && !hasGif(withoutGif(list, b), b));
+  assert.equal(Array.from({ length: 120 }, (_, i) => ({ ...a, url: `mxc://hs/${i}` })).reduce(withGif, [] as typeof list).length, 100);
 });
 
 test("unread divider goes after the last read message and splits its burst", () => {
@@ -231,4 +223,53 @@ test("isRing: rings only for fresh rings aimed at us or the room", () => {
   assert.equal(isRing({ notification_type: "ring", "m.mentions": { room: true } }, 2000, "@me:x", 1000), true);
   assert.equal(isRing({ notification_type: "notification", "m.mentions": { room: true } }, 2000, "@me:x", 1000), false);
   assert.equal(isRing({ notification_type: "ring" }, 2000, "@me:x", 1000), false);
+});
+
+import { isLegacyRing, isVideoOffer } from "./logic.ts";
+test("isLegacyRing: fresh invites for us or anyone in the room", () => {
+  assert.equal(isLegacyRing({ lifetime: 60000 }, 1000, "@me:x", 2000), true);
+  assert.equal(isLegacyRing({ lifetime: 60000 }, 1000, "@me:x", 62000), false); // expired
+  assert.equal(isLegacyRing({}, 1000, "@me:x", 1000), false); // no lifetime
+  assert.equal(isLegacyRing({ lifetime: 60000, invitee: "@me:x" }, 1000, "@me:x", 2000), true);
+  assert.equal(isLegacyRing({ lifetime: 60000, invitee: "@you:x" }, 1000, "@me:x", 2000), false);
+  assert.equal(isVideoOffer({ offer: { sdp: "v=0\r\nm=audio 9 UDP\r\nm=video 9 UDP\r\n" } }), true);
+  assert.equal(isVideoOffer({ offer: { sdp: "v=0\r\nm=audio 9 UDP\r\n" } }), false);
+});
+
+import { isGroupCallAlert, legacyOutcome, rtcOutcome } from "./logic.ts";
+test("isGroupCallAlert: group call starts, not rings", () => {
+  assert.equal(isGroupCallAlert({ notification_type: "notification", "m.mentions": { room: true } }, 2000, "@me:x", 1000), true);
+  assert.equal(isGroupCallAlert({ notification_type: "ring", "m.mentions": { room: true } }, 2000, "@me:x", 1000), false);
+  assert.equal(isGroupCallAlert({ notification_type: "notification", "m.mentions": { room: true } }, 1000, "@me:x", 1000), false);
+});
+
+test("legacyOutcome: answered with duration, declined, missed, still ringing", () => {
+  const inv = { type: "m.call.invite", sender: "@a:x", ts: 1000, content: { call_id: "c1", lifetime: 60000 } };
+  const ev = (type: string, ts: number, call_id = "c1") => ({ type, sender: "@b:x", ts, content: { call_id } });
+  assert.deepEqual(legacyOutcome(inv, [ev("m.call.answer", 5000), ev("m.call.hangup", 197000)], 300000), { state: "ended", duration: 192000 });
+  assert.deepEqual(legacyOutcome(inv, [ev("m.call.answer", 5000)], 300000), { state: "ongoing" });
+  assert.deepEqual(legacyOutcome(inv, [ev("m.call.reject", 5000)], 300000), { state: "declined" });
+  assert.deepEqual(legacyOutcome(inv, [ev("m.call.hangup", 5000)], 6000), { state: "missed" }); // caller gave up
+  assert.deepEqual(legacyOutcome(inv, [], 300000), { state: "missed" }); // expired
+  assert.deepEqual(legacyOutcome(inv, [ev("m.call.answer", 5000, "other")], 2000), { state: "ringing" }); // another call's events
+});
+
+test("rtcOutcome: from call memberships after the ring", () => {
+  const ring = { id: "$r", type: "org.matrix.msc4075.rtc.notification", sender: "@a:x", ts: 1000, content: {} };
+  const m = (sender: string, ts: number, on: boolean) => ({ type: "org.matrix.msc3401.call.member", sender, ts, content: on ? { application: "m.call" } : {} });
+  assert.deepEqual(rtcOutcome(ring, 31000, [m("@b:x", 5000, true), m("@a:x", 65000, false)], 100000), { state: "ended", duration: 60000 });
+  assert.deepEqual(rtcOutcome(ring, 31000, [m("@b:x", 5000, true)], 100000), { state: "ongoing" });
+  assert.deepEqual(rtcOutcome(ring, 31000, [{ type: "org.matrix.msc4310.rtc.decline", sender: "@b:x", ts: 3000, content: { "m.relates_to": { event_id: "$r" } } }], 100000), { state: "declined" });
+  assert.deepEqual(rtcOutcome(ring, 31000, [m("@a:x", 9000, false)], 10000), { state: "missed" }); // caller gave up
+  assert.deepEqual(rtcOutcome(ring, 31000, [], 100000), { state: "missed" });
+  assert.deepEqual(rtcOutcome(ring, 31000, [], 2000), { state: "ringing" });
+  assert.deepEqual(rtcOutcome(ring, 31000, [m("@b:x", 40000, true)], 100000), { state: "missed" }); // joined after it stopped ringing
+});
+
+test("endpointOf names the endpoint for the net log", () => {
+  assert.equal(endpointOf("https://hs.x/_matrix/client/v3/sync?since=s1&timeout=30000"), "sync");
+  assert.equal(endpointOf("https://hs.x/_matrix/client/versions"), "versions");
+  assert.equal(endpointOf("https://hs.x/_matrix/client/v3/rooms/!a:x/send/m.room.message/1"), "rooms");
+  assert.equal(endpointOf("https://hs.x/_matrix/client/v1/media/thumbnail/x/y?width=96"), "thumbnail");
+  assert.equal(endpointOf("https://hs.x/_matrix/client/unstable/org.matrix.msc3575/sync"), "org.matrix.msc3575");
 });

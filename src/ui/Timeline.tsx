@@ -5,7 +5,7 @@ import { cancelUpload, client, type Upload } from "../matrix.ts";
 import { isMessage, useTick, useUploads } from "../hooks.ts";
 import { Icon } from "../icons.tsx";
 import { buildRows, dayLabel, num, type Msg, type Row } from "../logic.ts";
-import { Message, type Actions } from "./Message.tsx";
+import { Message, ProgressRing, type Actions } from "./Message.tsx";
 import { audioDuration, bdi, formatSize, isVoice, me, noticeText } from "./common.tsx";
 import { AudioPlayer } from "./Voice.tsx";
 
@@ -247,18 +247,8 @@ function PendingUploads({ roomId, threadId }: Ctx) {
   return useUploads(roomId, threadId).map((u) => <PendingUpload key={u.id} u={u} />);
 }
 
-const R = 20, C = 2 * Math.PI * R;
 function Ring({ u }: { u: Upload }) {
-  const f = u.error ? 0 : u.loaded ? Math.min(1, u.loaded / (u.total || 1)) : 0.04;
-  return (
-    <button className="up-ring" onClick={() => cancelUpload(u.id)} aria-label="لغو ارسال">
-      <svg viewBox="0 0 48 48" width="48" height="48" aria-hidden>
-        <circle cx="24" cy="24" r={R} className="up-track" />
-        <circle cx="24" cy="24" r={R} className="up-arc" strokeDasharray={C} strokeDashoffset={C * (1 - f)} />
-      </svg>
-      <Icon name="close" size={18} />
-    </button>
-  );
+  return <ProgressRing f={u.error ? 0 : u.loaded ? Math.min(1, u.loaded / (u.total || 1)) : 0.04} label="لغو ارسال" onClick={() => cancelUpload(u.id)} />;
 }
 
 function PendingUpload({ u }: { u: Upload }) {

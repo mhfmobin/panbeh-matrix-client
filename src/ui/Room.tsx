@@ -9,7 +9,7 @@ import { Timeline, type Jumper } from "./Timeline.tsx";
 import { PinnedBar } from "./Pinned.tsx";
 import { NowPlaying } from "./Voice.tsx";
 import { CallBar, CallButtons } from "./Call.tsx";
-import { Composer, DropZone, type Mode } from "./Composer.tsx";
+import { Composer, DropZone, takeShared, type Mode } from "./Composer.tsx";
 import { copyMessages, copyTextOf, type Actions } from "./Message.tsx";
 import { RoomInfo, SeenBy } from "./RoomInfo.tsx";
 import { UserProfile } from "./Profile.tsx";
@@ -26,7 +26,7 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
   // ponytail: whole member list per opened room; fetch single profiles instead if huge rooms get slow
   useEffect(() => { room.loadMembersIfNeeded().catch(() => {}); }, [room]);
   const [mode, setMode] = useState<Mode>(null);
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<File[]>(() => takeShared(room.roomId));
   const [threadId, setThreadId] = useState<string | null>(null);
   const [viewing, setViewing] = useState<MatrixEvent | null>(null);
   const [info, setInfo] = useState(false);

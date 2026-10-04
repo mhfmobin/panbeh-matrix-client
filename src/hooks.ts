@@ -118,7 +118,10 @@ export const isMessage = (e: MatrixEvent) =>
   MESSAGE_TYPES.includes(e.getType()) && !e.isRedacted() && !e.isRelation("m.replace") && !client.isUserIgnored(e.getSender()!)
   && e.getContent().msgtype !== "m.key.verification.request"; // shown as a notice
 
+/** Calls count too: calling someone brings the chat to the top, like a message. */
+export const isCallStart = (e: MatrixEvent) => [EventType.RTCNotification, EventType.CallInvite].includes(e.getType() as EventType);
+
 function lastMessage(room: Room) {
   const evs = room.getLiveTimeline().getEvents();
-  for (let i = evs.length - 1; i >= 0; i--) if (isMessage(evs[i])) return evs[i];
+  for (let i = evs.length - 1; i >= 0; i--) if (isMessage(evs[i]) || isCallStart(evs[i])) return evs[i];
 }

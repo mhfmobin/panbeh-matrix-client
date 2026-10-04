@@ -5,6 +5,8 @@ import { Icon } from "../icons.tsx";
 import { audioDuration, errText, isVoice, senderName } from "./common.tsx";
 import { client, mediaUrl } from "../matrix.ts";
 import { alertDialog } from "./dialog.tsx";
+import { AUDIO_BPS } from "../call.ts";
+import { loadPrefs } from "./Settings.tsx";
 
 const BARS = 40;
 const SPEEDS = [1, 1.5, 2, 0.5];
@@ -167,7 +169,7 @@ export function VoiceRecorder({ onDone }: { onDone: (v?: Voice) => void }) {
     stop.current = (k) => { keep = k; if (r?.state === "recording") r.stop(); release(); };
     (async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true, channelCount: 1 } }) // nothing plays while recording;
       } catch {
         alertDialog(window.isSecureContext
           ? "دسترسی به میکروفون ممکن نشد. اجازه‌ی میکروفون را در تنظیمات مرورگر یا برنامه بدهید."
@@ -176,7 +178,7 @@ export function VoiceRecorder({ onDone }: { onDone: (v?: Voice) => void }) {
       }
       if (!live) return release();
       const type = ["audio/ogg;codecs=opus", "audio/webm;codecs=opus"].find((t) => MediaRecorder.isTypeSupported(t));
-      r = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+      r = new MediaRecorder(stream, { mimeType: type, audioBitsPerSecond: AUDIO_BPS[loadPrefs().audioQuality] });
       const chunks: Blob[] = [];
       const started = Date.now();
       r.ondataavailable = (e) => chunks.push(e.data);

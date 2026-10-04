@@ -1,8 +1,8 @@
-import { ClientEvent, createClient, EventTimeline, EventType, SearchOrderBy, HttpApiEvent, IndexedDBStore, MatrixEvent, Method, OAuth2, Preset, SetPresence, Visibility, type ICreateRoomStateEvent, type MatrixClient, type MatrixError, type Room } from "matrix-js-sdk";
+import { ClientEvent, createClient, EventTimeline, EventType, Filter, SearchOrderBy, HttpApiEvent, IndexedDBStore, MatrixEvent, Method, OAuth2, Preset, SetPresence, SyncState, Visibility, type ICreateRoomStateEvent, type MatrixClient, type MatrixError, type Room } from "matrix-js-sdk";
 import { decodeRecoveryKey, deriveRecoveryKeyFromPassphrase } from "matrix-js-sdk/lib/crypto-api/index.js";
 import { decryptAttachment, encryptAttachment, type IEncryptedFile } from "matrix-encrypt-attachment";
-import { fitSize, normalizeServer, roomName } from "./logic.ts";
-import { isHeadless, isNative, nativeCancelAll, setBackgroundService } from "./native.ts";
+import { endpointOf, fitSize, hasGif, isGif, normalizeServer, roomName, withGif, withoutGif, type Gif } from "./logic.ts";
+import { isHeadless, isNative, nativeCancelAll, nativeLog, nativeSyncState, onKick, setBackgroundService } from "./native.ts";
 import { isDesktop, isWindowVisible, onWindowVisibility, openExternal } from "./desktop.ts";
 import { confirmDialog } from "./ui/dialog.tsx";
 
@@ -48,6 +48,68 @@ let ssKey: [string, Uint8Array<ArrayBuffer>] | null = null;
 export const savedSession = (): Session | null => sessions().find((x) => x.userId === localStorage.getItem(ACTIVE_KEY)) ?? null;
 export const isOAuth = () => !!savedSession()?.oauthClientId;
 
+// ---------- background sync health ----------
+
+/** Pending incremental /sync requests → when they started. The server answers a long-poll within ~30s. */
+const syncs = new Map<(e: Error) => void, number>();
+const STALL_MS = 50_000;
+/** Per-endpoint requests and bytes this minute, logged with developer options on (adb logcat on Android). */
+const net = new Map<string, { n: number; bytes: number; decoded: boolean }>();
+// loadPrefs lives in Settings.tsx, which imports this module
+const devOn = () => { try { return !!JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}").dev; } catch { return false; } };
+
+function count(url: string, res: Response) {
+  const k = endpointOf(url), e = net.get(k) ?? { n: 0, bytes: 0, decoded: false };
+  net.set(k, e);
+  e.n++;
+  const len = +(res.headers.get("content-length") ?? NaN);
+  if (len >= 0) e.bytes += len; // what came over the wire, compressed or not
+  else { e.decoded = true; res.clone().arrayBuffer().then((b) => { e.bytes += b.byteLength; }, () => {}); } // chunked: uncompressed size
+}
+setInterval(() => {
+  if (!net.size) return;
+  nativeLog("[net] " + [...net].sort((a, b) => b[1].bytes - a[1].bytes)
+    .map(([k, e]) => `${k} ${e.n}× ${(e.bytes / 1024).toFixed(0)}${e.decoded ? "~" : ""}KB`).join(", "));
+  net.clear();
+}, 60_000);
+
+/** The SDK's fetch. A /sync whose socket died while the phone slept can hang for minutes (its timeout is a frozen JS
+ *  timer), so kick() can fail it, which drops the SDK into its normal reconnect. */
+const netFetch: typeof fetch = (input, init) => {
+  const url = input instanceof Request ? input.url : String(input);
+  const res = fetch(input, init);
+  if (devOn()) res.then((r) => count(url, r), () => {});
+  if (!/\/sync\?.*since=/.test(url)) return res; // not an incremental sync; the initial one may rightly take minutes
+  return new Promise((resolve, reject) => {
+    syncs.set(reject, Date.now());
+    res.then(resolve, reject).finally(() => syncs.delete(reject));
+  });
+};
+
+/** Past the first sync: live events are new from here on. Unlike isInitialSyncComplete() this stays true while
+ *  reconnecting, so the messages a reconnect brings in still notify. */
+let firstSyncDone = false;
+export const pastFirstSync = () => firstSyncDone;
+
+/** Native nudge (network back, watchdog, interval alarm): reconnect now rather than when the frozen timers get to it.
+ *  newNetwork: a pending /sync went out on the old network and will never answer, however young it is. */
+function kick(newNetwork = false) {
+  if (client.retryImmediately()) return; // was waiting to retry
+  const stalled = [...syncs].filter(([, t]) => newNetwork || Date.now() - t > STALL_MS);
+  if (!stalled.length) return;
+  // ponytail: the dead request isn't aborted, only abandoned; its socket is gone anyway
+  for (const [reject] of stalled) reject(new TypeError("stalled /sync"));
+  setTimeout(() => client.retryImmediately()); // after the SDK has scheduled its reconnect
+}
+
+/** The invisible background page only notifies: no presence or typing traffic. Receipts stay (they clear notifications). */
+function headlessFilter(userId: string) {
+  const f = new Filter(userId);
+  f.setDefinition({ presence: { not_types: ["*"] }, room: { ephemeral: { not_types: ["m.typing"] } } });
+  f.setUnreadThreadNotifications(true); // as the SDK's default filter
+  return f;
+}
+
 export async function start(s: Session) {
   current = s;
   // cached sync state: reopening the app shows chats instantly instead of waiting for a full initial sync
@@ -57,8 +119,10 @@ export async function start(s: Session) {
     // OAuth sessions: the SDK refreshes short-lived tokens itself and revokes them on logout
     onTokenRefresh: (t) => save({ ...sessions().find((x) => x.userId === s.userId)!, accessToken: t.accessToken, refreshToken: t.refreshToken }),
     store,
+    fetchFn: netFetch,
     timelineSupport: true,
-    disableVoip: true, // legacy 1:1 m.call.* stack; our calls are MatrixRTC (call.ts)
+    // legacy 1:1 m.call.* calls (call.ts). Not in the headless page: it shares our device with the app's page, and two MatrixCalls would answer as one party
+    disableVoip: isHeadless,
     verificationMethods: ["m.sas.v1"], // emoji only: we can't show or scan QR codes, so don't let the other side pick them
     roomNameGenerator: (roomId, state) => roomName(state, inviter(c.getRoom(roomId))),
     cryptoCallbacks: {
@@ -72,7 +136,13 @@ export async function start(s: Session) {
   c.once(HttpApiEvent.SessionLoggedOut, () => logout());
   c.on(ClientEvent.Room, (r) => { if (r.getMyMembership() === "invite") r.recalculate(); });
   await c.initRustCrypto({ cryptoDatabasePrefix: dbNames(s).crypto });
-  await c.startClient({ threadSupport: true, lazyLoadMembers: true, initialSyncLimit: 30 });
+  firstSyncDone = false;
+  c.on(ClientEvent.Sync, (state) => { if (state === SyncState.Prepared || state === SyncState.Syncing) firstSyncDone = true; });
+  if (isNative) {
+    c.on(ClientEvent.Sync, (state) => nativeSyncState(state));
+    onKick(kick);
+  }
+  await c.startClient({ threadSupport: true, lazyLoadMembers: true, initialSyncLimit: 30, filter: isHeadless ? headlessFilter(s.userId) : undefined });
   if (!shareLastSeen()) await setShareLastSeen(false);
   if (isNative) { // the app syncs in the background too: that mustn't show the user as online
     const away = () => { if (shareLastSeen()) void c.setSyncPresence(isHeadless || document.visibilityState === "hidden" ? SetPresence.Unavailable : undefined); };
@@ -244,8 +314,27 @@ export async function setupRecovery(password?: string) {
 type FileContent = { url?: string; file?: IEncryptedFile & { url: string; mimetype?: string }; info?: { mimetype?: string } };
 const mediaCache = new Map<string, Promise<string>>();
 
-/** Blob URL for an mxc (authenticated media, decrypting if needed). Cached for the session. */
-export function mediaUrl(c: FileContent, thumb?: { w: number; h: number }): Promise<string> | null {
+/** Downloads with byte progress. Plain fetch (the SDK's request can't report progress); null if the token was refused. */
+async function fetchProgress(url: URL, onProgress: (loaded: number, total: number) => void, size?: number): Promise<ArrayBuffer | null> {
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${client.getAccessToken()}` } });
+  if (res.status === 401) return null; // expired OAuth token: the SDK path refreshes it
+  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+  const total = +(res.headers.get("content-length") ?? 0) || size || 0;
+  const parts: Uint8Array[] = [];
+  let loaded = 0;
+  for (const r = res.body.getReader(); ;) {
+    const { done, value } = await r.read();
+    if (done) break;
+    parts.push(value);
+    loaded += value.length;
+    onProgress(loaded, total);
+  }
+  return new Blob(parts as BlobPart[]).arrayBuffer();
+}
+
+/** Blob URL for an mxc (authenticated media, decrypting if needed). Cached for the session.
+ *  `onProgress` reports bytes for the download this call starts (not for one already cached or running). */
+export function mediaUrl(c: FileContent, thumb?: { w: number; h: number }, onProgress?: (loaded: number, total: number) => void): Promise<string> | null {
   const mxc = c.file?.url ?? c.url;
   if (!mxc) return null;
   const cacheKey = mxc + (thumb && !c.file ? `@${thumb.w}` : "");
@@ -255,9 +344,9 @@ export function mediaUrl(c: FileContent, thumb?: { w: number; h: number }): Prom
     const t = thumb && !c.file ? thumb : undefined;
     const http = new URL(client.mxcUrlToHttp(mxc, t?.w, t?.h, t && "scale", false, true, true)!);
     // through the SDK, not fetch: OAuth access tokens expire every few minutes and it refreshes them
-    p = client.http.authedRequest<Blob>(Method.Get, http.pathname, Object.fromEntries(http.searchParams), undefined,
-      { baseUrl: http.origin, prefix: "", rawResponseBody: true })
-      .then((b) => b.arrayBuffer())
+    const viaSdk = () => client.http.authedRequest<Blob>(Method.Get, http.pathname, Object.fromEntries(http.searchParams), undefined,
+      { baseUrl: http.origin, prefix: "", rawResponseBody: true }).then((b) => b.arrayBuffer());
+    p = (onProgress ? fetchProgress(http, onProgress, (c.info as { size?: number } | undefined)?.size).then((b) => b ?? viaSdk()) : viaSdk())
       // typed so <audio>/<video> don't have to sniff; thumbnails may be another image type, so leave those untyped
       .then(async (buf) => URL.createObjectURL(new Blob([c.file ? await decryptAttachment(buf, c.file) : buf],
         { type: thumb ? "" : c.info?.mimetype ?? c.file?.mimetype ?? "" })));
@@ -291,6 +380,7 @@ export async function sendFile(room: Room, file: File, threadId: string | null, 
   if (replyTo) content["m.relates_to"] = { "m.in_reply_to": { event_id: replyTo.getId() } };
   opts.onUploaded?.();
   await client.sendMessage(room.roomId, threadId, content as never);
+  if (isGif(content)) saveGif(content as Gif).catch(() => { /* still sent, just not saved */ });
 }
 
 // ---------- pending uploads (shown as bubbles until the SDK's local echo takes over) ----------
@@ -320,7 +410,8 @@ let nextId = 1;
 
 export function startUpload(room: Room, file: File, threadId: string | null, replyTo?: MatrixEvent, extra?: Record<string, unknown>, caption?: string, asFile?: boolean) {
   const id = nextId++;
-  const preview = !asFile && /^(image|video|audio)\//.test(file.type); // audio: a voice note plays from here while it uploads
+  // a voice note plays from here while it uploads; other audio is a plain file row (the bubble would render it as an <img>)
+  const preview = !asFile && (/^(image|video)\//.test(file.type) || (!!extra && file.type.startsWith("audio/")));
   const run = () => {
     const abort = new AbortController();
     patch(id, { abort, error: undefined, loaded: 0 });
@@ -498,6 +589,21 @@ export function loadEvent(room: Room, id: string): Promise<MatrixEvent> {
   }
   return p;
 }
+
+// ---------- saved gifs ----------
+/** Marks an uploaded video as a gif: autoplays, loops, muted, no controls (mautrix's flags). */
+export const GIF_INFO = { "fi.mau.gif": true, "fi.mau.loop": true, "fi.mau.autoplay": true, "fi.mau.hide_controls": true, "fi.mau.no_audio": true };
+const GIFS = "app.panbeh.gifs";
+export const savedGifs = (): Gif[] => client.getAccountData(GIFS as never)?.getContent()?.gifs ?? [];
+const gifOf = (c: Record<string, unknown>): Gif => {
+  const { msgtype, info, url, file } = c as Gif;
+  return { msgtype, body: "gif", info, ...(url ? { url } : { file }) }; // no caption, reply or forward marks
+};
+const putGifs = (gifs: Gif[]) => client.setAccountData(GIFS as never, { gifs } as never);
+export const saveGif = (c: Record<string, unknown>) => putGifs(withGif(savedGifs(), gifOf(c)));
+export const isSavedGif = (c: Record<string, unknown>) => hasGif(savedGifs(), gifOf(c));
+export const toggleGif = (c: Record<string, unknown>) =>
+  isSavedGif(c) ? putGifs(withoutGif(savedGifs(), gifOf(c))) : saveGif(c);
 
 // ---------- forwarding ----------
 /** Content for a copy of `ev` in another room; remembers the original author across re-forwards. */

@@ -248,24 +248,17 @@ export const inArchive = (r: RoomInfo) => !!r.archived && !(r.unread > 0 && !r.m
 /** Chat list order: invites, then pinned, then newest. */
 export const byListOrder = (a: { invite: boolean; pinned?: boolean; ts: number }, b: typeof a) =>
   +b.invite - +a.invite || +!!b.pinned - +!!a.pinned || b.ts - a.ts;
-export type Sticker = { shortcode: string; url: string; body: string; info?: Record<string, unknown> };
-export type StickerPack = { id: string; name: string; avatar?: string; stickers: Sticker[] };
+/** A looping, silent video (mautrix's flags, also set by the Telegram bridge) or an animated gif image. */
+export const isGif = (c: { msgtype?: string; info?: Record<string, unknown> }) =>
+  !!c.info?.["fi.mau.gif"] || (c.msgtype === "m.image" && c.info?.mimetype === "image/gif");
 
-/** MSC2545 image pack → its stickers: images whose usage (own, else the pack's) includes "sticker" or is unset/empty.
- *  null if none are usable. */
-export function stickerPack(id: string, content: unknown, fallbackName: string): StickerPack | null {
-  const c = (content ?? {}) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-  const use = (u: unknown) => (Array.isArray(u) && u.length ? u : null);
-  const packUsage = use(c.pack?.usage);
-  const stickers: Sticker[] = Object.entries(c.images && typeof c.images === "object" ? c.images : {}).flatMap(([shortcode, img]: [string, any]) => { // eslint-disable-line @typescript-eslint/no-explicit-any
-    const usage = use(img?.usage) ?? packUsage;
-    if (typeof img?.url !== "string" || !img.url.startsWith("mxc://") || (usage && !usage.includes("sticker"))) return [];
-    return [{ shortcode, url: img.url, body: typeof img.body === "string" && img.body ? img.body : shortcode, ...(img.info && typeof img.info === "object" && { info: img.info }) }];
-  });
-  if (!stickers.length) return null;
-  const name = typeof c.pack?.display_name === "string" && c.pack.display_name ? c.pack.display_name : fallbackName;
-  return { id, name, avatar: typeof c.pack?.avatar_url === "string" ? c.pack.avatar_url : undefined, stickers };
-}
+export type Gif = { msgtype: string; body: string; info?: Record<string, unknown>; url?: string; file?: { url: string } };
+const gifKey = (g: Gif) => g.url ?? g.file?.url;
+// ponytail: capped at 100, account data tops out around 64KB
+/** Saved gifs with `g` first: re-saving moves it up instead of duplicating. */
+export const withGif = (list: Gif[], g: Gif) => [g, ...list.filter((x) => gifKey(x) !== gifKey(g))].slice(0, 100);
+export const withoutGif = (list: Gif[], g: Gif) => list.filter((x) => gifKey(x) !== gifKey(g));
+export const hasGif = (list: Gif[], g: Gif) => list.some((x) => gifKey(x) === gifKey(g));
 
 // ---------- room admin ----------
 
@@ -301,5 +294,49 @@ export function textDir(s: string): "rtl" | "ltr" {
 
 type RingContent = { notification_type?: string; "m.mentions"?: { room?: boolean; user_ids?: string[] } };
 /** An m.rtc.notification (MSC4075) that should ring `me` now: a "ring" (not a group "notification"), aimed at us or the room, before `until`. */
+const aimedAt = (c: RingContent, me: string) => !!(c["m.mentions"]?.room || c["m.mentions"]?.user_ids?.includes(me));
 export const isRing = (c: RingContent, until: number, me: string, now = Date.now()) =>
-  c.notification_type === "ring" && !!(c["m.mentions"]?.room || c["m.mentions"]?.user_ids?.includes(me)) && until > now; // NaN until = no
+  c.notification_type === "ring" && aimedAt(c, me) && until > now; // NaN until = no
+/** A group call that just started (a "notification", not a ring): worth a quiet notification. */
+export const isGroupCallAlert = (c: RingContent, until: number, me: string, now = Date.now()) =>
+  c.notification_type === "notification" && aimedAt(c, me) && until > now;
+
+type Invite = { lifetime?: number; invitee?: string; offer?: { sdp?: string } };
+/** A legacy 1:1 m.call.invite (old Element, FluffyChat, Nheko…) that should ring `me` now: unexpired and not aimed at someone else. */
+export const isLegacyRing = (c: Invite, ts: number, me: string, now = Date.now()) =>
+  ts + (c.lifetime ?? 0) > now && (!c.invitee || c.invitee === me);
+export const isVideoOffer = (c: Invite) => /^m=video/m.test(c.offer?.sdp ?? "");
+
+// ---------- how a call went (for its line in the timeline) ----------
+
+export type CallEv = { id?: string; type: string; sender: string; ts: number; content: Record<string, any> };
+/** ringing/ongoing: nothing to add yet. ended: answered, for `duration` ms. */
+export type CallOutcome = { state: "ringing" | "ongoing" | "missed" | "declined" | "ended"; duration?: number };
+const MEMBER = "org.matrix.msc3401.call.member";
+const isEmpty = (c: object | undefined) => !c || !Object.keys(c).length;
+
+/** A legacy m.call.invite, from the events after it in the room (oldest first). */
+export function legacyOutcome(invite: CallEv, after: CallEv[], now = Date.now()): CallOutcome {
+  const same = after.filter((e) => e.content?.call_id === invite.content.call_id);
+  const answer = same.find((e) => e.type === "m.call.answer");
+  const end = same.find((e) => e.type === "m.call.hangup" || e.type === "m.call.reject");
+  if (answer) return end ? { state: "ended", duration: end.ts - answer.ts } : { state: "ongoing" };
+  if (end?.type === "m.call.reject") return { state: "declined" };
+  return end || invite.ts + (invite.content.lifetime ?? 0) <= now ? { state: "missed" } : { state: "ringing" };
+}
+
+/** A MatrixRTC ring (m.rtc.notification) ringing until `until`: answered once someone else's call membership shows up, over when one side leaves. */
+export function rtcOutcome(ring: CallEv, until: number, after: CallEv[], now = Date.now()): CallOutcome {
+  const members = after.filter((e) => e.type === MEMBER);
+  const joined = members.find((e) => e.sender !== ring.sender && !isEmpty(e.content) && e.ts <= until);
+  if (joined) {
+    const left = members.find((e) => e.ts >= joined.ts && isEmpty(e.content)); // 1:1: whoever leaves first ends it
+    return left ? { state: "ended", duration: left.ts - joined.ts } : { state: "ongoing" };
+  }
+  if (after.some((e) => e.type.endsWith("rtc.decline") && e.content?.["m.relates_to"]?.event_id === ring.id)) return { state: "declined" };
+  const gaveUp = members.some((e) => e.sender === ring.sender && isEmpty(e.content));
+  return gaveUp || until <= now ? { state: "missed" } : { state: "ringing" };
+}
+
+/** Endpoint name for the net log: /_matrix/client/v3/rooms/!x/send/… → rooms. */
+export const endpointOf = (url: string) => new URL(url).pathname.split("/").slice(2).find((x) => !/^(client|media|v\d+|r0|unstable)$/.test(x)) ?? "?";

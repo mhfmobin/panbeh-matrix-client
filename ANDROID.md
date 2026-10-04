@@ -21,6 +21,36 @@ Android notifications. Since our own client sees the messages, encrypted ones sh
   after a while, allow Panbeh to autostart / run unrestricted in the phone's battery settings
   (see https://dontkillmyapp.com).
 - Background syncing shows you as "away", not "online".
+- The permanent notification shows the connection: «پنبه متصل است» (connected), «در حال اتصال…» (connecting), or
+  «اتصال قطع است؛ تلاش دوباره…» (disconnected, retrying). When Android reports the network is back, the service tells the page
+  to reconnect at once. It also nudges the page every minute while the phone is awake, and the page abandons a `/sync`
+  that has hung for more than 50 s, because its socket died while the phone slept.
+- Settings → اعلان‌ها → «دریافت پیام در پس‌زمینه»:
+  - **فوری** (real-time, the default) keeps the CPU awake with a partial wake lock, so messages arrive at once. This costs
+    battery, and Doze only honours the lock with the battery exemption on.
+  - **هر ۱، ۲، ۵، ۱۰، ۱۵، ۳۰ دقیقه یا هر ساعت** (every 1, 2, 5, 10, 15 or 30 minutes, or hourly) wakes the phone with an alarm, catches up, and lets it sleep again. In deep Doze Android
+    allows such alarms only about every 9–15 minutes, so short intervals are exact only while the phone isn't dozing.
+- The invisible background page syncs without presence or typing notifications, to save data.
+
+### Data usage and debugging
+
+Turn on Settings → گزینه‌های توسعه‌دهنده. Each page then logs one line per minute with requests and KB per endpoint, e.g.
+`[net] sync 31× 412KB, keys 2× 3KB`. `~` means the server sent no Content-Length, so the size shown is uncompressed.
+
+```sh
+adb logcat -s PanbehSync   # both the app's page and the background page
+```
+
+If `/sync` is large, check whether the homeserver compresses it:
+
+```sh
+curl https://HS/_matrix/federation/v1/version   # which server software
+curl -s -o /dev/null -w '%{size_download}\n' --compressed -H 'Authorization: Bearer TOKEN' 'https://HS/_matrix/client/v3/sync?timeout=0'
+curl -s -o /dev/null -w '%{size_download}\n'              -H 'Authorization: Bearer TOKEN' 'https://HS/_matrix/client/v3/sync?timeout=0'
+```
+
+If both numbers are the same, nothing is compressing it. Turn on `gzip on; gzip_types application/json;` in the reverse
+proxy, or `gzip_compression = true` on Conduwuit/Tuwunel/Continuwuity.
 
 ## Getting the APK
 

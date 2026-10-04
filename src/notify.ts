@@ -1,5 +1,5 @@
 import { EventType, MatrixEventEvent, PushRuleActionName, PushRuleKind, ReceiptType, RoomEvent, type IRoomTimelineData, type MatrixEvent, type Room } from "matrix-js-sdk";
-import { avatarUrl, client } from "./matrix.ts";
+import { avatarUrl, client, pastFirstSync } from "./matrix.ts";
 import { isGroupChat, previewText, senderName, roomAvatarMxc } from "./ui/common.tsx";
 import { loadPrefs } from "./ui/Settings.tsx";
 import { isHeadless, isNative, nativeCancel, nativeNotify, toDataUrl } from "./native.ts";
@@ -20,7 +20,7 @@ const shown = new Set<string>();
 /** Notifications for new messages: desktop ones while the tab is open, Android ones in the app. Returns an unsubscribe. */
 export function startNotifications() {
   const onTimeline = (ev: MatrixEvent, room: Room | undefined, toStart: boolean | undefined, _removed: boolean, data: IRoomTimelineData) => {
-    if (toStart || !data?.liveEvent || !room || !client.isInitialSyncComplete() || ev.getSender() === client.getUserId() || client.isUserIgnored(ev.getSender()!)) return;
+    if (toStart || !data?.liveEvent || !room || !pastFirstSync() || ev.getSender() === client.getUserId() || client.isUserIgnored(ev.getSender()!)) return;
     // push rules need the decrypted type and body
     if (ev.getType() === EventType.RoomMessageEncrypted && !ev.isDecryptionFailure()) ev.once(MatrixEventEvent.Decrypted, () => notify(ev, room));
     else notify(ev, room);
@@ -39,6 +39,7 @@ export function startNotifications() {
 }
 
 async function notify(ev: MatrixEvent, room: Room) {
+  if (/^m\.call\.|\.rtc\./.test(ev.getType())) return; // call.ts rings for calls (and .m.rule.call would turn every invite into a message)
   const id = ev.getId()!;
   const prefs = loadPrefs();
   if (!prefs.notify || shown.has(id)) return;
@@ -47,17 +48,28 @@ async function notify(ev: MatrixEvent, room: Room) {
   if (!actions?.notify) return;
   // the DM/group switches silence ordinary messages only; mentions and keywords still come through
   if (!actions.tweaks?.highlight && !(isGroupChat(room) ? prefs.notifyGroups : prefs.notifyDMs)) return;
+  shown.add(id);
+  await show(room, (isGroupChat(room) ? senderName(ev) + ": " : "") + previewText(ev), !!actions.tweaks?.sound);
+}
+
+/** A notification about a call that didn't ring (missed, or a group call starting). group: obeys the group switch. */
+export async function callNotice(room: Room, body: string, group = false) {
+  const prefs = loadPrefs();
+  if (!prefs.notify || (group && !prefs.notifyGroups)) return;
+  if (!isNative && (!("Notification" in window) || Notification.permission !== "granted")) return;
+  await show(room, body, true);
+}
+
+async function show(room: Room, body: string, sound: boolean) {
   // already looking at it (in the app, native checks the activity is on screen)
   if (!isNative && document.hasFocus() && location.hash.slice(1) === room.roomId) return;
-  shown.add(id);
   // the sync recalculates names only after emitting the batch's events: a member that names this room may have just arrived
   room.recalculate();
   const icon = await Promise.race([avatarUrl(roomAvatarMxc(room), 96)?.catch(() => undefined),
     new Promise<undefined>((r) => setTimeout(r, 1500))]);
-  const body = (isGroupChat(room) ? senderName(ev) + ": " : "") + previewText(ev);
   if (isNative) {
     nativeNotify({
-      roomId: room.roomId, title: room.name, body, sound: !!actions.tweaks?.sound,
+      roomId: room.roomId, title: room.name, body, sound,
       icon: icon && await toDataUrl(icon).catch(() => undefined),
       openRoom: isHeadless ? undefined : location.hash.slice(1),
     });
@@ -69,7 +81,7 @@ async function notify(ev: MatrixEvent, room: Room) {
     icon, lang: "fa", dir: "rtl",
   });
   n.onclick = () => { showWindow(); location.hash = room.roomId; n.close(); };
-  if (actions.tweaks?.sound) ding();
+  if (sound) ding();
 }
 
 let ctx: AudioContext | undefined;
@@ -90,6 +102,14 @@ function beep(freq: number, len: number, after = 0) {
 }
 
 /** Incoming-call ring (two tones every 2s) until the returned stop is called. */
+/** Call waiting: a soft double beep every 3s, over the call we're in. */
+export function waitingTone() {
+  const ring = () => { beep(440, 0.15); beep(440, 0.15, 0.3); };
+  ring();
+  const t = setInterval(ring, 3000);
+  return () => clearInterval(t);
+}
+
 export function ringtone() {
   const ring = () => { beep(440, 0.4); beep(480, 0.4, 0.5); };
   ring();
