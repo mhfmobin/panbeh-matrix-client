@@ -15,6 +15,12 @@ contextBridge.exposeInMainWorld("panbehDesktop", {
     ipcRenderer.send("links-ready");
     return () => ipcRenderer.off("link", h);
   },
+  /** Screen sharing on Windows/X11: main asks which screen or window; cb resolves to its id, or null to cancel. */
+  onPickSource: (cb) => {
+    const h = async (_e, n, sources) => ipcRenderer.send("picked-source", n, await cb(sources));
+    ipcRenderer.on("pick-source", h);
+    return () => ipcRenderer.off("pick-source", h);
+  },
   onVisibility: (cb) => {
     const h = (_e, visible) => cb(visible);
     ipcRenderer.on("visibility", h);

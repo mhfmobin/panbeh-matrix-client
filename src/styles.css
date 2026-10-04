@@ -960,6 +960,17 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .call-panel button { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; color: #fff; text-align: start; }
 .call-panel button:hover { background: rgba(255, 255, 255, 0.08); }
 .call-panel button.on { background: rgba(46, 158, 91, 0.35); }
+/* desktop screen-share picker */
+.source-picker { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, 0.6); animation: fade 0.15s; }
+.source-picker > div { width: min(100%, 760px); max-height: 100%; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 18px; border-radius: 16px; background: #1f252c; color: #fff; }
+.source-picker h3 { margin: 0; font-size: 17px; }
+.source-picker h4 { margin: 6px 0 0; font-size: 13px; font-weight: normal; color: rgba(255, 255, 255, 0.7); }
+.source-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.source-grid button { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 12px; color: #fff; text-align: start; }
+.source-grid button:hover, .source-grid button:focus-visible { background: rgba(255, 255, 255, 0.08); }
+.source-grid img { width: 100%; aspect-ratio: 16 / 9; object-fit: contain; border-radius: 8px; background: #000; }
+.source-grid span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.source-cancel { align-self: flex-end; padding: 8px 16px; border-radius: 10px; color: #fff; background: rgba(255, 255, 255, 0.12); }
 /* call waiting: a card over whatever is on screen */
 .call-waiting {
   position: fixed; z-index: 49; top: calc(12px + env(safe-area-inset-top)); inset-inline: 12px; max-width: 420px; margin-inline: auto; display: flex; align-items: center; gap: 10px;

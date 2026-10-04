@@ -9,6 +9,7 @@ import { answer, call, decline, flipCam, getCall, hangup, loadDevices, minimize,
 import { usePromise, useTick } from "../hooks.ts";
 import { fmtDuration, num } from "../logic.ts";
 import { isNative, nativeAudioRoutes, type AudioRoute } from "../native.ts";
+import { onPickSource, type ShareSource } from "../desktop.ts";
 import { pushBack } from "../back.ts";
 import { Icon, type IconName } from "../icons.tsx";
 import { Avatar, errText, me, RoomAvatar } from "./common.tsx";
@@ -83,11 +84,37 @@ export function CallBar({ room }: { room?: Room }) {
 /** The incoming ring and the call screen; mounted once by the app shell. */
 export function CallLayer() {
   const { active, incoming } = useCall();
+  const [pick, setPick] = useState<{ sources: ShareSource[]; done: (id: string | null) => void } | null>(null);
+  useEffect(() => onPickSource((sources) => new Promise((done) => setPick({ sources, done }))), []);
   if (incoming && !active) return <IncomingCall room={incoming.room} video={incoming.video} />;
   return <>
     {active && !active.min && <CallScreen a={active} />}
     {active && incoming && <Waiting i={incoming} />}
+    {pick && <SourcePicker sources={pick.sources} onDone={(id) => { pick.done(id); setPick(null); }} />}
   </>;
+}
+
+/** Desktop (Windows/X11): which screen or window to share. */
+function SourcePicker({ sources, onDone }: { sources: ShareSource[]; onDone: (id: string | null) => void }) {
+  useEffect(() => pushBack(() => onDone(null)), [onDone]);
+  const screens = sources.filter((s) => s.id.startsWith("screen:")), windows = sources.filter((s) => !s.id.startsWith("screen:"));
+  const grid = (list: ShareSource[]) => (
+    <div className="source-grid">
+      {list.map((s) => (
+        <button key={s.id} onClick={() => onDone(s.id)}><img src={s.thumb} alt="" /><span>{s.name}</span></button>
+      ))}
+    </div>
+  );
+  return (
+    <div className="source-picker" role="dialog" aria-label="اشتراک صفحه" onClick={() => onDone(null)}>
+      <div onClick={(e) => e.stopPropagation()}>
+        <h3>چه چیزی به اشتراک گذاشته شود؟</h3>
+        {screens.length > 0 && <><h4>صفحه‌نمایش</h4>{grid(screens)}</>}
+        {windows.length > 0 && <><h4>پنجره</h4>{grid(windows)}</>}
+        <button className="source-cancel" onClick={() => onDone(null)}>انصراف</button>
+      </div>
+    </div>
+  );
 }
 
 /** Call waiting: someone else rings while we're in a call. */

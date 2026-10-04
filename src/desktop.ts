@@ -7,7 +7,10 @@ type Bridge = {
   info(): Promise<{ version: string; platform: string; visible: boolean }>;
   onVisibility(cb: (visible: boolean) => void): () => void;
   onLink(cb: (link: string) => void): () => void;
+  onPickSource?(cb: (sources: ShareSource[]) => Promise<string | null>): () => void; // older desktop builds lack it
 };
+/** A screen ("screen:…") or window to share, with a thumbnail data URL. */
+export type ShareSource = { id: string; name: string; thumb: string };
 
 const bridge = (window as unknown as { panbehDesktop?: Bridge }).panbehDesktop;
 
@@ -39,3 +42,6 @@ export function onWindowVisibility(f: () => void) {
 
 /** matrix.to / matrix: links the OS or a click handed to the app. Returns an unsubscribe. */
 export const onDesktopLink = (cb: (link: string) => void) => bridge?.onLink(cb) ?? (() => {});
+
+/** Screen sharing on Windows/X11: show our picker; resolve to the chosen source id, or null. Returns an unsubscribe. */
+export const onPickSource = (cb: (sources: ShareSource[]) => Promise<string | null>) => bridge?.onPickSource?.(cb) ?? (() => {});

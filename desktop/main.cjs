@@ -215,6 +215,17 @@ function startUpdater() {
 
 // ---------- app ----------
 
+/** Asks the page which screen or window to share; resolves to its id, or null if cancelled. */
+let picks = 0;
+function pickSource(frame, sources) {
+  const n = ++picks;
+  return new Promise((resolve) => {
+    const h = (_e, m, id) => { if (m !== n) return; ipcMain.off("picked-source", h); resolve(typeof id === "string" ? id : null); };
+    ipcMain.on("picked-source", h);
+    frame.send("pick-source", n, sources.map((s) => ({ id: s.id, name: s.name, thumb: s.thumbnail.toDataURL() })));
+  });
+}
+
 ipcMain.on("badge", (_e, n) => setBadge(n));
 ipcMain.on("focus", show);
 ipcMain.on("links-ready", (e) => {
@@ -244,11 +255,24 @@ app.whenReady().then(() => {
   const { session, desktopCapturer } = require("electron");
   session.defaultSession.setPermissionRequestHandler((wc, perm, cb) => cb(allowed.has(perm) && ours(wc.getURL())));
   session.defaultSession.setPermissionCheckHandler((wc, perm) => allowed.has(perm) && ours(wc?.getURL()));
-  // getDisplayMedia: macOS and Wayland show the system's own picker
-  // ponytail: elsewhere (Windows, X11) it shares the first screen; add an in-app source picker for single windows
-  session.defaultSession.setDisplayMediaRequestHandler((req, cb) => {
-    if (!ours(req.frame?.url)) return cb({});
-    desktopCapturer.getSources({ types: ["screen", "window"] }).then((s) => cb(s[0] ? { video: s[0] } : {}), () => cb({}));
+  // getDisplayMedia: macOS 15+ shows the system's picker (useSystemPicker) and Wayland's portal picks inside getSources;
+  // elsewhere (Windows, X11, older macOS) the page shows our own picker of screens and windows
+  const wayland = process.platform === "linux" && process.env.XDG_SESSION_TYPE === "wayland";
+  session.defaultSession.setDisplayMediaRequestHandler(async (req, cb) => {
+    try {
+      if (!ours(req.frame?.url)) return cb({});
+      const sources = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: wayland ? { width: 0, height: 0 } : { width: 320, height: 180 } });
+      let source = sources[0];
+      if (!wayland && sources.length > 1) {
+        const id = await pickSource(req.frame, sources);
+        source = sources.find((s) => s.id === id);
+      }
+      if (!source) return cb({});
+      // Windows can add what the computer is playing
+      cb({ video: source, ...(req.audioRequested && process.platform === "win32" ? { audio: "loopback" } : {}) });
+    } catch {
+      cb({});
+    }
   }, { useSystemPicker: true });
 
   createTray();
