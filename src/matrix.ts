@@ -1,7 +1,7 @@
 import { ClientEvent, createClient, EventTimeline, EventType, SearchOrderBy, HttpApiEvent, IndexedDBStore, MatrixEvent, Method, OAuth2, Preset, SetPresence, Visibility, type ICreateRoomStateEvent, type MatrixClient, type MatrixError, type Room } from "matrix-js-sdk";
 import { decodeRecoveryKey, deriveRecoveryKeyFromPassphrase } from "matrix-js-sdk/lib/crypto-api/index.js";
 import { decryptAttachment, encryptAttachment, type IEncryptedFile } from "matrix-encrypt-attachment";
-import { fitSize, normalizeServer, roomName } from "./logic.ts";
+import { fitSize, hasGif, isGif, normalizeServer, roomName, withGif, withoutGif, type Gif } from "./logic.ts";
 import { isHeadless, isNative, nativeCancelAll, setBackgroundService } from "./native.ts";
 import { isDesktop, isWindowVisible, onWindowVisibility, openExternal } from "./desktop.ts";
 import { confirmDialog } from "./ui/dialog.tsx";
@@ -311,6 +311,7 @@ export async function sendFile(room: Room, file: File, threadId: string | null, 
   if (replyTo) content["m.relates_to"] = { "m.in_reply_to": { event_id: replyTo.getId() } };
   opts.onUploaded?.();
   await client.sendMessage(room.roomId, threadId, content as never);
+  if (isGif(content)) saveGif(content as Gif).catch(() => { /* still sent, just not saved */ });
 }
 
 // ---------- pending uploads (shown as bubbles until the SDK's local echo takes over) ----------
@@ -519,6 +520,21 @@ export function loadEvent(room: Room, id: string): Promise<MatrixEvent> {
   }
   return p;
 }
+
+// ---------- saved gifs ----------
+/** Marks an uploaded video as a gif: autoplays, loops, muted, no controls (mautrix's flags). */
+export const GIF_INFO = { "fi.mau.gif": true, "fi.mau.loop": true, "fi.mau.autoplay": true, "fi.mau.hide_controls": true, "fi.mau.no_audio": true };
+const GIFS = "app.panbeh.gifs";
+export const savedGifs = (): Gif[] => client.getAccountData(GIFS as never)?.getContent()?.gifs ?? [];
+const gifOf = (c: Record<string, unknown>): Gif => {
+  const { msgtype, info, url, file } = c as Gif;
+  return { msgtype, body: "gif", info, ...(url ? { url } : { file }) }; // no caption, reply or forward marks
+};
+const putGifs = (gifs: Gif[]) => client.setAccountData(GIFS as never, { gifs } as never);
+export const saveGif = (c: Record<string, unknown>) => putGifs(withGif(savedGifs(), gifOf(c)));
+export const isSavedGif = (c: Record<string, unknown>) => hasGif(savedGifs(), gifOf(c));
+export const toggleGif = (c: Record<string, unknown>) =>
+  isSavedGif(c) ? putGifs(withoutGif(savedGifs(), gifOf(c))) : saveGif(c);
 
 // ---------- forwarding ----------
 /** Content for a copy of `ev` in another room; remembers the original author across re-forwards. */

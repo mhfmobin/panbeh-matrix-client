@@ -4,15 +4,15 @@ import DOMPurify from "dompurify";
 import { handleIncomingLink } from "../openTarget.ts";
 import { parseMatrixLink } from "../uri.ts";
 import { EventStatus, EventType, M_POLL_START, RelationType, type MatrixEvent, type Room } from "matrix-js-sdk";
-import { avatarUrl, client, mediaUrl, pinnedIds, seenBy, togglePin } from "../matrix.ts";
+import { avatarUrl, client, isSavedGif, mediaUrl, pinnedIds, seenBy, toggleGif, togglePin } from "../matrix.ts";
 import { saveFile } from "../native.ts";
 import { usePromise } from "../hooks.ts";
-import { clock, num, osmUrl, parseGeoUri, stamp, textDir } from "../logic.ts";
+import { clock, isGif, num, osmUrl, parseGeoUri, stamp, textDir, type Gif } from "../logic.ts";
 import { Icon, iconSvg, type IconName } from "../icons.tsx";
 import { Avatar, colorFor, copyText, errText, formatSize, isGroupChat, me, previewText, senderMember, senderName, stripReplyFallback, toast } from "./common.tsx";
 import { AudioPlayer, trackFor } from "./Voice.tsx";
 import { PollBody } from "./Poll.tsx";
-import { EmojiPanel } from "./Emoji.tsx";
+import { EmojiPanel, GifView } from "./Emoji.tsx";
 import { LinkPreview } from "./LinkPreview.tsx";
 import { captionOf, EDITABLE } from "./Composer.tsx";
 import { useBackdropHold } from "./useBackdropHold.ts";
@@ -223,6 +223,9 @@ export function Message({ ev, room, first, last, actions, flash }: Props) {
           text && { icon: "copy", label: "کپی", run: () => void copyMessages(text) },
           !M_POLL_START.matches(ev.getType()) && { icon: "forward", label: "هدایت", run: () => actions.forward(ev) },
           actions.thread && { icon: "thread", label: "پاسخ در رشته", run: () => actions.thread!(ev) },
+          isGif(content) && (isSavedGif(content)
+            ? { icon: "close", label: "حذف از گیف‌ها", run: () => toggleGif(content).catch((e) => alertDialog(errText(e))) }
+            : { icon: "plus", label: "ذخیره‌ی گیف", run: () => toggleGif(content).then(() => toast("به گیف‌ها اضافه شد"), (e) => alertDialog(errText(e))) }),
           canPin && { icon: "pin", label: pinned ? "برداشتن سنجاق" : "سنجاق", run: () => togglePin(room, ev.getId()!).catch((e) => alertDialog(errText(e))) },
           mine && EDITABLE.includes(content.msgtype ?? "") && { icon: "edit", label: "ویرایش", run: () => actions.edit(ev) },
           mine && { icon: "info", label: "دیده‌شده توسط", run: () => actions.info(ev) },
@@ -279,6 +282,7 @@ function Body({ ev, room, onView, onUser }: { ev: MatrixEvent; room: Room; onVie
   if (M_POLL_START.matches(ev.getType())) return <PollBody ev={ev} room={room} />;
   const caption = c.msgtype !== "m.audio" && captionOf(c) && <p className="msg-text caption" dir={textDir(c.body)}>{linkify(c.body)}</p>;
   if (c.msgtype === "m.image" || ev.getType() === EventType.Sticker) return <><Image c={c} onView={() => onView(ev)} />{caption}</>;
+  if (c.msgtype === "m.video" && isGif(c)) return <><div className="media-box" style={fit(c.info)}><GifView c={c as Gif} /></div>{caption}</>;
   if (c.msgtype === "m.video") return <><Video c={c} />{caption}</>;
   if (c.msgtype === "m.audio") return (
     <div onClick={(e) => e.stopPropagation()}>

@@ -248,24 +248,17 @@ export const inArchive = (r: RoomInfo) => !!r.archived && !(r.unread > 0 && !r.m
 /** Chat list order: invites, then pinned, then newest. */
 export const byListOrder = (a: { invite: boolean; pinned?: boolean; ts: number }, b: typeof a) =>
   +b.invite - +a.invite || +!!b.pinned - +!!a.pinned || b.ts - a.ts;
-export type Sticker = { shortcode: string; url: string; body: string; info?: Record<string, unknown> };
-export type StickerPack = { id: string; name: string; avatar?: string; stickers: Sticker[] };
+/** A looping, silent video (mautrix's flags, also set by the Telegram bridge) or an animated gif image. */
+export const isGif = (c: { msgtype?: string; info?: Record<string, unknown> }) =>
+  !!c.info?.["fi.mau.gif"] || (c.msgtype === "m.image" && c.info?.mimetype === "image/gif");
 
-/** MSC2545 image pack → its stickers: images whose usage (own, else the pack's) includes "sticker" or is unset/empty.
- *  null if none are usable. */
-export function stickerPack(id: string, content: unknown, fallbackName: string): StickerPack | null {
-  const c = (content ?? {}) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-  const use = (u: unknown) => (Array.isArray(u) && u.length ? u : null);
-  const packUsage = use(c.pack?.usage);
-  const stickers: Sticker[] = Object.entries(c.images && typeof c.images === "object" ? c.images : {}).flatMap(([shortcode, img]: [string, any]) => { // eslint-disable-line @typescript-eslint/no-explicit-any
-    const usage = use(img?.usage) ?? packUsage;
-    if (typeof img?.url !== "string" || !img.url.startsWith("mxc://") || (usage && !usage.includes("sticker"))) return [];
-    return [{ shortcode, url: img.url, body: typeof img.body === "string" && img.body ? img.body : shortcode, ...(img.info && typeof img.info === "object" && { info: img.info }) }];
-  });
-  if (!stickers.length) return null;
-  const name = typeof c.pack?.display_name === "string" && c.pack.display_name ? c.pack.display_name : fallbackName;
-  return { id, name, avatar: typeof c.pack?.avatar_url === "string" ? c.pack.avatar_url : undefined, stickers };
-}
+export type Gif = { msgtype: string; body: string; info?: Record<string, unknown>; url?: string; file?: { url: string } };
+const gifKey = (g: Gif) => g.url ?? g.file?.url;
+// ponytail: capped at 100, account data tops out around 64KB
+/** Saved gifs with `g` first: re-saving moves it up instead of duplicating. */
+export const withGif = (list: Gif[], g: Gif) => [g, ...list.filter((x) => gifKey(x) !== gifKey(g))].slice(0, 100);
+export const withoutGif = (list: Gif[], g: Gif) => list.filter((x) => gifKey(x) !== gifKey(g));
+export const hasGif = (list: Gif[], g: Gif) => list.some((x) => gifKey(x) === gifKey(g));
 
 // ---------- room admin ----------
 

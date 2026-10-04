@@ -146,25 +146,17 @@ test("archive, marked unread and list order", () => {
   assert.deepEqual(rows.sort(byListOrder).map((r) => r.id), ["inv", "pin", "new", "old"]);
 });
 
-import { stickerPack } from "./logic.ts";
+import { isGif, withGif, withoutGif, hasGif } from "./logic.ts";
 
-test("MSC2545 sticker packs: image usage overrides the pack's, unset means both", () => {
-  const p = stickerPack("p", {
-    pack: { display_name: "Cats", usage: ["emoticon"] },
-    images: {
-      a: { url: "mxc://hs/a" },                             // pack says emoticon only
-      b: { url: "mxc://hs/b", usage: ["sticker"], body: "Hi" },
-      c: { url: "mxc://hs/c", usage: [] },                  // empty = fall back to the pack
-      d: { url: "https://x/d", usage: ["sticker"] },        // not an mxc
-      e: { usage: ["sticker"] },                            // no url
-    },
-  }, "fallback");
-  assert.deepEqual(p, { id: "p", name: "Cats", avatar: undefined, stickers: [{ shortcode: "b", url: "mxc://hs/b", body: "Hi" }] });
-  const q = stickerPack("q", { images: { x: { url: "mxc://hs/x", info: { w: 10, h: 10 } } } }, "Room");
-  assert.deepEqual(q?.stickers, [{ shortcode: "x", url: "mxc://hs/x", body: "x", info: { w: 10, h: 10 } }]);
-  assert.equal(q?.name, "Room");
-  assert.equal(stickerPack("z", { images: { a: { url: "mxc://hs/a", usage: ["emoticon"] } } }, "Z"), null);
-  assert.equal(stickerPack("n", null, "N"), null);
+test("gifs: mau flag or gif image; saving moves to the front without duplicates", () => {
+  assert.ok(isGif({ msgtype: "m.video", info: { "fi.mau.gif": true } }));
+  assert.ok(isGif({ msgtype: "m.image", info: { mimetype: "image/gif" } }));
+  assert.ok(!isGif({ msgtype: "m.video", info: { mimetype: "video/mp4" } }));
+  const a = { msgtype: "m.video", body: "a", url: "mxc://hs/a" }, b = { msgtype: "m.video", body: "b", file: { url: "mxc://hs/b" } };
+  const list = withGif(withGif(withGif([], a), b), a);
+  assert.deepEqual(list.map((g) => g.body), ["a", "b"]);
+  assert.ok(hasGif(list, b) && !hasGif(withoutGif(list, b), b));
+  assert.equal(Array.from({ length: 120 }, (_, i) => ({ ...a, url: `mxc://hs/${i}` })).reduce(withGif, [] as typeof list).length, 100);
 });
 
 test("unread divider goes after the last read message and splits its burst", () => {

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { EventType, type MatrixEvent, type Room } from "matrix-js-sdk";
+import { ClientEvent } from "matrix-js-sdk";
 // fetched as files, not bundled as JS: separate chunks, loaded the first time the panel opens
 import enUrl from "emojibase-data/en/compact.json?url";
 import faUrl from "cldr-annotations-modern/annotations/fa/annotations.json?url";
-import { avatarUrl, client } from "../matrix.ts";
-import { usePromise } from "../hooks.ts";
-import { normalize, stickerPack, type Sticker, type StickerPack } from "../logic.ts";
+import { client, mediaUrl, savedGifs, toggleGif } from "../matrix.ts";
+import { usePromise, useTick } from "../hooks.ts";
+import { normalize, type Gif } from "../logic.ts";
+import { confirmDialog } from "./dialog.tsx";
 
 type Emoji = { u: string; name: string; search: string };
 type Raw = { unicode: string; label: string; tags?: string[]; group?: number; order?: number };
@@ -46,11 +47,11 @@ function remember(u: string) {
   try { localStorage.setItem(RECENT, JSON.stringify([u, ...recent().filter((x) => x !== u)].slice(0, 24))); } catch { /* storage blocked */ }
 }
 
-type Props = { onEmoji: (e: string) => void; onClose: () => void; stickers?: { room: Room; onPick: (s: Sticker) => void } };
+type Props = { onEmoji: (e: string) => void; onClose: () => void; gifs?: { onPick: (g: Gif) => void } };
 
-/** Emoji (+ optional stickers) popover; closes on outside click / Esc. Picking doesn't close it. */
-export function EmojiPanel({ onEmoji, onClose, stickers }: Props) {
-  const [tab, setTab] = useState<"emoji" | "sticker">("emoji");
+/** Emoji (+ optional saved gifs) popover; closes on outside click / Esc. Picking doesn't close it. */
+export function EmojiPanel({ onEmoji, onClose, gifs }: Props) {
+  const [tab, setTab] = useState<"emoji" | "gif">("emoji");
   useEffect(() => {
     const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     addEventListener("keydown", k);
@@ -60,13 +61,13 @@ export function EmojiPanel({ onEmoji, onClose, stickers }: Props) {
     <>
       <div className="menu-backdrop" onClick={onClose} />
       <div className="emoji-panel" role="dialog" aria-label="اموجی">
-        {stickers && (
+        {gifs && (
           <div className="segmented">
             <button className={tab === "emoji" ? "on" : ""} onClick={() => setTab("emoji")}>اموجی</button>
-            <button className={tab === "sticker" ? "on" : ""} onClick={() => setTab("sticker")}>استیکر</button>
+            <button className={tab === "gif" ? "on" : ""} onClick={() => setTab("gif")}>گیف</button>
           </div>
         )}
-        {tab === "emoji" || !stickers ? <EmojiGrid onPick={(u) => { remember(u); onEmoji(u); }} /> : <StickerGrid {...stickers} />}
+        {tab === "emoji" || !gifs ? <EmojiGrid onPick={(u) => { remember(u); onEmoji(u); }} /> : <GifGrid {...gifs} />}
       </div>
     </>
   );
@@ -103,53 +104,26 @@ function EmojiGrid({ onPick }: { onPick: (u: string) => void }) {
   );
 }
 
-// ---------- stickers (MSC2545 image packs) ----------
+// ---------- saved gifs (account data, see matrix.ts) ----------
 
-const ROOM_PACK = "im.ponies.room_emotes";
-
-/** My packs, the room's packs, then packs from rooms I've enabled globally (im.ponies.emote_rooms), if loaded. */
-export function stickerPacks(room: Room): StickerPack[] {
-  const packs = [stickerPack("user", client.getAccountData("im.ponies.user_emotes" as never)?.getContent(), "استیکرهای من")];
-  packs.push(...room.currentState.getStateEvents(ROOM_PACK).map((e) => stickerPack(`${room.roomId}/${e.getStateKey()}`, e.getContent(), room.name)));
-  const refs: Record<string, Record<string, unknown>> = client.getAccountData("im.ponies.emote_rooms" as never)?.getContent()?.rooms ?? {};
-  for (const [id, keys] of Object.entries(refs)) {
-    const r = client.getRoom(id);
-    if (!r || r === room) continue;
-    for (const k of Object.keys(keys ?? {})) packs.push(stickerPack(`${id}/${k}`, r.currentState.getStateEvents(ROOM_PACK, k)?.getContent(), r.name));
-  }
-  return packs.filter((p): p is StickerPack => !!p);
-}
-
-export function sendSticker(room: Room, threadId: string | null, s: Sticker, replyTo?: MatrixEvent) {
-  const content: Record<string, unknown> = { body: s.body, url: s.url, info: s.info ?? {} };
-  if (replyTo) content["m.relates_to"] = { "m.in_reply_to": { event_id: replyTo.getId() } };
-  return client.sendEvent(room.roomId, threadId, EventType.Sticker, content as never);
-}
-
-function StickerGrid({ room, onPick }: { room: Room; onPick: (s: Sticker) => void }) {
-  const packs = stickerPacks(room);
-  const [sel, setSel] = useState(0);
-  if (!packs.length) return <p className="muted">هنوز بسته‌ی استیکری ندارید. بسته‌ها را می‌توانید در Cinny یا FluffyChat بسازید.</p>;
-  const pack = packs[Math.min(sel, packs.length - 1)];
+function GifGrid({ onPick }: { onPick: (g: Gif) => void }) {
+  useTick(client, [ClientEvent.AccountData]);
+  const gifs = savedGifs();
+  if (!gifs.length) return <p className="muted">گیفی ندارید. ویدیو را با گزینه‌ی «ارسال به صورت گیف» بفرستید یا گیف دیگران را ذخیره کنید.</p>;
+  const remove = (g: Gif) => confirmDialog("این گیف از گیف‌های شما حذف شود؟", { danger: true }).then((y) => { if (y) void toggleGif(g); });
   return (
-    <>
-      {packs.length > 1 && (
-        <nav className="emoji-cats" role="tablist">
-          {packs.map((p, i) => (
-            <button key={p.id} role="tab" aria-selected={p === pack} className={p === pack ? "on" : ""} title={p.name} aria-label={p.name} onClick={() => setSel(i)}>
-              {p.avatar ? <Thumb url={p.avatar} /> : [...p.name][0]}
-            </button>
-          ))}
-        </nav>
-      )}
-      <div className="sticker-grid">
-        {pack.stickers.map((s) => <button key={s.shortcode} title={s.body} aria-label={s.body} onClick={() => onPick(s)}><Thumb url={s.url} /></button>)}
-      </div>
-    </>
+    <div className="gif-grid">
+      {gifs.map((g) => (
+        <button key={g.url ?? g.file?.url} aria-label="گیف" onClick={() => onPick(g)}
+          onContextMenu={(e) => { e.preventDefault(); void remove(g); }}><GifView c={g} /></button>
+      ))}
+    </div>
   );
 }
 
-function Thumb({ url }: { url: string }) {
-  const src = usePromise(avatarUrl(url, 128));
-  return src ? <img src={src} alt="" loading="lazy" draggable={false} /> : <span className="shimmer" />;
+/** A gif in a message or the gif tab: plays by itself, looped and muted. */
+export function GifView({ c }: { c: Gif }) {
+  const src = usePromise(mediaUrl(c as never)); // file carries the full IEncryptedFile; Gif only names its url
+  if (!src) return <span className="shimmer" />;
+  return c.msgtype === "m.image" ? <img src={src} alt="" draggable={false} /> : <video src={src} autoPlay loop muted playsInline disablePictureInPicture />;
 }

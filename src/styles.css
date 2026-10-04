@@ -760,7 +760,7 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .quick-list { display: grid; gap: 2px; margin-top: 6px; }
 .quick-list .user-row.on { background: var(--hover); }
 .kbd-hint { color: var(--muted); font-size: 12px; text-align: center; margin: 10px 0 0; }
-/* ---------- emoji / stickers ---------- */
+/* ---------- emoji / gifs ---------- */
 .emoji-toggle { flex: none; margin-bottom: 7px; background: var(--panel); box-shadow: var(--shadow); }
 .emoji-panel {
   position: absolute; z-index: 21; bottom: calc(100% + 4px); inset-inline-end: 12px; width: min(360px, calc(100% - 24px)); height: 380px;
@@ -775,14 +775,14 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .emoji-cats button { flex: none; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; font-size: 20px; opacity: 0.55; }
 .emoji-cats button.on, .emoji-cats button:hover { opacity: 1; background: var(--hover); }
 .emoji-cats img { width: 26px; height: 26px; object-fit: contain; }
-.emoji-grid, .sticker-grid { position: relative; flex: 1; min-height: 0; overflow-y: auto; display: grid; align-content: start; }
+.emoji-grid, .gif-grid { position: relative; flex: 1; min-height: 0; overflow-y: auto; display: grid; align-content: start; }
 .emoji-grid { grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); }
 .emoji-grid button { height: 38px; font-size: 26px; line-height: 1; border-radius: 8px; }
-.emoji-grid button:hover, .sticker-grid button:hover { background: var(--hover); }
-.sticker-grid { grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 4px; }
-.sticker-grid button { position: relative; aspect-ratio: 1; padding: 4px; display: grid; place-items: center; border-radius: 10px; overflow: hidden; }
-.sticker-grid img { max-width: 100%; max-height: 100%; object-fit: contain; }
-.sticker-grid .shimmer { width: 100%; height: 100%; }
+.emoji-grid button:hover, .gif-grid button:hover { background: var(--hover); }
+.gif-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 4px; }
+.gif-grid button { position: relative; aspect-ratio: 1; padding: 4px; display: grid; place-items: center; border-radius: 10px; overflow: hidden; }
+.gif-grid img, .gif-grid video { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
+.gif-grid .shimmer { width: 100%; height: 100%; }
 .quick-react button.more { display: grid; place-items: center; color: var(--muted); }
 /* ---------- timeline: unread / jump / link preview ---------- */
 .unread-divider {

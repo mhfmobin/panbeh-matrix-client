@@ -5,7 +5,7 @@ import { PollStartEvent } from "matrix-js-sdk/lib/extensible_events_v1/PollStart
 import { avatarUrl, client, isDirect } from "../matrix.ts";
 import { usePromise } from "../hooks.ts";
 import { getCallNotificationExpiry, type IRTCNotificationContent } from "matrix-js-sdk/lib/matrixrtc/index.js";
-import { fmtDuration, HISTORY, isVideoOffer, JOIN_RULES, legacyOutcome, levelChanges, num, roleLabel, rtcOutcome, type CallEv, type CallOutcome } from "../logic.ts";
+import { fmtDuration, HISTORY, isGif, isVideoOffer, JOIN_RULES, legacyOutcome, levelChanges, num, roleLabel, rtcOutcome, type CallEv, type CallOutcome } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 
 const COLORS = ["#e17076", "#faa774", "#a695e7", "#7bc862", "#6ec9cb", "#65aadd", "#ee7aae"];
@@ -80,7 +80,7 @@ export function previewText(ev: MatrixEvent): string {
   const c = ev.getContent();
   switch (c.msgtype) {
     case "m.image": return "🖼 " + (cap(c) ?? "عکس");
-    case "m.video": return "🎬 " + (cap(c) ?? "ویدیو");
+    case "m.video": return isGif(c) ? "🎞 " + (cap(c) ?? "گیف") : "🎬 " + (cap(c) ?? "ویدیو");
     case "m.audio": return isVoice(c) ? "🎤 پیام صوتی " + fmtDuration(audioDuration(c)) : "🎵 صدا";
     case "m.location": return "📍 موقعیت مکانی";
     case "m.file": return "📎 " + (cap(c) ?? c.filename ?? c.body ?? "فایل");

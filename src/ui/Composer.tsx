@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { ContentHelpers, LocationAssetType, MsgType, type IContent, type MatrixEvent, type Room } from "matrix-js-sdk";
-import { client, startUpload } from "../matrix.ts";
+import { client, GIF_INFO, startUpload } from "../matrix.ts";
 import { Icon } from "../icons.tsx";
 import { Avatar, bdi, errText, formatSize, me, previewText, senderName, stripReplyFallback } from "./common.tsx";
-import { escRe, formatMessage, num, osmUrl, type Sticker } from "../logic.ts";
+import { escRe, formatMessage, num, osmUrl, type Gif } from "../logic.ts";
 import { isMessage } from "../hooks.ts";
 import { VoiceRecorder } from "./Voice.tsx";
 import { PollForm } from "./Poll.tsx";
-import { EmojiPanel, sendSticker } from "./Emoji.tsx";
+import { EmojiPanel } from "./Emoji.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 import { isSendKey } from "./Settings.tsx";
 
@@ -162,11 +162,12 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
     setMode(null);
   }
 
-  function sendFiles(list: File[], caption: string, asFile: boolean) {
+  function sendFiles(list: File[], caption: string, asFile: boolean, asGif: boolean) {
     const replyTo = mode?.kind === "reply" ? mode.ev : undefined;
     setMode(null);
     setFiles(() => []);
-    list.forEach((f, i) => startUpload(room, f, threadId, i ? undefined : replyTo, undefined, i ? undefined : caption, asFile));
+    const extra = (f: File) => (asGif && !asFile && f.type.startsWith("video/") ? { info: GIF_INFO } : undefined);
+    list.forEach((f, i) => startUpload(room, f, threadId, i ? undefined : replyTo, extra(f), i ? undefined : caption, asFile));
   }
 
   function shareLocation() {
@@ -215,9 +216,11 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
     requestAnimationFrame(() => el?.setSelectionRange(c, c));
   }
 
-  function pickSticker(s: Sticker) {
+  function sendGif(g: Gif) {
     setEmoji(false);
-    sendSticker(room, threadId, s, mode?.kind === "reply" ? mode.ev : undefined).catch((e) => alertDialog(errText(e)));
+    const content: Record<string, unknown> = { ...g };
+    if (mode?.kind === "reply") content["m.relates_to"] = { "m.in_reply_to": { event_id: mode.ev.getId() } };
+    client.sendMessage(room.roomId, threadId, content as never).catch((e) => alertDialog(errText(e)));
     setMode(null);
   }
 
@@ -286,16 +289,17 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
           </div>
         </div>
       )}
-      {emoji && !recording && <EmojiPanel onEmoji={insert} onClose={() => setEmoji(false)} stickers={mode?.kind === "edit" ? undefined : { room, onPick: pickSticker }} />}
+      {emoji && !recording && <EmojiPanel onEmoji={insert} onClose={() => setEmoji(false)} gifs={mode?.kind === "edit" ? undefined : { onPick: sendGif }} />}
       {files.length > 0 && <SendFiles files={files} setFiles={setFiles} onSend={sendFiles} />}
       {pollForm && <PollForm room={room} threadId={threadId} onClose={() => setPollForm(false)} />}
     </div>
   );
 }
 
-function SendFiles({ files, setFiles, onSend }: { files: File[]; setFiles: Props["setFiles"]; onSend: (files: File[], caption: string, asFile: boolean) => void }) {
+function SendFiles({ files, setFiles, onSend }: { files: File[]; setFiles: Props["setFiles"]; onSend: (files: File[], caption: string, asFile: boolean, asGif: boolean) => void }) {
   const [caption, setCaption] = useState("");
   const [asFile, setAsFile] = useState(false);
+  const [asGif, setAsGif] = useState(false);
   const [urls, setUrls] = useState<(string | null)[]>([]);
   useEffect(() => {
     const u = files.map((f) => (f.type.startsWith("image/") ? URL.createObjectURL(f) : null));
@@ -303,7 +307,7 @@ function SendFiles({ files, setFiles, onSend }: { files: File[]; setFiles: Props
     return () => u.forEach((x) => x && URL.revokeObjectURL(x));
   }, [files]);
   const close = () => setFiles(() => []);
-  const send = () => onSend(files, caption.trim(), asFile);
+  const send = () => onSend(files, caption.trim(), asFile, asGif);
   const remove = (i: number) => setFiles((x) => x.filter((_, j) => j !== i));
   const imgs = files.map((f, i) => i).filter((i) => urls[i]);
   const others = files.map((f, i) => i).filter((i) => !urls[i]);
@@ -333,6 +337,10 @@ function SendFiles({ files, setFiles, onSend }: { files: File[]; setFiles: Props
         {imgs.length > 0 && (
           <label className="switch-row"><span>ارسال به صورت فایل<small>بدون فشرده‌سازی</small></span>
             <input type="checkbox" role="switch" checked={asFile} onChange={(e) => setAsFile(e.target.checked)} /></label>
+        )}
+        {files.some((f) => f.type.startsWith("video/")) && (
+          <label className="switch-row"><span>ارسال به صورت گیف<small>پخش خودکار و تکرار، بدون صدا</small></span>
+            <input type="checkbox" role="switch" checked={asGif} onChange={(e) => setAsGif(e.target.checked)} /></label>
         )}
         <div className="modal-actions">
           <button onClick={close}>لغو</button>
