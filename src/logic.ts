@@ -301,8 +301,12 @@ export function textDir(s: string): "rtl" | "ltr" {
 
 type RingContent = { notification_type?: string; "m.mentions"?: { room?: boolean; user_ids?: string[] } };
 /** An m.rtc.notification (MSC4075) that should ring `me` now: a "ring" (not a group "notification"), aimed at us or the room, before `until`. */
+const aimedAt = (c: RingContent, me: string) => !!(c["m.mentions"]?.room || c["m.mentions"]?.user_ids?.includes(me));
 export const isRing = (c: RingContent, until: number, me: string, now = Date.now()) =>
-  c.notification_type === "ring" && !!(c["m.mentions"]?.room || c["m.mentions"]?.user_ids?.includes(me)) && until > now; // NaN until = no
+  c.notification_type === "ring" && aimedAt(c, me) && until > now; // NaN until = no
+/** A group call that just started (a "notification", not a ring): worth a quiet notification. */
+export const isGroupCallAlert = (c: RingContent, until: number, me: string, now = Date.now()) =>
+  c.notification_type === "notification" && aimedAt(c, me) && until > now;
 
 type Invite = { lifetime?: number; invitee?: string; offer?: { sdp?: string } };
 /** A legacy 1:1 m.call.invite (old Element, FluffyChat, Nheko…) that should ring `me` now: unexpired and not aimed at someone else. */
@@ -319,4 +323,35 @@ export function pickProtocol(evs: { type: string; sender: string }[], me: string
     if (type.endsWith("rtc.notification")) return "rtc";
   }
   return "rtc";
+}
+
+// ---------- how a call went (for its line in the timeline) ----------
+
+export type CallEv = { id?: string; type: string; sender: string; ts: number; content: Record<string, any> };
+/** ringing/ongoing: nothing to add yet. ended: answered, for `duration` ms. */
+export type CallOutcome = { state: "ringing" | "ongoing" | "missed" | "declined" | "ended"; duration?: number };
+const MEMBER = "org.matrix.msc3401.call.member";
+const isEmpty = (c: object | undefined) => !c || !Object.keys(c).length;
+
+/** A legacy m.call.invite, from the events after it in the room (oldest first). */
+export function legacyOutcome(invite: CallEv, after: CallEv[], now = Date.now()): CallOutcome {
+  const same = after.filter((e) => e.content?.call_id === invite.content.call_id);
+  const answer = same.find((e) => e.type === "m.call.answer");
+  const end = same.find((e) => e.type === "m.call.hangup" || e.type === "m.call.reject");
+  if (answer) return end ? { state: "ended", duration: end.ts - answer.ts } : { state: "ongoing" };
+  if (end?.type === "m.call.reject") return { state: "declined" };
+  return end || invite.ts + (invite.content.lifetime ?? 0) <= now ? { state: "missed" } : { state: "ringing" };
+}
+
+/** A MatrixRTC ring (m.rtc.notification) ringing until `until`: answered once someone else's call membership shows up, over when one side leaves. */
+export function rtcOutcome(ring: CallEv, until: number, after: CallEv[], now = Date.now()): CallOutcome {
+  const members = after.filter((e) => e.type === MEMBER);
+  const joined = members.find((e) => e.sender !== ring.sender && !isEmpty(e.content) && e.ts <= until);
+  if (joined) {
+    const left = members.find((e) => e.ts >= joined.ts && isEmpty(e.content)); // 1:1: whoever leaves first ends it
+    return left ? { state: "ended", duration: left.ts - joined.ts } : { state: "ongoing" };
+  }
+  if (after.some((e) => e.type.endsWith("rtc.decline") && e.content?.["m.relates_to"]?.event_id === ring.id)) return { state: "declined" };
+  const gaveUp = members.some((e) => e.sender === ring.sender && isEmpty(e.content));
+  return gaveUp || until <= now ? { state: "missed" } : { state: "ringing" };
 }

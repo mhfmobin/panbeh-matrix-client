@@ -7,8 +7,9 @@ import type { MCallInviteNegotiate } from "matrix-js-sdk/lib/webrtc/callEventTyp
 import { getCallNotificationExpiry, isLivekitTransportConfig, MatrixRTCSessionEvent, type IRTCNotificationContent, type LivekitTransportConfig, type MatrixRTCSession } from "matrix-js-sdk/lib/matrixrtc/index.js";
 import { BaseKeyProvider, createKeyMaterialFromBuffer, createLocalTracks, Room as LkRoom, RoomEvent as LkEvent, Track, type LocalVideoTrack, type RemoteTrack } from "livekit-client";
 import { avatarUrl, client, isDirect, isEncrypted, loadEvent } from "./matrix.ts";
-import { isMuted, ringtone } from "./notify.ts";
-import { isLegacyRing, isRing, isVideoOffer, pickProtocol } from "./logic.ts";
+import { callNotice, isMuted, ringtone } from "./notify.ts";
+import { senderName } from "./ui/common.tsx";
+import { isGroupCallAlert, isLegacyRing, isRing, isVideoOffer, pickProtocol } from "./logic.ts";
 import { isHeadless, isNative, nativeCallActive, nativeCancelCall, nativeShowCall, nativeSpeaker, toDataUrl, type CallAction } from "./native.ts";
 import { isWindowVisible, showWindow } from "./desktop.ts";
 
@@ -308,6 +309,9 @@ async function legacyCallFor(room: Room, invite: MatrixEvent) {
   return mc;
 }
 
+const rejectedByUs = (room: Room, callId: string) => room.getLiveTimeline().getEvents()
+  .some((e) => e.getType() === EventType.CallReject && e.getSender() === client.getUserId() && e.getContent().call_id === callId);
+
 const inviteOf = (room: Room, callId: string) =>
   room.getLiveTimeline().getEvents().findLast((e) => e.getType() === EventType.CallInvite && e.getContent().call_id === callId);
 
@@ -322,7 +326,10 @@ function rejectInvite(roomId: string, invite: MatrixEvent) {
 
 let stopRing: (() => void)[] = [];
 
-function stopRinging() {
+/** missed: it stopped without any of our devices answering or declining (caller gave up, or it timed out). */
+function stopRinging(missed = false) {
+  const i = snap.incoming;
+  if (missed && i) void callNotice(i.room, i.video ? "تماس تصویری از دست رفته" : "تماس صوتی از دست رفته");
   stopRing.forEach((f) => f());
   stopRing = [];
   if (isNative && snap.incoming && !snap.active) nativeCallActive(false, false); // a ring that woke the lock screen lets it sleep again
@@ -338,13 +345,17 @@ const shouldRing = (room: Room, from: string) => !snap.incoming && !snap.active 
 function ring(room: Room, ev: MatrixEvent) {
   const c = ev.getContent<IRTCNotificationContent>(), me = client.getSafeUserId();
   const until = getCallNotificationExpiry(c, ev.getTs());
-  if (!isRing(c, until, me) || ev.getSender() === me || !shouldRing(room, ev.getSender()!)) return;
   const session = client.matrixRTC.getRoomSession(room);
-  if (session.memberships.some((m) => m.userId === me)) return; // already in it (another device)
-  startRinging({ room, ev, video: c["m.call.intent"] === "video" }, until);
+  const inIt = session.memberships.some((m) => m.userId === me); // already in it (another device)
+  if (ev.getSender() === me || inIt || isMuted(room) || client.isUserIgnored(ev.getSender()!)) return;
+  const video = c["m.call.intent"] === "video";
+  if (isGroupCallAlert(c, until, me)) return void callNotice(room, `${senderName(ev)} ${video ? "تماس تصویری" : "تماس صوتی"} گروهی را شروع کرد`, true);
+  if (!isRing(c, until, me) || !shouldRing(room, ev.getSender()!)) return;
+  startRinging({ room, ev, video }, until);
   // stops when the caller gives up or one of our devices answers
   const onMembers = () => {
-    if (!session.memberships.length || session.memberships.some((m) => m.userId === me)) stopRinging();
+    if (session.memberships.some((m) => m.userId === me)) stopRinging();
+    else if (!session.memberships.length) stopRinging(true);
   };
   session.on(MatrixRTCSessionEvent.MembershipsChanged, onMembers);
   stopRing.push(() => session.off(MatrixRTCSessionEvent.MembershipsChanged, onMembers));
@@ -356,7 +367,8 @@ function ringLegacy(room: Room, ev: MatrixEvent, mc?: MatrixCall) {
   if (mc?.callHasEnded() || !isLegacyRing(c, ev.getTs(), client.getSafeUserId()) || ev.getSender() === client.getUserId() || !shouldRing(room, ev.getSender()!)) return;
   startRinging({ room, ev, mc, video: isVideoOffer(c) }, ev.getTs() + c.lifetime);
   if (!mc) return; // headless: onEvent stops it on the hangup / answer events
-  const onEnd = () => stopRinging(); // caller gave up, or answered/declined on another of our devices
+  // caller gave up, or answered/declined on another of our devices
+  const onEnd = () => stopRinging(mc.hangupReason !== CallErrorCode.AnsweredElsewhere && !rejectedByUs(room, mc.callId));
   mc.on(CallEvent.Hangup, onEnd);
   stopRing.push(() => mc.off(CallEvent.Hangup, onEnd));
 }
@@ -365,7 +377,7 @@ function ringLegacy(room: Room, ev: MatrixEvent, mc?: MatrixCall) {
 function startRinging(i: Incoming, until: number) {
   const { room, ev, video } = i;
   set({ incoming: i });
-  const t = setTimeout(stopRinging, until - Date.now());
+  const t = setTimeout(() => stopRinging(true), until - Date.now());
   stopRing = [() => clearTimeout(t)];
 
   if (isNative && (isHeadless || document.visibilityState === "hidden")) {
@@ -418,7 +430,9 @@ function onEvent(ev: MatrixEvent, room: Room) {
   if (LEGACY_ENDS.includes(type)) { // headless: caller gave up, or another of our devices answered/declined
     const i = snap.incoming;
     const ends = type !== EventType.CallAnswer || ev.getSender() === client.getUserId(); // an answer only ends our ring if it's ours
-    if (ends && i && !i.mc && i.ev.getType() === EventType.CallInvite && i.ev.getContent().call_id === ev.getContent().call_id) stopRinging();
+    if (ends && i && !i.mc && i.ev.getType() === EventType.CallInvite && i.ev.getContent().call_id === ev.getContent().call_id) {
+      stopRinging(type === EventType.CallHangup && ev.getSender() !== client.getUserId());
+    }
     return;
   }
   if (type !== EventType.RTCDecline) return;

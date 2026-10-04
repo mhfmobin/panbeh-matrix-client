@@ -4,7 +4,8 @@ import { EventType, M_POLL_START, type MatrixEvent, type Room } from "matrix-js-
 import { PollStartEvent } from "matrix-js-sdk/lib/extensible_events_v1/PollStartEvent.js";
 import { avatarUrl, client, isDirect } from "../matrix.ts";
 import { usePromise } from "../hooks.ts";
-import { fmtDuration, HISTORY, JOIN_RULES, levelChanges, num, roleLabel } from "../logic.ts";
+import { getCallNotificationExpiry, type IRTCNotificationContent } from "matrix-js-sdk/lib/matrixrtc/index.js";
+import { fmtDuration, HISTORY, isVideoOffer, JOIN_RULES, legacyOutcome, levelChanges, num, roleLabel, rtcOutcome, type CallEv, type CallOutcome } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 
 const COLORS = ["#e17076", "#faa774", "#a695e7", "#7bc862", "#6ec9cb", "#65aadd", "#ee7aae"];
@@ -152,12 +153,32 @@ export function noticeText(ev: MatrixEvent): string | null {
     case EventType.RoomHistoryVisibility:
       return prev.history_visibility && c.history_visibility !== prev.history_visibility ? `${who} دسترسی به تاریخچه را به «${HISTORY[c.history_visibility] ?? c.history_visibility}» تغییر داد` : null;
     case EventType.RoomTombstone: return `${who} این گروه را ارتقا داد`;
-    case EventType.RTCNotification: { // ponytail: no "missed call"; check whether we joined before it expired if wanted
+    case EventType.RTCNotification: {
       const kind = c["m.call.intent"] === "video" ? "تماس تصویری" : "تماس صوتی";
-      return c.notification_type === "ring" ? `${who} ${kind} گرفت` : `${who} ${kind} گروهی را شروع کرد`;
+      if (c.notification_type !== "ring") return `${who} ${kind} گروهی را شروع کرد`;
+      return callLine(ev, who, kind, rtcOutcome(callEv(ev), getCallNotificationExpiry(c as IRTCNotificationContent, ev.getTs()), eventsAfter(ev)));
     }
+    case EventType.CallInvite: return callLine(ev, who, isVideoOffer(c as { offer?: { sdp?: string } }) ? "تماس تصویری" : "تماس صوتی", legacyOutcome(callEv(ev), eventsAfter(ev)));
   }
   return null;
+}
+
+const callEv = (e: MatrixEvent): CallEv => ({ id: e.getId(), type: e.getType(), sender: e.getSender()!, ts: e.getTs(), content: e.getContent() });
+/** The loaded events after `ev`, to see how its call went. */
+function eventsAfter(ev: MatrixEvent) {
+  const evs = client.getRoom(ev.getRoomId())?.getTimelineForEvent(ev.getId()!)?.getEvents() ?? [];
+  return evs.slice(evs.indexOf(ev) + 1).map(callEv);
+}
+
+/** A 1:1 call's line in the timeline: who called, and how it went. */
+function callLine(ev: MatrixEvent, who: string, kind: string, o: CallOutcome) {
+  const mine = ev.getSender() === me();
+  switch (o.state) {
+    case "ended": return `${who} ${kind} گرفت · ${fmtDuration(o.duration!)}`;
+    case "missed": return mine ? `${kind} بی‌پاسخ` : `${kind} از دست رفته از ${who}`;
+    case "declined": return mine ? `${kind} رد شد` : `${kind} ${who} را رد کردید`;
+    default: return `${who} ${kind} گرفت`;
+  }
 }
 
 export const isGroupChat = (room: Room) => room.getJoinedMemberCount() > 2;

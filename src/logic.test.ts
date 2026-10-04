@@ -252,3 +252,33 @@ test("pickProtocol: call back the way they last called", () => {
   assert.equal(pickProtocol([{ type: rtc, sender: "@you:x" }, { type: "m.call.invite", sender: "@me:x" }], "@me:x"), "rtc"); // ours don't count
   assert.equal(pickProtocol([{ type: "m.call.invite", sender: "@you:x" }, { type: "m.room.message", sender: "@you:x" }], "@me:x"), "legacy");
 });
+
+import { isGroupCallAlert, legacyOutcome, rtcOutcome } from "./logic.ts";
+test("isGroupCallAlert: group call starts, not rings", () => {
+  assert.equal(isGroupCallAlert({ notification_type: "notification", "m.mentions": { room: true } }, 2000, "@me:x", 1000), true);
+  assert.equal(isGroupCallAlert({ notification_type: "ring", "m.mentions": { room: true } }, 2000, "@me:x", 1000), false);
+  assert.equal(isGroupCallAlert({ notification_type: "notification", "m.mentions": { room: true } }, 1000, "@me:x", 1000), false);
+});
+
+test("legacyOutcome: answered with duration, declined, missed, still ringing", () => {
+  const inv = { type: "m.call.invite", sender: "@a:x", ts: 1000, content: { call_id: "c1", lifetime: 60000 } };
+  const ev = (type: string, ts: number, call_id = "c1") => ({ type, sender: "@b:x", ts, content: { call_id } });
+  assert.deepEqual(legacyOutcome(inv, [ev("m.call.answer", 5000), ev("m.call.hangup", 197000)], 300000), { state: "ended", duration: 192000 });
+  assert.deepEqual(legacyOutcome(inv, [ev("m.call.answer", 5000)], 300000), { state: "ongoing" });
+  assert.deepEqual(legacyOutcome(inv, [ev("m.call.reject", 5000)], 300000), { state: "declined" });
+  assert.deepEqual(legacyOutcome(inv, [ev("m.call.hangup", 5000)], 6000), { state: "missed" }); // caller gave up
+  assert.deepEqual(legacyOutcome(inv, [], 300000), { state: "missed" }); // expired
+  assert.deepEqual(legacyOutcome(inv, [ev("m.call.answer", 5000, "other")], 2000), { state: "ringing" }); // another call's events
+});
+
+test("rtcOutcome: from call memberships after the ring", () => {
+  const ring = { id: "$r", type: "org.matrix.msc4075.rtc.notification", sender: "@a:x", ts: 1000, content: {} };
+  const m = (sender: string, ts: number, on: boolean) => ({ type: "org.matrix.msc3401.call.member", sender, ts, content: on ? { application: "m.call" } : {} });
+  assert.deepEqual(rtcOutcome(ring, 31000, [m("@b:x", 5000, true), m("@a:x", 65000, false)], 100000), { state: "ended", duration: 60000 });
+  assert.deepEqual(rtcOutcome(ring, 31000, [m("@b:x", 5000, true)], 100000), { state: "ongoing" });
+  assert.deepEqual(rtcOutcome(ring, 31000, [{ type: "org.matrix.msc4310.rtc.decline", sender: "@b:x", ts: 3000, content: { "m.relates_to": { event_id: "$r" } } }], 100000), { state: "declined" });
+  assert.deepEqual(rtcOutcome(ring, 31000, [m("@a:x", 9000, false)], 10000), { state: "missed" }); // caller gave up
+  assert.deepEqual(rtcOutcome(ring, 31000, [], 100000), { state: "missed" });
+  assert.deepEqual(rtcOutcome(ring, 31000, [], 2000), { state: "ringing" });
+  assert.deepEqual(rtcOutcome(ring, 31000, [m("@b:x", 40000, true)], 100000), { state: "missed" }); // joined after it stopped ringing
+});
