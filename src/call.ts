@@ -391,6 +391,17 @@ async function withTurn(mc?: MatrixCall) {
   if (pc && ice.length) pc.setConfiguration({ ...pc.getConfiguration(), iceServers: ice });
 }
 
+/** What ICE had to work with, for the "couldn't connect" message: TURN from our server, and the kinds of address each side offered. */
+async function iceReport(mc: MatrixCall) {
+  const local = new Set<string>(), remote = new Set<string>();
+  (await mc.peerConn?.getStats().catch(() => undefined))?.forEach((r) => {
+    if (r.type === "local-candidate") local.add(r.candidateType);
+    else if (r.type === "remote-candidate") remote.add(r.candidateType);
+  });
+  const list = (s: Set<string>) => [...s].join(", ") || "-";
+  return `TURN: ${client.getTurnServers().length ? "yes" : "no"} | local: ${list(local)} | remote: ${list(remote)} | ICE: ${mc.peerConn?.iceConnectionState ?? "-"} | ${mc.state}`;
+}
+
 /** Puts a legacy call on screen and follows it until it ends. */
 function showLegacy(room: Room, mc: MatrixCall, video: boolean) {
   set({ active: { kind: "legacy", room, mc, video, min: false, speaker: video, facing: "user" } });
@@ -409,13 +420,16 @@ function showLegacy(room: Room, mc: MatrixCall, video: boolean) {
   const watch = (s: CallState) => {
     clearTimeout(stuck);
     if ([CallState.InviteSent, CallState.Ringing, CallState.Connected, CallState.Ended].includes(s) || snap.active?.since) return;
-    stuck = setTimeout(() => {
-      const a = snap.active;
-      if (a?.kind !== "legacy" || a.mc !== mc || a.since) return;
+    stuck = setTimeout(async () => {
+      const still = () => snap.active?.kind === "legacy" && snap.active.mc === mc && !snap.active.since;
+      if (!still()) return;
+      const report = await iceReport(mc); // before hanging up closes the connection
+      if (!still()) return;
+      console.warn("legacy call didn't connect", report);
       void hangup();
       alertDialog(mc.state === CallState.WaitLocalMedia
         ? "میکروفون یا دوربین در دسترس نیست. اجازه‌ی دسترسی پنبه به آن‌ها را بررسی کنید."
-        : "اتصال تماس برقرار نشد. احتمالاً سرور ماتریکس شما سرور TURN ندارد یا به آن دسترسی نیست؛ با مدیر سرور در میان بگذارید.");
+        : `اتصال تماس برقرار نشد. احتمالاً سرور ماتریکس شما سرور TURN ندارد یا به آن دسترسی نیست؛ با مدیر سرور در میان بگذارید.\n\n${report}`);
     }, 30_000);
   };
   const onState = (s: CallState) => {
