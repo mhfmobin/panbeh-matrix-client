@@ -7,6 +7,7 @@ import { Avatar, errText, me, Sheet } from "./common.tsx";
 import { MemberAdmin } from "./Admin.tsx";
 import { showVerification, useUserTrust } from "./Verify.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
+import { start as startCall } from "./Call.tsx";
 
 /** Someone's profile with a shortcut to message them. */
 export function UserProfile({ userId, room, onClose, onOpened }: { userId: string; room?: Room; onClose: () => void; onOpened?: () => void }) {
@@ -37,6 +38,8 @@ export function UserProfile({ userId, room, onClose, onOpened }: { userId: strin
   };
   const verify = () => act(async () => showVerification(await client.getCrypto()!.requestVerificationDM(userId, dm ?? await openDM(userId))));
   const other = userId !== me();
+  const dmRoom = dm ? client.getRoom(dm) : null; // calls only in a DM they've joined: an invite can't ring
+  const callIn = (video: boolean) => { location.hash = dmRoom!.roomId; onClose(); onOpened?.(); startCall(dmRoom!, video).catch((e) => alertDialog(errText(e))); };
   return (
     <Sheet title="اطلاعات کاربر" onClose={onClose}>
       <div className="info-head">
@@ -51,6 +54,12 @@ export function UserProfile({ userId, room, onClose, onOpened }: { userId: strin
         )}
       </div>
       {other && <button className="primary" disabled={busy} onClick={open}>{dm ? "پیام" : "شروع گفتگو"}</button>}
+      {other && dmRoom && (
+        <div className="profile-calls">
+          <button className="secondary" disabled={busy} onClick={() => callIn(false)}><Icon name="phone" size={18} /> تماس صوتی</button>
+          <button className="secondary" disabled={busy} onClick={() => callIn(true)}><Icon name="video" size={18} /> تماس تصویری</button>
+        </div>
+      )}
       {other && trust?.known && !trust.isCrossSigningVerified() && (
         <button className="secondary" disabled={busy} onClick={verify}>تأیید هویت با شکلک‌ها</button>
       )}

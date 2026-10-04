@@ -22,7 +22,7 @@ const canShare = !isNative && !!navigator.mediaDevices?.getDisplayMedia;
  * Starts a call after ending another one. legacy: a peer-to-peer m.call.* call (DMs only); unset = call back the way they
  * last called, or legacy when our server has no SFU. MatrixRTC needs power to send m.call.member, which an admin can grant.
  */
-async function start(room: Room, video: boolean, legacy?: boolean) {
+export async function start(room: Room, video: boolean, legacy?: boolean) {
   const { active } = getCall();
   if (active && active.room !== room && !(await confirmDialog("تماس فعلی پایان یابد؟", { ok: "پایان و تماس", danger: true }))) return;
   legacy ??= isDirect(room) && (protocolFor(room) === "legacy" || !(await ourTransport()));
