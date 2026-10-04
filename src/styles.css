@@ -953,6 +953,20 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 @media (hover: none) { .call-focus { opacity: 1; } } /* touch: no hover to reveal it */
 .call-strip .call-focus { inset: 0; width: auto; height: auto; border-radius: 0; background: none; opacity: 0; } /* the whole thumbnail swaps */
 .call-controls { display: flex; justify-content: center; flex-wrap: wrap; gap: 14px; padding: 16px 12px 28px; }
+/* group extras: hands, reactions, connection, the participant list, "+N" */
+.call-hand { position: absolute; top: 8px; inset-inline-start: 8px; font-size: 22px; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6)); }
+.call-reaction { position: absolute; inset: 0; display: grid; place-items: center; font-size: 64px; pointer-events: none; animation: rise 3s ease-out forwards; }
+@keyframes rise { 0% { transform: scale(0.4); opacity: 0; } 15% { transform: scale(1); opacity: 1; } 80% { opacity: 1; } 100% { transform: translateY(-30%); opacity: 0; } }
+.call-quality { width: 8px; height: 8px; border-radius: 50%; background: #f4b400; }
+.call-quality.lost { background: #e53935; }
+.call-more { font-size: 28px; font-weight: 600; color: #fff; }
+.call-more:hover { background: #2a323b; }
+.call-people { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow: auto; }
+.call-people > div { display: flex; align-items: center; gap: 10px; }
+.call-people > div > span:first-of-type { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.call-people small { color: #f4b400; font-size: 12px; }
+.call-reactions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.call-reactions button { justify-content: center; font-size: 28px; padding: 8px; }
 /* devices / audio route card, above the controls */
 .call-panel-backdrop { position: absolute; inset: 0; z-index: 2; display: flex; align-items: flex-end; justify-content: center; padding: 0 12px calc(110px + env(safe-area-inset-bottom)); }
 .call-panel { width: min(100%, 360px); display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 16px; background: #1f252c; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); animation: fade 0.15s; }

@@ -3,9 +3,9 @@ import { EventType, type Room } from "matrix-js-sdk";
 import { MatrixRTCSessionEvent } from "matrix-js-sdk/lib/matrixrtc/index.js";
 import { CallState } from "matrix-js-sdk/lib/webrtc/call.js";
 import type { CallFeed } from "matrix-js-sdk/lib/webrtc/callFeed.js";
-import { ConnectionState, Track, type VideoTrack } from "livekit-client";
+import { ConnectionQuality, ConnectionState, Track, type VideoTrack } from "livekit-client";
 import { allowCalls, client, isDirect } from "../matrix.ts";
-import { answer, call, decline, flipCam, getCall, hangup, loadDevices, minimize, myMedia, ourTransport, protocolFor, setAudioRoute, setDevice, setNoiseSuppression, toggleCam, toggleMic, toggleScreen, toggleSpeaker, useCall, userOf, type Active, type Incoming } from "../call.ts";
+import { answer, call, decline, flipCam, getCall, handOf, hangup, loadDevices, membershipOf, minimize, myMedia, ourTransport, protocolFor, react, reactionOf, REACTIONS, setAudioRoute, setDevice, setNoiseSuppression, toggleCam, toggleHand, toggleMic, toggleScreen, toggleSpeaker, useCall, type Active, type Incoming } from "../call.ts";
 import { usePromise, useTick } from "../hooks.ts";
 import { fmtDuration, num } from "../logic.ts";
 import { isNative, nativeAudioRoutes, nativePip, type AudioRoute } from "../native.ts";
@@ -163,13 +163,18 @@ function CallScreen({ a }: { a: Active }) {
   const [focus, setFocus] = useState<string | null>(null); // a feed blown up to most of the screen
   const main = tiles.find((t) => t.key === focus); // gone (left, stopped sharing) = back to the grid
   const pip = !main && tiles.length === 2 && others === 1; // 1:1: the other side fills the screen, we're in the corner
+  // big groups: at most 9 tiles, us and whoever is sharing, speaking or has a hand up first; "+N" opens the list
+  const rank = (t: TileData) => (t.local ? 8 : 0) + (t.screen ? 4 : 0) + (t.speaking ? 2 : 0) + (t.hand ? 1 : 0);
+  const grid = tiles.length > MAX_TILES ? [...tiles].sort((x, y) => rank(y) - rank(x)).slice(0, MAX_TILES - 1) : tiles;
+  const group = a.kind === "rtc" && !isDirect(a.room);
   const hasVideo = m.cam || tiles.some((t) => t.video && !t.local);
   useEffect(() => { // Android: leaving the app during a video call shrinks it to picture-in-picture
     if (!isNative || !hasVideo) return;
     nativePip(true);
     return () => nativePip(false);
   }, [hasVideo]);
-  const [panel, setPanel] = useState<"devices" | { routes: AudioRoute[]; current: number } | null>(null);
+  const [panel, setPanel] = useState<"devices" | "people" | "reactions" | { routes: AudioRoute[]; current: number } | null>(null);
+  const toggle = (p: "devices" | "people" | "reactions") => setPanel(panel === p ? null : p);
   // Android: with a headset around, the speaker button picks where audio goes; otherwise it just toggles the speaker
   const speakerBtn = async () => {
     const r = await nativeAudioRoutes();
@@ -190,8 +195,11 @@ function CallScreen({ a }: { a: Active }) {
           <div className="call-strip">{tiles.filter((t) => t !== main).map((t) => tile(t))}</div>
         </div>
       ) : (
-        <div className={"call-grid" + (pip ? " pip" : "")} data-n={tiles.length}>
-          {tiles.map((t) => tile(t))}
+        <div className={"call-grid" + (pip ? " pip" : "")} data-n={grid.length + (grid.length < tiles.length ? 1 : 0)}>
+          {grid.map((t) => tile(t))}
+          {grid.length < tiles.length && (
+            <button className="call-tile call-more" onClick={() => setPanel("people")}>+{num(tiles.length - grid.length)}</button>
+          )}
         </div>
       )}
       <div className="call-controls">
@@ -200,18 +208,45 @@ function CallScreen({ a }: { a: Active }) {
         {isNative && m.cam && <CallBtn icon="flip" label="چرخش دوربین" onClick={() => run(flipCam())} />}
         {isNative && <CallBtn icon="speaker" label="بلندگو" on={a.speaker} onClick={() => run(speakerBtn())} />}
         {canShare && <CallBtn icon="screen" label="اشتراک صفحه" on={m.screen} onClick={() => run(toggleScreen())} />}
-        {!isNative && <CallBtn icon="settings" label="میکروفون، دوربین و بلندگو" on={panel === "devices"} onClick={() => setPanel(panel ? null : "devices")} />}
+        {group && <CallBtn icon="hand" label="بالا بردن دست" on={handOf(membershipOf(a.session, a.lk.localParticipant.identity)?.eventId)} onClick={() => run(toggleHand())} />}
+        {group && <CallBtn icon="smile" label="واکنش" on={panel === "reactions"} onClick={() => toggle("reactions")} />}
+        {group && <CallBtn icon="group" label="شرکت‌کنندگان" on={panel === "people"} onClick={() => toggle("people")} />}
+        {!isNative && <CallBtn icon="settings" label="میکروفون، دوربین و بلندگو" on={panel === "devices"} onClick={() => toggle("devices")} />}
         <CallBtn icon="hangup" label="پایان" danger onClick={() => run(hangup())} />
       </div>
       {panel && (
         <div className="call-panel-backdrop" onClick={() => setPanel(null)}>
           <div className="call-panel" onClick={(e) => e.stopPropagation()}>
-            {panel === "devices" ? <Devices /> : <Routes {...panel} onPick={(r) => { setPanel(null); run(setAudioRoute(r.id, r.kind === "speaker")); }} />}
+            {panel === "devices" ? <Devices />
+              : panel === "people" ? <People room={a.room} tiles={tiles} />
+              : panel === "reactions" ? <div className="call-reactions">{REACTIONS.map(([emoji, name]) => (
+                <button key={name} onClick={() => { setPanel(null); run(react(emoji, name)); }} aria-label={emoji}>{emoji}</button>
+              ))}</div>
+              : <Routes {...panel} onPick={(r) => { setPanel(null); run(setAudioRoute(r.id, r.kind === "speaker")); }} />}
           </div>
         </div>
       )}
     </div>
   );
+}
+
+const MAX_TILES = 9;
+const QUALITY: Partial<Record<string, string>> = { poor: "اتصال ضعیف", lost: "اتصال قطع شده" };
+
+/** Everyone in a group call: name, hand, mic, connection. */
+function People({ room, tiles }: { room: Room; tiles: TileData[] }) {
+  const people = tiles.filter((t) => !t.screen).sort((x, y) => Number(!!y.hand) - Number(!!x.hand)); // hands first, like a queue
+  return <div className="call-people">{people.map((t) => {
+    const m = room.getMember(t.userId);
+    return (
+      <div key={t.key}>
+        <Avatar mxc={m?.getMxcAvatarUrl()} name={m?.name ?? t.userId} id={t.userId} size={32} />
+        <span>{t.local ? "شما" : m?.name ?? t.userId}{t.quality && QUALITY[t.quality] && <small>{QUALITY[t.quality]}</small>}</span>
+        {t.hand && <span aria-label="دست بالا">🖐️</span>}
+        {t.micOff && <Icon name="micOff" size={16} />}
+      </div>
+    );
+  })}</div>;
 }
 
 const DEVICE_KINDS: [MediaDeviceKind, string][] = [["audioinput", "میکروفون"], ["videoinput", "دوربین"], ["audiooutput", "بلندگو"]];
@@ -267,7 +302,10 @@ async function enterPip(a: Active) {
 const leavePip = () => document.pictureInPictureElement ? document.exitPictureInPicture().catch(() => {}) : undefined;
 
 /** One feed on the call screen: a camera or a shared screen, from LiveKit (track) or a legacy call (stream). */
-type TileData = { key: string; userId: string; local: boolean; screen: boolean; video?: VideoTrack | MediaStream; micOff: boolean; speaking: boolean };
+type TileData = {
+  key: string; userId: string; local: boolean; screen: boolean; video?: VideoTrack | MediaStream; micOff: boolean; speaking: boolean;
+  hand?: boolean; reaction?: string; quality?: ConnectionQuality; // group calls
+};
 
 /** Everyone's camera (or avatar), plus any screen being shared; others = how many other people are in the call. */
 function tilesOf(a: Active): { tiles: TileData[]; others: number } {
@@ -284,9 +322,10 @@ function tilesOf(a: Active): { tiles: TileData[]; others: number } {
   }
   const others = [...a.lk.remoteParticipants.values()];
   const tiles = [...others, a.lk.localParticipant].flatMap((p) => {
-    const userId = userOf(a.session, p.identity);
+    const m = membershipOf(a.session, p.identity);
+    const userId = m?.userId ?? p.identity.slice(0, p.identity.lastIndexOf(":"));
     const video = (src: Track.Source) => { const pub = p.getTrackPublication(src); return pub && !pub.isMuted ? pub.videoTrack : undefined; };
-    const t = { userId, local: p.isLocal, micOff: !p.isMicrophoneEnabled, speaking: p.isSpeaking };
+    const t = { userId, local: p.isLocal, micOff: !p.isMicrophoneEnabled, speaking: p.isSpeaking, hand: handOf(m?.eventId), reaction: reactionOf(m?.eventId), quality: p.connectionQuality };
     return [{ ...t, key: p.identity + Track.Source.Camera, screen: false, video: video(Track.Source.Camera) }]
       .concat(p.isScreenShareEnabled ? [{ ...t, key: p.identity + Track.Source.ScreenShare, screen: true, video: video(Track.Source.ScreenShare) }] : []);
   });
@@ -311,7 +350,12 @@ function Tile({ room, t, mirror, focused, onFocus }: { room: Room; t: TileData; 
     <div className={"call-tile" + (t.local ? " local" : "") + (t.speaking ? " speaking" : "") + (focused ? " main" : "")}>
       {video ? <video ref={ref} autoPlay playsInline muted className={(t.screen || focused ? "contain" : "") + (mirror ? " mirror" : "")} />
         : <Avatar mxc={m?.getMxcAvatarUrl()} name={m?.name ?? t.userId} id={t.userId} size={88} />}
-      <span className="call-name">{t.local ? "شما" : m?.name ?? t.userId}{t.micOff && <Icon name="micOff" size={14} />}</span>
+      <span className="call-name">
+        {(t.quality === ConnectionQuality.Poor || t.quality === ConnectionQuality.Lost) && <i className={"call-quality " + t.quality} title={QUALITY[t.quality]} />}
+        {t.local ? "شما" : m?.name ?? t.userId}{t.micOff && <Icon name="micOff" size={14} />}
+      </span>
+      {t.hand && !t.screen && <span className="call-hand" aria-label="دست بالا">🖐️</span>}
+      {t.reaction && !t.screen && <span key={t.reaction} className="call-reaction" aria-hidden>{t.reaction}</span>}
       <button className="call-focus" onClick={onFocus} title={focused ? "بازگشت به همه" : "بزرگ‌نمایی"} aria-label={focused ? "بازگشت به همه" : "بزرگ‌نمایی"}>
         <Icon name={focused ? "shrink" : "expand"} size={18} />
       </button>

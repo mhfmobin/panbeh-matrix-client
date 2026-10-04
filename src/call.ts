@@ -150,6 +150,7 @@ export async function call(room: Room, video: boolean, ring = true, legacy = fal
   };
   session.on(MatrixRTCSessionEvent.EncryptionKeyChanged, onKey);
   session.on(MatrixRTCSessionEvent.MembershipsChanged, onMembers);
+  session.on(MatrixRTCSessionEvent.MembershipsChanged, scanHands);
   const onTrack = (t: RemoteTrack) => { // plays even with the call screen minimized
     if (t.kind === Track.Kind.Audio) document.body.append(Object.assign(t.attach(), { className: "call-audio" }));
   };
@@ -163,7 +164,7 @@ export async function call(room: Room, video: boolean, ring = true, legacy = fal
     .on(LkEvent.ParticipantConnected, onPeople).on(LkEvent.ParticipantDisconnected, bump)
     .on(LkEvent.ParticipantConnected, said("پیوست")).on(LkEvent.ParticipantDisconnected, said("رفت"))
     .on(LkEvent.Reconnecting, () => patch({ reconnecting: true })).on(LkEvent.SignalReconnecting, () => patch({ reconnecting: true }))
-    .on(LkEvent.Reconnected, () => patch({ reconnecting: false }))
+    .on(LkEvent.Reconnected, () => patch({ reconnecting: false })).on(LkEvent.ConnectionQualityChanged, bump)
     .on(LkEvent.TrackMuted, bump).on(LkEvent.TrackUnmuted, bump).on(LkEvent.ActiveSpeakersChanged, bump)
     .on(LkEvent.LocalTrackPublished, bump).on(LkEvent.LocalTrackUnpublished, bump)
     .on(LkEvent.ConnectionStateChanged, bump).on(LkEvent.Disconnected, () => void hangup())
@@ -171,7 +172,7 @@ export async function call(room: Room, video: boolean, ring = true, legacy = fal
   // 1:1 nobody picks up: give up when our ring would have expired anyway
   const noAnswer = ring && isDirect(room) ? setTimeout(() => { if (!snap.active?.since) void hangup(); }, 90_000) : undefined;
   cleanup = [
-    () => { session.off(MatrixRTCSessionEvent.EncryptionKeyChanged, onKey); session.off(MatrixRTCSessionEvent.MembershipsChanged, onMembers); },
+    () => { session.off(MatrixRTCSessionEvent.EncryptionKeyChanged, onKey); session.off(MatrixRTCSessionEvent.MembershipsChanged, onMembers); session.off(MatrixRTCSessionEvent.MembershipsChanged, scanHands); },
     () => clearTimeout(noAnswer),
     leaveOnUnload(),
   ];
@@ -190,6 +191,7 @@ export async function call(room: Room, video: boolean, ring = true, legacy = fal
     await lk.connect(url, jwt);
     if (e2ee) await lk.setE2EEEnabled(true);
     onPeople();
+    scanHands();
     for (const t of media) await lk.localParticipant.publishTrack(t);
     if (isNative) { nativeCallActive(true, video); nativeSpeaker(video); }
   } catch (e) {
@@ -209,6 +211,8 @@ export async function hangup() {
   const a = snap.active;
   if (!a) return;
   set({ active: undefined });
+  hands.clear();
+  reactions.clear();
   cleanup.forEach((f) => f());
   cleanup = [];
   if (isNative) nativeCallActive(false, false);
@@ -224,9 +228,11 @@ export async function hangup() {
 
 export const minimize = (min: boolean) => patch({ min });
 
-/** A LiveKit identity's user: "@user:server:DEVICE", or hashed for newer clients (then ask the session). */
+/** A LiveKit identity's call membership: "@user:server:DEVICE" for legacy memberships, hashed for newer clients. */
+export const membershipOf = (session: MatrixRTCSession, identity: string) =>
+  session.memberships.find((m) => m.rtcBackendIdentity === identity || `${m.userId}:${m.deviceId}` === identity);
 export const userOf = (session: MatrixRTCSession, identity: string) =>
-  session.memberships.find((m) => m.rtcBackendIdentity === identity)?.userId ?? identity.slice(0, identity.lastIndexOf(":"));
+  membershipOf(session, identity)?.userId ?? identity.slice(0, identity.lastIndexOf(":"));
 const nameOf = (room: Room, userId: string) => room.getMember(userId)?.name ?? userId;
 
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -287,6 +293,75 @@ export function toggleSpeaker() {
   if (!a) return;
   nativeSpeaker(!a.speaker);
   patch({ speaker: !a.speaker });
+}
+
+// ---------- raised hands and reactions (MatrixRTC; Element Call's events) ----------
+
+/** Raised hands: membership event id → the 🖐️ m.reaction on it. Reactions on screen: membership event id → emoji. */
+const hands = new Map<string, string>();
+const reactions = new Map<string, string>();
+const HAND = "🖐️", REACTION = "io.element.call.reaction";
+export const handOf = (membershipId?: string) => !!membershipId && hands.has(membershipId);
+export const reactionOf = (membershipId?: string) => membershipId ? reactions.get(membershipId) : undefined;
+/** What Element Call offers; name is its key for the reaction's sound. */
+export const REACTIONS: [string, string][] = [["👍", "thumbsup"], ["👏", "clapping"], ["🎉", "party"], ["😄", "laugh"], ["🥰", "heart"], ["👌", "ok"], ["💡", "lightbulb"], ["👎", "thumbsdown"]];
+
+const myMembership = (session: MatrixRTCSession) =>
+  session.memberships.find((m) => m.userId === client.getUserId() && m.deviceId === client.getDeviceId());
+
+/** Hands already up when we join (or after memberships change): 🖐️ reactions on the current membership events. */
+function scanHands() {
+  const a = snap.active;
+  if (a?.kind !== "rtc") return;
+  const rel = a.room.getUnfilteredTimelineSet().relations;
+  hands.clear();
+  for (const m of a.session.memberships) {
+    const r = rel.getChildEventsForEvent(m.eventId, RelationType.Annotation, EventType.Reaction)?.getRelations()
+      .find((e) => !e.isRedacted() && e.getSender() === m.sender && e.getContent()["m.relates_to"]?.key === HAND);
+    if (r) hands.set(m.eventId, r.getId()!);
+  }
+  bump();
+}
+
+/** Live hands, lowered hands (redactions) and reactions in the room we're calling in. */
+function onCallReaction(ev: MatrixEvent) {
+  const rel = ev.getContent()["m.relates_to"];
+  if (ev.getType() === EventType.Reaction && rel?.key === HAND && rel.event_id) hands.set(rel.event_id, ev.getId()!);
+  else if (ev.getType() === EventType.RoomRedaction) {
+    for (const [m, r] of hands) if (r === ev.getAssociatedId()) hands.delete(m);
+  } else if (ev.getType() === REACTION && rel?.event_id && typeof ev.getContent().emoji === "string" && ev.getSender() !== client.getUserId()) {
+    showReaction(rel.event_id, [...new Intl.Segmenter().segment(ev.getContent().emoji)][0]?.segment ?? ""); // one emoji, however long the string
+  } else return;
+  bump();
+}
+
+function showReaction(membershipId: string, emoji: string) {
+  if (!emoji.trim()) return;
+  reactions.set(membershipId, emoji);
+  setTimeout(() => { if (reactions.get(membershipId) === emoji) { reactions.delete(membershipId); bump(); } }, 3000);
+  bump();
+}
+
+export async function toggleHand() {
+  const a = snap.active, mine = a?.kind === "rtc" ? myMembership(a.session) : undefined;
+  if (!a || !mine) return;
+  const up = hands.get(mine.eventId);
+  if (up) {
+    hands.delete(mine.eventId);
+    bump();
+    await client.redactEvent(a.room.roomId, up);
+    return;
+  }
+  const r = await client.sendEvent(a.room.roomId, EventType.Reaction, { "m.relates_to": { rel_type: RelationType.Annotation, event_id: mine.eventId, key: HAND } } as never);
+  hands.set(mine.eventId, r.event_id);
+  bump();
+}
+
+export async function react(emoji: string, name: string) {
+  const a = snap.active, mine = a?.kind === "rtc" ? myMembership(a.session) : undefined;
+  if (!a || !mine) return;
+  showReaction(mine.eventId, emoji);
+  await client.sendEvent(a.room.roomId, REACTION as never, { "m.relates_to": { rel_type: RelationType.Reference, event_id: mine.eventId }, emoji, name } as never);
 }
 
 // ---------- legacy 1:1 calls ----------
@@ -501,6 +576,7 @@ const LEGACY_ENDS: string[] = [EventType.CallHangup, EventType.CallReject, Event
 
 function onEvent(ev: MatrixEvent, room: Room) {
   const type = ev.getType();
+  if (snap.active?.kind === "rtc" && snap.active.room === room) onCallReaction(ev);
   if (type === EventType.RTCNotification) return ring(room, ev);
   // legacy invites: the SDK hands us its call (Incoming below) when VoIP is on; the headless page only has the event
   if (type === EventType.CallInvite) return void (!client.callEventHandler && ringLegacy(room, ev));
