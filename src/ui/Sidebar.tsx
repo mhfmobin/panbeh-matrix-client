@@ -4,13 +4,13 @@ import { Virtuoso } from "react-virtuoso";
 import { NotificationCountType, UserEvent, type Room } from "matrix-js-sdk";
 import { client, dmPeer } from "../matrix.ts";
 import { setMuted } from "../notify.ts";
-import { useRooms, useTick, type RoomRow } from "../hooks.ts";
+import { isCallStart, useRooms, useTick, type RoomRow } from "../hooks.ts";
 import { ARCHIVED, leaveAndForget, markRead, PINNED, setMarkedUnread, setTag } from "../chats.ts";
 import { BASE_FOLDERS, inFolder, isUnread, listTime, num } from "../logic.ts";
 import { pushBack } from "../back.ts";
 import { setBadge } from "../desktop.ts";
 import { Icon } from "../icons.tsx";
-import { bdi, errText, me, previewText, RoomAvatar, senderName } from "./common.tsx";
+import { bdi, errText, me, noticeText, previewText, RoomAvatar, senderName } from "./common.tsx";
 import { NewChat } from "./NewChat.tsx";
 import { RoomInfo } from "./RoomInfo.tsx";
 import { MessageResults, requestJump } from "./Search.tsx";
@@ -186,7 +186,8 @@ function RoomItem({ row, active, onClick, onMenu }: { row: RoomRow; active: bool
   const { room, last } = row;
   const press = useRef<{ timer: number; fired: boolean } | null>(null);
   let preview = row.invite ? "دعوت‌نامه" : "";
-  if (last && !row.invite) {
+  if (last && !row.invite && isCallStart(last)) preview = "📞 " + noticeText(last); // names the caller itself
+  else if (last && !row.invite) {
     const who = last.getSender() === me() ? "شما" : row.isDM ? "" : bdi(senderName(last).split(" ")[0]);
     preview = (who ? who + ": " : "") + previewText(last);
   }

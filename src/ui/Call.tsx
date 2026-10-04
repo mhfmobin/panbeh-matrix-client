@@ -15,6 +15,7 @@ import { Icon, type IconName } from "../icons.tsx";
 import { Avatar, errText, me, RoomAvatar, Select } from "./common.tsx";
 import { loadPrefs } from "./Settings.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
+import { EmojiPanel } from "./Emoji.tsx";
 
 const run = (p: Promise<unknown> | void) => { p?.catch((e) => alertDialog(errText(e))); };
 const canShare = !isNative && !!navigator.mediaDevices?.getDisplayMedia;
@@ -174,7 +175,7 @@ function CallScreen({ a }: { a: Active }) {
     nativePip(true);
     return () => nativePip(false);
   }, [hasVideo]);
-  const [panel, setPanel] = useState<"devices" | "people" | "reactions" | { routes: AudioRoute[]; current: number } | null>(null);
+  const [panel, setPanel] = useState<"devices" | "people" | "reactions" | "emoji" | { routes: AudioRoute[]; current: number } | null>(null);
   const toggle = (p: "devices" | "people" | "reactions") => setPanel(panel === p ? null : p);
   // Android: with a headset around, the speaker button picks where audio goes; otherwise it just toggles the speaker
   const speakerBtn = async () => {
@@ -215,14 +216,17 @@ function CallScreen({ a }: { a: Active }) {
         {!isNative && <CallBtn icon="settings" label="میکروفون، دوربین و بلندگو" on={panel === "devices"} onClick={() => toggle("devices")} />}
         <CallBtn icon="hangup" label="پایان" danger onClick={() => run(hangup())} />
       </div>
-      {panel && (
+      {panel === "emoji" && (
+        <div className="react-picker"><EmojiPanel onEmoji={(e) => { setPanel(null); run(react(e)); }} onClose={() => setPanel(null)} /></div>
+      )}
+      {panel && panel !== "emoji" && (
         <div className="call-panel-backdrop" onClick={() => setPanel(null)}>
           <div className="call-panel" onClick={(e) => e.stopPropagation()}>
             {panel === "devices" ? <Devices />
               : panel === "people" ? <People room={a.room} tiles={tiles} />
               : panel === "reactions" ? <div className="call-reactions">{REACTIONS.map(([emoji, name]) => (
                 <button key={name} onClick={() => { setPanel(null); run(react(emoji, name)); }} aria-label={emoji}>{emoji}</button>
-              ))}</div>
+              ))}<button onClick={() => setPanel("emoji")} title="همه‌ی اموجی‌ها" aria-label="همه‌ی اموجی‌ها"><Icon name="plus" /></button></div>
               : <Routes {...panel} onPick={(r) => { setPanel(null); run(setAudioRoute(r.id, r.kind === "speaker")); }} />}
           </div>
         </div>

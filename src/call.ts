@@ -359,7 +359,8 @@ export async function toggleHand() {
   bump();
 }
 
-export async function react(emoji: string, name: string) {
+/** Any emoji: Element Call shows names it doesn't know as their emoji. */
+export async function react(emoji: string, name = REACTIONS.find(([e]) => e === emoji)?.[1] ?? "generic") {
   const a = snap.active, mine = a?.kind === "rtc" ? myMembership(a.session) : undefined;
   if (!a || !mine) return;
   showReaction(mine.eventId, emoji);
