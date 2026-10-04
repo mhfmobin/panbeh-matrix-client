@@ -5,12 +5,12 @@ import { CallEventHandlerEvent } from "matrix-js-sdk/lib/webrtc/callEventHandler
 import type { CallFeed } from "matrix-js-sdk/lib/webrtc/callFeed.js";
 import type { MCallInviteNegotiate } from "matrix-js-sdk/lib/webrtc/callEventTypes.js";
 import { getCallNotificationExpiry, isLivekitTransportConfig, MatrixRTCSessionEvent, type IRTCNotificationContent, type LivekitTransportConfig, type MatrixRTCSession } from "matrix-js-sdk/lib/matrixrtc/index.js";
-import { BaseKeyProvider, createKeyMaterialFromBuffer, createLocalTracks, Room as LkRoom, RoomEvent as LkEvent, Track, type LocalVideoTrack, type Participant, type RemoteTrack } from "livekit-client";
+import { BaseKeyProvider, createKeyMaterialFromBuffer, createLocalTracks, Room as LkRoom, RoomEvent as LkEvent, Track, type LocalAudioTrack, type LocalVideoTrack, type Participant, type RemoteTrack } from "livekit-client";
 import { avatarUrl, client, isDirect, isEncrypted, loadEvent } from "./matrix.ts";
 import { callNotice, isMuted, ringtone, waitingTone } from "./notify.ts";
 import { senderName } from "./ui/common.tsx";
 import { isGroupCallAlert, isLegacyRing, isRing, isVideoOffer, pickProtocol } from "./logic.ts";
-import { isHeadless, isNative, nativeCallActive, nativeCancelCall, nativeShowCall, nativeSpeaker, toDataUrl, type CallAction } from "./native.ts";
+import { isHeadless, isNative, nativeCallActive, nativeCancelCall, nativeSetAudioRoute, nativeShowCall, nativeSpeaker, toDataUrl, type CallAction } from "./native.ts";
 import { isWindowVisible, showWindow } from "./desktop.ts";
 
 /**
@@ -71,6 +71,41 @@ class Keys extends BaseKeyProvider {
   }
 }
 
+// ---------- devices (desktop/web) ----------
+
+/** The mic, camera and speaker picked on the call screen, and noise suppression; unset = the system's default. */
+type Devices = { audioinput?: string; videoinput?: string; audiooutput?: string; noiseSuppression?: boolean };
+const DEVICES_KEY = "panbeh.callDevices";
+export const loadDevices = (): Devices => { try { return JSON.parse(localStorage.getItem(DEVICES_KEY) ?? "{}"); } catch { return {}; } };
+const saveDevices = (p: Devices) => { try { localStorage.setItem(DEVICES_KEY, JSON.stringify({ ...loadDevices(), ...p })); } catch { /* not remembered */ } };
+const audioCapture = (d = loadDevices()) => ({ deviceId: d.audioinput, noiseSuppression: d.noiseSuppression ?? true, echoCancellation: true, autoGainControl: true });
+
+/** Switches a device now and for later calls. */
+export async function setDevice(kind: MediaDeviceKind, deviceId: string) {
+  saveDevices({ [kind]: deviceId });
+  const a = snap.active;
+  if (a?.kind === "rtc") await a.lk.switchActiveDevice(kind, deviceId);
+  else if (a && kind === "audioinput") await client.getMediaHandler().setAudioInput(deviceId);
+  else if (a && kind === "videoinput") await client.getMediaHandler().setVideoInput(deviceId);
+  else if (a) for (const el of document.querySelectorAll<HTMLAudioElement>("audio.call-audio")) await el.setSinkId(deviceId);
+  bump();
+}
+
+export async function setNoiseSuppression(on: boolean) {
+  saveDevices({ noiseSuppression: on });
+  const a = snap.active;
+  if (a?.kind === "rtc") await (a.lk.localParticipant.getTrackPublication(Track.Source.Microphone)?.audioTrack as LocalAudioTrack | undefined)?.restartTrack(audioCapture());
+  else if (a) await client.getMediaHandler().setAudioSettings(audioCapture());
+  bump();
+}
+
+/** The legacy stack's MediaHandler starts from our picks too. */
+function legacyDevices() {
+  const d = loadDevices(), mh = client.getMediaHandler();
+  mh.restoreMediaSettings(d.audioinput ?? "", d.videoinput ?? "");
+  void mh.setAudioSettings(audioCapture(d));
+}
+
 // ---------- the call ----------
 
 let cleanup: (() => void)[] = [];
@@ -88,7 +123,8 @@ export async function call(room: Room, video: boolean, ring = true, legacy = fal
   stopRinging();
   if (legacy) return placeLegacy(room, video);
   // mic (and camera) first: if they're refused, nobody gets rung for nothing
-  const media = await createLocalTracks({ audio: true, video: video ? { facingMode: "user" } : false });
+  const d = loadDevices();
+  const media = await createLocalTracks({ audio: audioCapture(d), video: video ? { facingMode: "user", deviceId: d.videoinput } : false });
   const mine = await ourTransport();
   const session = client.matrixRTC.getRoomSession(room);
   // everyone meets on the SFU of whoever was in the call first
@@ -100,6 +136,7 @@ export async function call(room: Room, video: boolean, ring = true, legacy = fal
   const keys = new Keys();
   const lk = new LkRoom({
     adaptiveStream: true, dynacast: true,
+    audioCaptureDefaults: audioCapture(d), videoCaptureDefaults: { deviceId: d.videoinput }, audioOutput: { deviceId: d.audiooutput },
     e2ee: e2ee ? { keyProvider: keys, worker: new Worker(new URL("livekit-client/e2ee-worker", import.meta.url), { type: "module" }) } : undefined,
   });
   set({ active: { kind: "rtc", room, session, lk, video, min: false, speaker: video, facing: "user" } });
@@ -216,7 +253,8 @@ export async function toggleMic() {
 export async function toggleCam() {
   const a = snap.active;
   if (a?.kind === "legacy") await a.mc.setLocalVideoMuted(myMedia(a).cam); // unmuting a voice call upgrades it to video
-  else if (a) await a.lk.localParticipant.setCameraEnabled(!a.lk.localParticipant.isCameraEnabled, { facingMode: a.facing });
+  else if (a) await a.lk.localParticipant.setCameraEnabled(!a.lk.localParticipant.isCameraEnabled, { facingMode: a.facing, deviceId: loadDevices().videoinput });
+  if (a && isNative) nativeCallActive(true, myMedia(a).cam); // camera in the background service, proximity sensor off for video
   bump();
 }
 export async function flipCam() {
@@ -238,6 +276,11 @@ export async function toggleScreen() {
   if (a?.kind === "legacy") await a.mc.setScreensharingEnabled(!a.mc.isScreensharing());
   else if (a) await a.lk.localParticipant.setScreenShareEnabled(!a.lk.localParticipant.isScreenShareEnabled, { audio: true });
   bump();
+}
+/** Android 12+: call audio to the earpiece, speaker, a wired or a Bluetooth headset. */
+export async function setAudioRoute(id: number, speaker: boolean) {
+  await nativeSetAudioRoute(id);
+  patch({ speaker });
 }
 export function toggleSpeaker() {
   const a = snap.active;
@@ -262,6 +305,8 @@ function showLegacy(room: Room, mc: MatrixCall, video: boolean) {
   set({ active: { kind: "legacy", room, mc, video, min: false, speaker: video, facing: "user" } });
   const audio = Object.assign(document.createElement("audio"), { className: "call-audio", autoplay: true });
   document.body.append(audio); // plays even with the call screen minimized
+  const out = loadDevices().audiooutput;
+  if (out && "setSinkId" in audio) audio.setSinkId(out).catch(() => {});
   const seen = new WeakSet<CallFeed>();
   const onFeeds = () => {
     for (const f of mc.getFeeds()) if (!seen.has(f)) { seen.add(f); f.on(CallFeedEvent.MuteStateChanged, bump); f.on(CallFeedEvent.NewStream, onFeeds); }
@@ -296,6 +341,7 @@ function showLegacy(room: Room, mc: MatrixCall, video: boolean) {
 }
 
 async function placeLegacy(room: Room, video: boolean) {
+  legacyDevices();
   const mc = client.createCall(room.roomId);
   if (!mc) throw new Error("این دستگاه از تماس پشتیبانی نمی‌کند");
   showLegacy(room, mc, video);
@@ -311,6 +357,7 @@ async function answerLegacy(room: Room, mc: MatrixCall, video: boolean) {
   if (snap.active) await hangup();
   stopRinging();
   if (mc.callHasEnded()) return;
+  legacyDevices();
   showLegacy(room, mc, video);
   try {
     await legacyStart(mc, () => mc.answer(true, video));

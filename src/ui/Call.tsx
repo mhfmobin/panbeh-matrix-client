@@ -1,14 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EventType, type Room } from "matrix-js-sdk";
 import { MatrixRTCSessionEvent } from "matrix-js-sdk/lib/matrixrtc/index.js";
 import { CallState } from "matrix-js-sdk/lib/webrtc/call.js";
 import type { CallFeed } from "matrix-js-sdk/lib/webrtc/callFeed.js";
 import { ConnectionState, Track, type VideoTrack } from "livekit-client";
 import { allowCalls, client, isDirect } from "../matrix.ts";
-import { answer, call, decline, flipCam, getCall, hangup, minimize, myMedia, ourTransport, protocolFor, toggleCam, toggleMic, toggleScreen, toggleSpeaker, useCall, userOf, type Active, type Incoming } from "../call.ts";
+import { answer, call, decline, flipCam, getCall, hangup, loadDevices, minimize, myMedia, ourTransport, protocolFor, setAudioRoute, setDevice, setNoiseSuppression, toggleCam, toggleMic, toggleScreen, toggleSpeaker, useCall, userOf, type Active, type Incoming } from "../call.ts";
 import { usePromise, useTick } from "../hooks.ts";
 import { fmtDuration, num } from "../logic.ts";
-import { isNative } from "../native.ts";
+import { isNative, nativeAudioRoutes, type AudioRoute } from "../native.ts";
 import { pushBack } from "../back.ts";
 import { Icon, type IconName } from "../icons.tsx";
 import { Avatar, errText, me, RoomAvatar } from "./common.tsx";
@@ -133,6 +133,13 @@ function CallScreen({ a }: { a: Active }) {
   const [focus, setFocus] = useState<string | null>(null); // a feed blown up to most of the screen
   const main = tiles.find((t) => t.key === focus); // gone (left, stopped sharing) = back to the grid
   const pip = !main && tiles.length === 2 && others === 1; // 1:1: the other side fills the screen, we're in the corner
+  const [panel, setPanel] = useState<"devices" | { routes: AudioRoute[]; current: number } | null>(null);
+  // Android: with a headset around, the speaker button picks where audio goes; otherwise it just toggles the speaker
+  const speakerBtn = async () => {
+    const r = await nativeAudioRoutes();
+    if (r.routes.some((x) => x.kind === "wired" || x.kind === "bluetooth")) setPanel(r);
+    else toggleSpeaker();
+  };
   const tile = (t: TileData, focused = false) =>
     <Tile key={t.key} room={a.room} t={t} mirror={t.local && !t.screen && a.facing === "user"} focused={focused} onFocus={() => setFocus(focused ? null : t.key)} />;
   return (
@@ -155,12 +162,58 @@ function CallScreen({ a }: { a: Active }) {
         <CallBtn icon={m.mic ? "mic" : "micOff"} label="میکروفون" on={!m.mic} onClick={() => run(toggleMic())} />
         <CallBtn icon={m.cam ? "video" : "videoOff"} label="دوربین" on={!m.cam} onClick={() => run(toggleCam())} />
         {isNative && m.cam && <CallBtn icon="flip" label="چرخش دوربین" onClick={() => run(flipCam())} />}
-        {isNative && <CallBtn icon="speaker" label="بلندگو" on={a.speaker} onClick={toggleSpeaker} />}
+        {isNative && <CallBtn icon="speaker" label="بلندگو" on={a.speaker} onClick={() => run(speakerBtn())} />}
         {canShare && <CallBtn icon="screen" label="اشتراک صفحه" on={m.screen} onClick={() => run(toggleScreen())} />}
+        {!isNative && <CallBtn icon="settings" label="میکروفون، دوربین و بلندگو" on={panel === "devices"} onClick={() => setPanel(panel ? null : "devices")} />}
         <CallBtn icon="hangup" label="پایان" danger onClick={() => run(hangup())} />
       </div>
+      {panel && (
+        <div className="call-panel-backdrop" onClick={() => setPanel(null)}>
+          <div className="call-panel" onClick={(e) => e.stopPropagation()}>
+            {panel === "devices" ? <Devices /> : <Routes {...panel} onPick={(r) => { setPanel(null); run(setAudioRoute(r.id, r.kind === "speaker")); }} />}
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+const DEVICE_KINDS: [MediaDeviceKind, string][] = [["audioinput", "میکروفون"], ["videoinput", "دوربین"], ["audiooutput", "بلندگو"]];
+const canPickOutput = "setSinkId" in HTMLMediaElement.prototype;
+
+/** Desktop/web: which mic, camera and speaker the call uses (remembered for later calls), and noise suppression. */
+function Devices() {
+  const devices = usePromise(useMemo(() => navigator.mediaDevices.enumerateDevices(), []));
+  const d = loadDevices();
+  return <>
+    {DEVICE_KINDS.map(([kind, label]) => {
+      const list = devices?.filter((x) => x.kind === kind && x.deviceId) ?? [];
+      if (!list.length || (kind === "audiooutput" && !canPickOutput)) return null;
+      return (
+        <label key={kind}>{label}
+          <select value={d[kind] ?? ""} onChange={(e) => run(setDevice(kind, e.target.value))}>
+            {!d[kind] && <option value="" disabled>پیش‌فرض سیستم</option>}
+            {list.map((x, i) => <option key={x.deviceId} value={x.deviceId}>{x.label || `${label} ${num(i + 1)}`}</option>)}
+          </select>
+        </label>
+      );
+    })}
+    <label className="check">
+      <input type="checkbox" checked={d.noiseSuppression ?? true} onChange={(e) => run(setNoiseSuppression(e.target.checked))} /> حذف نویز
+    </label>
+  </>;
+}
+
+const ROUTE_LABELS: Record<AudioRoute["kind"], string> = { earpiece: "گوشی", speaker: "بلندگو", wired: "هدفون", bluetooth: "بلوتوث" };
+
+/** Android: where call audio goes. */
+function Routes({ routes, current, onPick }: { routes: AudioRoute[]; current: number; onPick: (r: AudioRoute) => void }) {
+  return <>{routes.map((r) => (
+    <button key={r.id} className={r.id === current ? "on" : ""} onClick={() => onPick(r)} aria-pressed={r.id === current}>
+      <Icon name={r.kind === "speaker" ? "speaker" : r.kind === "earpiece" ? "phone" : "headphones"} />
+      {ROUTE_LABELS[r.kind]}{r.kind === "bluetooth" && r.name ? ` (${r.name})` : ""}
+    </button>
+  ))}</>;
 }
 
 /** One feed on the call screen: a camera or a shared screen, from LiveKit (track) or a legacy call (stream). */

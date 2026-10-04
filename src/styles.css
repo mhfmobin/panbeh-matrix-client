@@ -951,6 +951,15 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 @media (hover: none) { .call-focus { opacity: 1; } } /* touch: no hover to reveal it */
 .call-strip .call-focus { inset: 0; width: auto; height: auto; border-radius: 0; background: none; opacity: 0; } /* the whole thumbnail swaps */
 .call-controls { display: flex; justify-content: center; flex-wrap: wrap; gap: 14px; padding: 16px 12px 28px; }
+/* devices / audio route card, above the controls */
+.call-panel-backdrop { position: absolute; inset: 0; z-index: 2; display: flex; align-items: flex-end; justify-content: center; padding: 0 12px calc(110px + env(safe-area-inset-bottom)); }
+.call-panel { width: min(100%, 360px); display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 16px; background: #1f252c; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); animation: fade 0.15s; }
+.call-panel label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: rgba(255, 255, 255, 0.7); }
+.call-panel label.check { flex-direction: row; align-items: center; gap: 8px; color: #fff; font-size: 14px; }
+.call-panel select { width: 100%; padding: 8px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.15); background: #111418; color: #fff; font: inherit; }
+.call-panel button { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; color: #fff; text-align: start; }
+.call-panel button:hover { background: rgba(255, 255, 255, 0.08); }
+.call-panel button.on { background: rgba(46, 158, 91, 0.35); }
 /* call waiting: a card over whatever is on screen */
 .call-waiting {
   position: fixed; z-index: 49; top: calc(12px + env(safe-area-inset-top)); inset-inline: 12px; max-width: 420px; margin-inline: auto; display: flex; align-items: center; gap: 10px;

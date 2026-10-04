@@ -11,6 +11,7 @@ import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
 import androidx.core.app.NotificationManagerCompat;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
@@ -148,15 +149,35 @@ public class PanbehPlugin extends Plugin {
         call.resolve();
     }
 
-    /** In a call: mic/camera foreground service, call audio mode, and staying over the lock screen until it ends. */
+    /** Call state for the proximity sensor: a voice call held to the ear turns the screen off. */
+    private boolean callOn, callVideo, speakerOn;
+    private PowerManager.WakeLock proximity;
+
+    private void updateProximity() {
+        boolean want = callOn && !callVideo && !speakerOn;
+        if (proximity == null) {
+            PowerManager pm = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+            if (!pm.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)) return;
+            proximity = pm.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "panbeh:call");
+            proximity.setReferenceCounted(false);
+        }
+        if (want && !proximity.isHeld()) proximity.acquire(4 * 60 * 60 * 1000L); // a call that outlives this is forgotten
+        else if (!want && proximity.isHeld()) proximity.release(PowerManager.RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY);
+    }
+
+    /** In a call: mic/camera foreground service, call audio mode, and staying over the lock screen until it ends. Called again when the camera toggles. */
     @PluginMethod
     public void callActive(PluginCall call) {
-        boolean on = call.getBoolean("on", false);
-        SyncService.setCall(getContext(), on, call.getBoolean("video", false));
+        boolean on = call.getBoolean("on", false), video = call.getBoolean("video", false);
+        SyncService.setCall(getContext(), on, video);
         AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
         am.setMode(on ? AudioManager.MODE_IN_COMMUNICATION : AudioManager.MODE_NORMAL);
         if (!on && Build.VERSION.SDK_INT >= 31) am.clearCommunicationDevice();
         getActivity().runOnUiThread(() -> MainActivity.showOverLockScreen(getActivity(), on));
+        callOn = on;
+        callVideo = video;
+        if (!on) speakerOn = false;
+        updateProximity();
         call.resolve();
     }
 
@@ -173,6 +194,54 @@ public class PanbehPlugin extends Plugin {
         } else {
             am.setSpeakerphoneOn(on);
         }
+        speakerOn = on;
+        updateProximity();
+        call.resolve();
+    }
+
+    private static String routeKind(int type) {
+        switch (type) {
+            case AudioDeviceInfo.TYPE_BUILTIN_EARPIECE: return "earpiece";
+            case AudioDeviceInfo.TYPE_BUILTIN_SPEAKER: return "speaker";
+            case AudioDeviceInfo.TYPE_WIRED_HEADSET:
+            case AudioDeviceInfo.TYPE_WIRED_HEADPHONES:
+            case AudioDeviceInfo.TYPE_USB_HEADSET: return "wired";
+            case AudioDeviceInfo.TYPE_BLUETOOTH_SCO:
+            case AudioDeviceInfo.TYPE_BLE_HEADSET: return "bluetooth";
+            default: return null;
+        }
+    }
+
+    /** Android 12+: where call audio can go, and where it goes now. Empty before 12 (the page keeps the speaker toggle). */
+    @PluginMethod
+    public void audioRoutes(PluginCall call) {
+        JSArray routes = new JSArray();
+        int current = -1;
+        if (Build.VERSION.SDK_INT >= 31) {
+            AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+            for (AudioDeviceInfo d : am.getAvailableCommunicationDevices()) {
+                String kind = routeKind(d.getType());
+                if (kind != null) routes.put(new JSObject().put("id", d.getId()).put("kind", kind).put("name", String.valueOf(d.getProductName())));
+            }
+            AudioDeviceInfo now = am.getCommunicationDevice();
+            if (now != null) current = now.getId();
+        }
+        call.resolve(new JSObject().put("routes", routes).put("current", current));
+    }
+
+    @PluginMethod
+    public void setAudioRoute(PluginCall call) {
+        int id = call.getInt("id", -1);
+        if (Build.VERSION.SDK_INT >= 31) {
+            AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+            for (AudioDeviceInfo d : am.getAvailableCommunicationDevices()) {
+                if (d.getId() != id) continue;
+                am.setCommunicationDevice(d);
+                speakerOn = d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER;
+                break;
+            }
+        }
+        updateProximity();
         call.resolve();
     }
 

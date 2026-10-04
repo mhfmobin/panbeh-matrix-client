@@ -21,6 +21,8 @@ interface PanbehPlugin {
   cancelCall(p: { roomId: string }): Promise<void>;
   callActive(p: { on: boolean; video: boolean }): Promise<void>;
   setSpeaker(p: { on: boolean }): Promise<void>;
+  audioRoutes(): Promise<{ routes: AudioRoute[]; current: number }>;
+  setAudioRoute(p: { id: number }): Promise<void>;
   requestFullScreen(): Promise<void>;
   takeLaunchCall(): Promise<Partial<CallAction>>;
   addListener(e: "openRoom", f: (d: { roomId: string }) => void): Promise<PluginListenerHandle>;
@@ -81,6 +83,10 @@ export function nativeCancelCall(roomId: string) {
 /** In a call: keeps mic/camera alive in the background (foreground service) and the call on the lock screen. */
 export const nativeCallActive = (on: boolean, video: boolean) => { if (!headless) plugin.callActive({ on, video }).catch(() => {}); };
 export const nativeSpeaker = (on: boolean) => { if (!headless) plugin.setSpeaker({ on }).catch(() => {}); };
+/** Where call audio can go (Android 12+; empty before, where it's only the speaker toggle). */
+export type AudioRoute = { id: number; kind: "earpiece" | "speaker" | "wired" | "bluetooth"; name: string };
+export const nativeAudioRoutes = () => plugin.audioRoutes().catch(() => ({ routes: [] as AudioRoute[], current: -1 }));
+export const nativeSetAudioRoute = (id: number) => plugin.setAudioRoute({ id });
 /** Android 14+: lets the user allow ringing over the lock screen. */
 export const requestFullScreen = () => plugin.requestFullScreen();
 
