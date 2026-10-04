@@ -2,14 +2,26 @@ package ir.panbeh.app;
 
 import android.Manifest;
 import android.app.NotificationManager;
+import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
+import android.database.Cursor;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
 import android.os.PowerManager;
+import android.provider.MediaStore;
+import android.provider.OpenableColumns;
 import android.provider.Settings;
+import android.util.Base64;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.util.ArrayList;
 import androidx.core.app.NotificationManagerCompat;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -32,6 +44,43 @@ public class PanbehPlugin extends Plugin {
     private String launchRoom;
     /** matrix.to / matrix: link that arrived before the page was listening. */
     private String launchLink;
+    /** Something shared to us (SEND intent) before the page was listening. */
+    private JSObject launchShare;
+
+    static boolean isShare(Intent i) {
+        return i != null && (Intent.ACTION_SEND.equals(i.getAction()) || Intent.ACTION_SEND_MULTIPLE.equals(i.getAction()));
+    }
+
+    /** "Share with Panbeh": text and content:// files for the page, which picks a chat and reads the files via convertFileSrc. */
+    private boolean dispatchShare(Intent intent) {
+        if (!isShare(intent)) return false;
+        ArrayList<Uri> uris = new ArrayList<>();
+        if (Intent.ACTION_SEND_MULTIPLE.equals(intent.getAction())) {
+            ArrayList<Uri> l = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+            if (l != null) uris.addAll(l);
+        } else {
+            Uri u = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+            if (u != null) uris.add(u);
+        }
+        ContentResolver cr = getContext().getContentResolver();
+        JSArray files = new JSArray();
+        for (Uri u : uris) {
+            String name = u.getLastPathSegment();
+            try (Cursor c = cr.query(u, new String[] { OpenableColumns.DISPLAY_NAME }, null, null, null)) {
+                if (c != null && c.moveToFirst() && c.getString(0) != null) name = c.getString(0);
+            } catch (RuntimeException e) {
+                // no name column: keep the path segment
+            }
+            String type = cr.getType(u);
+            files.put(new JSObject().put("uri", u.toString()).put("name", name == null ? "file" : name).put("type", type == null ? "" : type));
+        }
+        CharSequence text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
+        JSObject s = new JSObject().put("files", files);
+        if (text != null) s.put("text", text.toString());
+        if (hasListeners("share")) notifyListeners("share", s);
+        else launchShare = s;
+        return true;
+    }
 
     /** A matrix.to or matrix: VIEW intent: pass the URL to the page, which parses and opens it. */
     static boolean isMatrixLink(Uri data) {
@@ -80,7 +129,8 @@ public class PanbehPlugin extends Plugin {
         Intent launch = getActivity().getIntent();
         dispatchLink(launch);
         boolean call = dispatchCall(launch);
-        if (call || (launch != null && launch.getData() != null && isMatrixLink(launch.getData()))) // don't replay it if recreated
+        boolean share = dispatchShare(launch);
+        if (call || share || (launch != null && launch.getData() != null && isMatrixLink(launch.getData()))) // don't replay it if recreated
             getActivity().setIntent(new Intent(getContext(), MainActivity.class));
     }
 
@@ -100,6 +150,7 @@ public class PanbehPlugin extends Plugin {
             else launchRoom = room;
         }
         dispatchLink(intent);
+        dispatchShare(intent);
         Uri data = intent.getData();
         if (data != null && "ir.panbeh.app".equals(data.getScheme())) {
             // OAuth redirect from the browser: hand the code to the page's existing callback handling
@@ -124,6 +175,40 @@ public class PanbehPlugin extends Plugin {
         r.put("link", launchLink);
         launchLink = null;
         call.resolve(r);
+    }
+
+    @PluginMethod
+    public void takeLaunchShare(PluginCall call) {
+        JSObject r = launchShare != null ? launchShare : new JSObject();
+        launchShare = null;
+        call.resolve(r);
+    }
+
+    /** A downloaded file into Downloads (Android 10+: MediaStore, no permission). */
+    @PluginMethod
+    public void saveFile(PluginCall call) {
+        String name = call.getString("name", "file"), mime = call.getString("mime", "application/octet-stream"), data = call.getString("data");
+        if (data == null) { call.reject("data required"); return; }
+        byte[] bytes = Base64.decode(data, Base64.DEFAULT);
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                ContentResolver cr = getContext().getContentResolver();
+                ContentValues v = new ContentValues();
+                v.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
+                v.put(MediaStore.MediaColumns.MIME_TYPE, mime);
+                v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                Uri uri = cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                if (uri == null) throw new IOException("can't create the file");
+                try (OutputStream out = cr.openOutputStream(uri)) { out.write(bytes); }
+            } else {
+                // ponytail: Android 7-9 save in the app's own Downloads (Android/data/...), no storage permission; ask for WRITE_EXTERNAL_STORAGE if users want the shared folder
+                File f = new File(getContext().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), name);
+                try (OutputStream out = new FileOutputStream(f)) { out.write(bytes); }
+            }
+            call.resolve();
+        } catch (IOException | RuntimeException e) {
+            call.reject(e.getMessage());
+        }
     }
 
     @PluginMethod

@@ -9,16 +9,20 @@ import { num, stamp } from "../logic.ts";
 import { decryptKeyFile, encryptKeyFile } from "../keyfile.ts";
 import { showVerification } from "./Verify.tsx";
 import { desktopVersion, getAutostart, isDesktop, setAutostart } from "../desktop.ts";
-import { isNative, nativeCancelAll, nativeStatus, requestBatteryExemption, requestFullScreen, requestNotifyPermission, setBackgroundService } from "../native.ts";
+import { isNative, nativeCancelAll, nativeStatus, requestBatteryExemption, requestFullScreen, requestNotifyPermission, saveFile, setBackgroundService } from "../native.ts";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 
-type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; previews: boolean; shareLastSeen: boolean; dev: boolean; legacyCalls: boolean };
+type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; previews: boolean; shareLastSeen: boolean; dev: boolean; legacyCalls: boolean; enterSends: boolean };
 const ACCENTS = ["#3390ec", "#8774e1", "#40a7a0", "#e5864a", "#e0578b", "#4fae4e"];
 const WALLPAPERS = { doodle: "طرح‌دار", gradient: "گرادیان", plain: "ساده" };
 const THEMES = { system: "سیستم", light: "روشن", dark: "تیره" };
 
 // the Android app defaults to notifying: it asks for permission on first start. The desktop app needs no permission.
-export const loadPrefs = (): Prefs => ({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, previews: true, shareLastSeen: true, dev: false, legacyCalls: false, ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
+export const loadPrefs = (): Prefs => ({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, previews: true, shareLastSeen: true, dev: false, legacyCalls: false, enterSends: true, ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
+
+/** Enter (or Ctrl/⌘+Enter when Enter is set to a new line) sends. */
+export const isSendKey = (e: { key: string; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; nativeEvent: { isComposing: boolean } }) =>
+  e.key === "Enter" && !e.nativeEvent.isComposing && (loadPrefs().enterSends ? !e.shiftKey : e.ctrlKey || e.metaKey);
 
 /** Answering legacy m.call.* calls: developer options only. */
 export const legacyCallsOn = () => { const p = loadPrefs(); return p.dev && p.legacyCalls; };
@@ -90,6 +94,8 @@ export function Settings({ onClose, onSecurityChange }: { onClose: () => void; o
       </div>
       <label className="switch-row"><span>پیش‌نمایش پیوندها<small>سرور شما پیوندها را برای ساختن پیش‌نمایش باز می‌کند</small></span>
         <input type="checkbox" role="switch" checked={prefs.previews} onChange={(e) => set({ previews: e.target.checked })} /></label>
+      <label className="switch-row"><span>ارسال با Enter<small>خاموش: Enter خط جدید می‌زند و Ctrl+Enter ارسال می‌کند</small></span>
+        <input type="checkbox" role="switch" checked={prefs.enterSends} onChange={(e) => set({ enterSends: e.target.checked })} /></label>
 
       <h3>حریم خصوصی</h3>
       <label className="switch-row"><span>نمایش آخرین بازدید<small>فقط وضعیت خودتان پنهان می‌شود؛ وضعیت دیگران را همچنان می‌بینید</small></span>
@@ -533,10 +539,9 @@ function Keys() {
       if (pass !== again) throw new Error("تکرار عبارت عبور یکی نیست");
       const text = await encryptKeyFile(await client.getCrypto()!.exportRoomKeysAsJson(), pass);
       const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
-      Object.assign(document.createElement("a"), { href: url, download: "element-keys.txt" }).click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const downloads = await saveFile(url, "element-keys.txt").finally(() => setTimeout(() => URL.revokeObjectURL(url), 1000));
       setPass(""); setAgain("");
-      return "فایل کلیدها ذخیره شد.";
+      return downloads ? "فایل کلیدها در پوشه‌ی دانلودها ذخیره شد." : "فایل کلیدها ذخیره شد.";
     });
   };
   const importKeys = (e: FormEvent) => {

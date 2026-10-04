@@ -9,6 +9,7 @@ import { VoiceRecorder } from "./Voice.tsx";
 import { PollForm } from "./Poll.tsx";
 import { EmojiPanel, sendSticker } from "./Emoji.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
+import { isSendKey } from "./Settings.tsx";
 
 export type Mode = { kind: "reply" | "edit"; ev: MatrixEvent } | null;
 const MEDIA = ["m.image", "m.video", "m.file"];
@@ -16,6 +17,18 @@ export const EDITABLE = ["m.text", "m.emote", "m.notice", ...MEDIA];
 /** A media message's caption (MSC2530): body differs from filename; otherwise body is just the name. */
 export const captionOf = (c: IContent): string => (c.filename && c.body !== c.filename ? c.body ?? "" : "");
 const drafts = new Map<string, string>();
+const shared = new Map<string, File[]>(); // shared from another app, waiting for the chat to open
+
+/** "Share with Panbeh": text becomes the chat's draft, files open the send dialog. */
+export function shareInto(roomId: string, text: string, files: File[]) {
+  if (text) drafts.set(roomId, [drafts.get(roomId), text].filter(Boolean).join("\n"));
+  if (files.length) shared.set(roomId, files);
+}
+export function takeShared(roomId: string) {
+  const f = shared.get(roomId) ?? [];
+  shared.delete(roomId);
+  return f;
+}
 
 type Props = { room: Room; threadId: string | null; mode: Mode; setMode: (m: Mode) => void; files: File[]; setFiles: (f: (x: File[]) => File[]) => void };
 type Mention = { name: string; id: string };
@@ -183,7 +196,7 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
       if ((e.key === "Enter" || e.key === "Tab") && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); pick(suggestions[i]); return; }
       if (e.key === "Escape") { e.preventDefault(); setClosedAt(atPos); return; }
     }
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); }
+    if (isSendKey(e)) { e.preventDefault(); send(); }
     else if (e.key === "Escape" && mode) setMode(null);
     else if (e.key === "ArrowUp" && !text && !mode) { // Telegram: ↑ edits your last message
       const tl = threadId ? room.getThread(threadId)?.liveTimeline : room.getLiveTimeline();
@@ -243,6 +256,19 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
         <VoiceRecorder onDone={(v) => { setRecording(false); if (v) { startUpload(room, v.file, threadId, mode?.kind === "reply" ? mode.ev : undefined, v.extra); setMode(null); } }} />
       ) : (
         <div className="composer-row">
+          {/* RTL: first child sits on the right — send/mic there, attach + emoji on the left */}
+          {canRecord ? (
+            <button className="send-btn" onClick={() => setRecording(true)} title="پیام صوتی" aria-label="ضبط پیام صوتی"><Icon name="mic" /></button>
+          ) : (
+            <button className={"send-btn" + (text.trim() || mediaEdit ? " ready" : "")} onClick={send} aria-label="ارسال" disabled={!text.trim() && !mediaEdit}>
+              <Icon name={mode?.kind === "edit" ? "check" : "send"} />
+            </button>
+          )}
+          <textarea ref={ta} rows={1} value={text} placeholder={mediaEdit ? "کپشن…" : "پیام"} aria-label="پیام"
+            onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart); setSel(0); typing(!!e.target.value); }}
+            onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+            onKeyDown={onKey} onPaste={onPaste} onBlur={() => typingAt.current && typing(false)} />
+          <button className="icon-btn emoji-toggle" title="اموجی و استیکر" aria-label="اموجی و استیکر" aria-expanded={emoji} onClick={() => setEmoji((x) => !x)}><Icon name="smile" /></button>
           <div className="attach">
             {/* outside the menu: picking closes the menu, and an unmounted input never gets its change event */}
             <input ref={fileInput} type="file" multiple hidden onChange={(e) => { const f = [...e.target.files!]; setFiles((x) => [...x, ...f]); e.target.value = ""; }} />
@@ -258,18 +284,6 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
               </>
             )}
           </div>
-          <button className="icon-btn emoji-toggle" title="اموجی و استیکر" aria-label="اموجی و استیکر" aria-expanded={emoji} onClick={() => setEmoji((x) => !x)}><Icon name="smile" /></button>
-          <textarea ref={ta} rows={1} value={text} placeholder={mediaEdit ? "کپشن…" : "پیام"} aria-label="پیام"
-            onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart); setSel(0); typing(!!e.target.value); }}
-            onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
-            onKeyDown={onKey} onPaste={onPaste} onBlur={() => typingAt.current && typing(false)} />
-          {canRecord ? (
-            <button className="send-btn" onClick={() => setRecording(true)} title="پیام صوتی" aria-label="ضبط پیام صوتی"><Icon name="mic" /></button>
-          ) : (
-            <button className={"send-btn" + (text.trim() || mediaEdit ? " ready" : "")} onClick={send} aria-label="ارسال" disabled={!text.trim() && !mediaEdit}>
-              <Icon name={mode?.kind === "edit" ? "check" : "send"} />
-            </button>
-          )}
         </div>
       )}
       {emoji && !recording && <EmojiPanel onEmoji={insert} onClose={() => setEmoji(false)} stickers={mode?.kind === "edit" ? undefined : { room, onPick: pickSticker }} />}
@@ -315,7 +329,7 @@ function SendFiles({ files, setFiles, onSend }: { files: File[]; setFiles: Props
         <textarea className="send-caption" rows={2} autoFocus value={caption} placeholder="کپشن…" aria-label="کپشن"
           onChange={(e) => setCaption(e.target.value)}
           onPaste={(e) => { const f = [...e.clipboardData.files]; if (f.length) { e.preventDefault(); setFiles((x) => [...x, ...f]); } }}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} />
+          onKeyDown={(e) => { if (isSendKey(e)) { e.preventDefault(); send(); } }} />
         {imgs.length > 0 && (
           <label className="switch-row"><span>ارسال به صورت فایل<small>بدون فشرده‌سازی</small></span>
             <input type="checkbox" role="switch" checked={asFile} onChange={(e) => setAsFile(e.target.checked)} /></label>

@@ -5,7 +5,8 @@ import { avatarUrl, client, mediaUrl } from "../matrix.ts";
 import { usePromise } from "../hooks.ts";
 import { contentLinks, mediaKind, num, stamp, type MediaKind } from "../logic.ts";
 import { Icon } from "../icons.tsx";
-import { errText, previewText, senderName, Sheet } from "./common.tsx";
+import { errText, previewText, senderName, Sheet, toast } from "./common.tsx";
+import { saveFile } from "../native.ts";
 import { FileRow } from "./Message.tsx";
 import { AudioPlayer, trackFor } from "./Voice.tsx";
 import { requestJump } from "./Search.tsx";
@@ -106,7 +107,7 @@ export function MediaViewer({ items, start, onClose, onJump }: { items: MatrixEv
   const download = async () => {
     try {
       const url = await mediaUrl(c);
-      if (url) Object.assign(document.createElement("a"), { href: url, download: fileName(c) }).click();
+      if (url && await saveFile(url, fileName(c))) toast("در پوشه‌ی دانلودها ذخیره شد");
     } catch (e) {
       alertDialog(errText(e));
     }

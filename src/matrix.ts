@@ -245,8 +245,27 @@ export async function setupRecovery(password?: string) {
 type FileContent = { url?: string; file?: IEncryptedFile & { url: string; mimetype?: string }; info?: { mimetype?: string } };
 const mediaCache = new Map<string, Promise<string>>();
 
-/** Blob URL for an mxc (authenticated media, decrypting if needed). Cached for the session. */
-export function mediaUrl(c: FileContent, thumb?: { w: number; h: number }): Promise<string> | null {
+/** Downloads with byte progress. Plain fetch (the SDK's request can't report progress); null if the token was refused. */
+async function fetchProgress(url: URL, onProgress: (loaded: number, total: number) => void, size?: number): Promise<ArrayBuffer | null> {
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${client.getAccessToken()}` } });
+  if (res.status === 401) return null; // expired OAuth token: the SDK path refreshes it
+  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+  const total = +(res.headers.get("content-length") ?? 0) || size || 0;
+  const parts: Uint8Array[] = [];
+  let loaded = 0;
+  for (const r = res.body.getReader(); ;) {
+    const { done, value } = await r.read();
+    if (done) break;
+    parts.push(value);
+    loaded += value.length;
+    onProgress(loaded, total);
+  }
+  return new Blob(parts as BlobPart[]).arrayBuffer();
+}
+
+/** Blob URL for an mxc (authenticated media, decrypting if needed). Cached for the session.
+ *  `onProgress` reports bytes for the download this call starts (not for one already cached or running). */
+export function mediaUrl(c: FileContent, thumb?: { w: number; h: number }, onProgress?: (loaded: number, total: number) => void): Promise<string> | null {
   const mxc = c.file?.url ?? c.url;
   if (!mxc) return null;
   const cacheKey = mxc + (thumb && !c.file ? `@${thumb.w}` : "");
@@ -256,9 +275,9 @@ export function mediaUrl(c: FileContent, thumb?: { w: number; h: number }): Prom
     const t = thumb && !c.file ? thumb : undefined;
     const http = new URL(client.mxcUrlToHttp(mxc, t?.w, t?.h, t && "scale", false, true, true)!);
     // through the SDK, not fetch: OAuth access tokens expire every few minutes and it refreshes them
-    p = client.http.authedRequest<Blob>(Method.Get, http.pathname, Object.fromEntries(http.searchParams), undefined,
-      { baseUrl: http.origin, prefix: "", rawResponseBody: true })
-      .then((b) => b.arrayBuffer())
+    const viaSdk = () => client.http.authedRequest<Blob>(Method.Get, http.pathname, Object.fromEntries(http.searchParams), undefined,
+      { baseUrl: http.origin, prefix: "", rawResponseBody: true }).then((b) => b.arrayBuffer());
+    p = (onProgress ? fetchProgress(http, onProgress, (c.info as { size?: number } | undefined)?.size).then((b) => b ?? viaSdk()) : viaSdk())
       // typed so <audio>/<video> don't have to sniff; thumbnails may be another image type, so leave those untyped
       .then(async (buf) => URL.createObjectURL(new Blob([c.file ? await decryptAttachment(buf, c.file) : buf],
         { type: thumb ? "" : c.info?.mimetype ?? c.file?.mimetype ?? "" })));
@@ -321,7 +340,8 @@ let nextId = 1;
 
 export function startUpload(room: Room, file: File, threadId: string | null, replyTo?: MatrixEvent, extra?: Record<string, unknown>, caption?: string, asFile?: boolean) {
   const id = nextId++;
-  const preview = !asFile && /^(image|video|audio)\//.test(file.type); // audio: a voice note plays from here while it uploads
+  // a voice note plays from here while it uploads; other audio is a plain file row (the bubble would render it as an <img>)
+  const preview = !asFile && (/^(image|video)\//.test(file.type) || (!!extra && file.type.startsWith("audio/")));
   const run = () => {
     const abort = new AbortController();
     patch(id, { abort, error: undefined, loaded: 0 });

@@ -5,9 +5,10 @@ import { handleIncomingLink } from "../openTarget.ts";
 import { parseMatrixLink } from "../uri.ts";
 import { EventStatus, EventType, M_POLL_START, RelationType, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { avatarUrl, client, mediaUrl, pinnedIds, seenBy, togglePin } from "../matrix.ts";
+import { saveFile } from "../native.ts";
 import { usePromise } from "../hooks.ts";
 import { clock, num, osmUrl, parseGeoUri, stamp, textDir } from "../logic.ts";
-import { Icon, type IconName } from "../icons.tsx";
+import { Icon, iconSvg, type IconName } from "../icons.tsx";
 import { Avatar, colorFor, copyText, errText, formatSize, isGroupChat, me, previewText, senderMember, senderName, stripReplyFallback, toast } from "./common.tsx";
 import { AudioPlayer, trackFor } from "./Voice.tsx";
 import { PollBody } from "./Poll.tsx";
@@ -317,9 +318,23 @@ function Html({ html, room, onUser }: { html: string; room: Room; onUser: (id: s
         av.replaceChildren(img);
       }, () => {});
     });
+    ref.current?.querySelectorAll("pre").forEach((pre) => {
+      const b = document.createElement("button");
+      b.className = "code-copy";
+      b.title = b.ariaLabel = "کپی";
+      b.innerHTML = iconSvg("copy", 16);
+      pre.append(b);
+    });
   }, [html, room]);
   const onClick = (e: MouseEvent) => {
     const t = e.target as HTMLElement;
+    const pre = t.closest(".code-copy")?.parentElement;
+    if (pre) {
+      e.preventDefault();
+      e.stopPropagation();
+      void copyMessages((pre.querySelector("code") ?? pre).textContent ?? "");
+      return;
+    }
     const sp = t.closest("[data-mx-spoiler]");
     if (sp && !sp.classList.contains("revealed")) {
       e.preventDefault();
@@ -373,22 +388,42 @@ function Video({ c }: { c: Content }) {
   return <div className="media-box" style={fit(c.info)}>{url ? <video src={url} controls preload="metadata" /> : <span className="shimmer" />}</div>;
 }
 
+const R = 20, C = 2 * Math.PI * R;
+/** A circle filling up with `f` (0-1) around an icon: uploads and downloads. */
+export function ProgressRing({ f, label, onClick, icon = "close" }: { f: number; label: string; onClick?: () => void; icon?: IconName }) {
+  const Tag = onClick ? "button" : "span"; // a span inside FileRow's button
+  return (
+    <Tag className="up-ring" onClick={onClick} aria-label={label}>
+      <svg viewBox="0 0 48 48" width="48" height="48" aria-hidden>
+        <circle cx="24" cy="24" r={R} className="up-track" />
+        <circle cx="24" cy="24" r={R} className="up-arc" strokeDasharray={C} strokeDashoffset={C * (1 - f)} />
+      </svg>
+      <Icon name={icon} size={18} />
+    </Tag>
+  );
+}
+
 export function FileRow({ c }: { c: Content }) {
-  const [busy, setBusy] = useState(false);
+  const [prog, setProg] = useState<{ loaded: number; total: number } | null>(null);
   const download = async () => {
-    setBusy(true);
+    if (prog) return;
+    setProg({ loaded: 0, total: c.info?.size ?? 0 });
     try {
-      Object.assign(document.createElement("a"), { href: await mediaUrl(c)!, download: c.filename ?? c.body ?? "file" }).click();
+      const url = await mediaUrl(c, undefined, (loaded, total) => setProg({ loaded, total }))!;
+      if (await saveFile(url, c.filename ?? c.body ?? "file")) toast("در پوشه‌ی دانلودها ذخیره شد");
     } catch (e) {
       alertDialog(errText(e));
     } finally {
-      setBusy(false);
+      setProg(null);
     }
   };
+  const f = prog?.total ? Math.min(1, prog.loaded / prog.total) : 0;
+  const state = !prog ? (c.info?.size ? formatSize(c.info.size) : "فایل")
+    : prog.total ? `${num(Math.floor(f * 100))}٪ · ${formatSize(prog.loaded)} / ${formatSize(prog.total)}` : "در حال دانلود…";
   return (
     <button className="file-row" onClick={download}>
-      <span className="file-icon"><Icon name="file" /></span>
-      <span><b>{c.filename ?? c.body}</b><small dir="auto">{busy ? "در حال دانلود…" : c.info?.size ? formatSize(c.info.size) : "فایل"}</small></span>
+      {prog ? <ProgressRing f={f || 0.04} label="در حال دانلود" icon="download" /> : <span className="file-icon"><Icon name="file" /></span>}
+      <span><b>{c.filename ?? c.body}</b><small dir="auto">{state}</small></span>
     </button>
   );
 }

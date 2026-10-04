@@ -5,6 +5,8 @@ type Payload = { roomId: string; title: string; body: string; icon?: string; sou
 type Status = { permission: "granted" | "denied" | "default"; service: boolean; batteryOptimized: boolean; fullScreen: boolean };
 type CallPayload = { roomId: string; eventId: string; caller: string; video: boolean; timeout: number; icon?: string };
 /** A button on the incoming-call notification; "open" = the notification itself (full-screen on the lock screen). */
+/** "Share with Panbeh" from another app: text and/or content:// files. */
+export type Shared = { text?: string; files: { uri: string; name: string; type: string }[] };
 export type CallAction = { action: "answer" | "decline" | "open"; roomId: string; eventId: string; video: boolean };
 interface PanbehPlugin {
   showNotification(p: Payload): Promise<void>;
@@ -26,9 +28,12 @@ interface PanbehPlugin {
   setPip(p: { on: boolean }): Promise<void>;
   requestFullScreen(): Promise<void>;
   takeLaunchCall(): Promise<Partial<CallAction>>;
+  saveFile(p: { name: string; mime: string; data: string }): Promise<void>;
+  takeLaunchShare(): Promise<Partial<Shared>>;
   addListener(e: "openRoom", f: (d: { roomId: string }) => void): Promise<PluginListenerHandle>;
   addListener(e: "openLink", f: (d: { link: string }) => void): Promise<PluginListenerHandle>;
   addListener(e: "callAction", f: (d: CallAction) => void): Promise<PluginListenerHandle>;
+  addListener(e: "share", f: (d: Shared) => void): Promise<PluginListenerHandle>;
 }
 type Headless = { showNotification(json: string): void; cancel(roomId: string): void; stopService(): void; showCall(json: string): void; cancelCall(roomId: string): void };
 
@@ -114,4 +119,33 @@ export async function toDataUrl(url: string) {
     r.onerror = () => rej(r.error);
     r.readAsDataURL(b);
   });
+}
+
+/** Saves a blob/object URL as a file: the browser's download, or the phone's Downloads folder (WebViews ignore <a download>).
+ *  Returns true when it went to Downloads on Android. */
+export async function saveFile(url: string, name: string): Promise<boolean> {
+  if (!isNative) {
+    Object.assign(document.createElement("a"), { href: url, download: name }).click();
+    return false;
+  }
+  // ponytail: base64 over the bridge holds the file ~3x in memory; stream through a temp file if big files crash
+  const data = await toDataUrl(url);
+  await plugin.saveFile({ name, mime: data.slice(5, data.indexOf(";")) || "application/octet-stream", data: data.slice(data.indexOf(",") + 1) });
+  return true;
+}
+
+/** Things shared to the app (SEND intents): now (cold start) and later. Files are read through Capacitor's content:// bridge. */
+export function onShare(f: (text: string, files: File[]) => void) {
+  if (!isNative || headless) return () => {};
+  const take = async (s: Partial<Shared>) => {
+    const files = await Promise.all((s.files ?? []).map(async (x) => {
+      const b = await (await fetch(Capacitor.convertFileSrc(x.uri))).blob();
+      return new File([b], x.name, { type: x.type || b.type });
+    }));
+    if (s.text || files.length) f(s.text ?? "", files);
+  };
+  const fail = (e: unknown) => console.error("share failed", e);
+  plugin.takeLaunchShare().then(take).catch(fail);
+  const h = plugin.addListener("share", (d) => void take(d).catch(fail));
+  return () => { h.then((x) => x.remove()); };
 }

@@ -4,7 +4,7 @@ import { ClientEvent, SyncState } from "matrix-js-sdk";
 import { cancelAdd, client, finishOAuth, isAdding, isOAuthCallback, logout, recoveryState, savedSession, start } from "./matrix.ts";
 import { useTick } from "./hooks.ts";
 import { startNotifications } from "./notify.ts";
-import { isHeadless, isNative, onCallAction, onOpenLink, onOpenRoom, requestNotifyPermission, setBackgroundService } from "./native.ts";
+import { isHeadless, isNative, onCallAction, onOpenLink, onOpenRoom, onShare, requestNotifyPermission, setBackgroundService } from "./native.ts";
 import { onNativeCall, startCalls } from "./call.ts";
 import { startBackButton } from "./back.ts";
 import { drainLinks, handleIncomingLink } from "./openTarget.ts";
@@ -14,6 +14,8 @@ import { isMarkedUnread, setMarkedUnread } from "./chats.ts";
 import { Login } from "./ui/Login.tsx";
 import { Sidebar } from "./ui/Sidebar.tsx";
 import { Room } from "./ui/Room.tsx";
+import { ShareSheet } from "./ui/Forward.tsx";
+import { shareInto } from "./ui/Composer.tsx";
 import { NowPlaying } from "./ui/Voice.tsx";
 import { Settings, applyPrefs, loadPrefs } from "./ui/Settings.tsx";
 import { VerificationListener } from "./ui/Verify.tsx";
@@ -63,6 +65,8 @@ function Shell() {
   useTick(client, [ClientEvent.Sync]);
   const [roomId, setRoomId] = useState<string | undefined>(() => location.hash.slice(1) || undefined);
   const [settings, setSettings] = useState(false);
+  const [share, setShare] = useState<{ text: string; files: File[] } | null>(null);
+  const [shareN, setShareN] = useState(0); // remounts an already-open chat so it picks up what was shared
   const [security, setSecurity] = useState<string>("ok");
   const refreshSecurity = () => recoveryState().then(setSecurity, () => {});
 
@@ -80,6 +84,7 @@ function Shell() {
     return () => off.forEach((f) => f());
   }, []);
   useEffect(() => (synced ? drainLinks() : undefined), [synced]);
+  useEffect(() => onShare((text, files) => setShare({ text, files })), []);
   useEffect(() => { // Android: first start asks for notification permission, then keeps syncing in the background
     if (!isNative || !loadPrefs().notify) return;
     requestNotifyPermission().then((p) => setBackgroundService(p === "granted"), () => {});
@@ -118,8 +123,9 @@ function Shell() {
           {!room && <CallBar />}
         </>} />
       <main className="main wallpaper">
-        {room ? <Room key={room.roomId} room={room} onBack={() => open()} /> : <div className="pill center">برای شروع پیام‌رسانی یک گفتگو را انتخاب کنید</div>}
+        {room ? <Room key={room.roomId + ":" + shareN} room={room} onBack={() => open()} /> : <div className="pill center">برای شروع پیام‌رسانی یک گفتگو را انتخاب کنید</div>}
       </main>
+      {share && <ShareSheet onClose={() => setShare(null)} onPick={(id) => { shareInto(id, share.text, share.files); setShare(null); setShareN((n) => n + 1); open(id); }} />}
       {settings && <Settings onClose={() => setSettings(false)} onSecurityChange={refreshSecurity} />}
       <VerificationListener onTrustChange={refreshSecurity} />
       <CallLayer />
