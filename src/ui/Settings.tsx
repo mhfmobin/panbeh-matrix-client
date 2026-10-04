@@ -149,8 +149,7 @@ const KindSwitches = ({ prefs, set }: { prefs: Prefs; set: (p: Partial<Prefs>) =
 );
 
 /** Background check modes: minutes between checks, 0 = real-time. */
-const INTERVALS: [number, string][] = [[0, "فوری"],
-  ...Array.from({ length: 59 }, (_, i): [number, string] => [i + 1, `هر ${(i + 1).toLocaleString("fa-IR")} دقیقه`]), [60, "هر ساعت"]];
+const INTERVALS: [number, string][] = [[0, "فوری"], ...[1, 2, 5, 10, 15, 30].map((m): [number, string] => [m, `هر ${m.toLocaleString("fa-IR")} دقیقه`]), [60, "هر ساعت"]];
 
 /** In the app: Android notifications, delivered by a background service that keeps the client syncing. */
 function AndroidNotifications({ prefs, set }: { prefs: Prefs; set: (p: Partial<Prefs>) => void }) {
