@@ -46,6 +46,11 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
     events = [...events].sort((a, b) => a.getTs() - b.getTs());
     if (thread.rootEvent && !events.some((e) => e.getId() === thread.id)) events.unshift(thread.rootEvent);
   }
+  // An older page shows up only once all of it is decrypted. Shown at once, its rows above the reader changed
+  // under them (undecrypted rows turning into hidden reactions, edits, call signalling) and the list jolted.
+  const hold = useRef<MatrixEvent | null>(null); // the oldest event shown while a page loads
+  const held = hold.current ? events.indexOf(hold.current) : -1;
+  if (held > 0) events = events.slice(held);
   // placed once on open and left there while the chat stays open
   const [unreadAfter] = useState(() => (thread ? undefined : unreadAnchor(room, events)));
   const [loading, setLoading] = useState(false);
@@ -60,11 +65,12 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   const [floating, setFloating] = useState<{ label: string; show: boolean }>({ label: "", show: false });
   const topLabel = useRef(""); // the topmost visible row's day; "" while a day pill itself is on top (no double pill)
   const topKey = useRef<string | null>(null); // the topmost visible non-day row: what must stay put when rows change above it
+  const bottomRef = useRef(false); // Virtuoso's at-bottom, for the scroll handler: reading scroll sizes there forced a layout per event
   const scrollerRef = useCallback((el: HTMLElement | Window | null) => {
     if (!(el instanceof HTMLElement)) return;
     let hideT = 0;
     const onScroll = () => {
-      if (el.scrollHeight - el.scrollTop - el.clientHeight < 40) return; // at the very bottom (incl. new-message follow): nothing to show
+      if (bottomRef.current) return; // at the very bottom (incl. new-message follow): nothing to show
       const label = topLabel.current;
       setFloating((f) => (f.show && f.label === label ? f : { label, show: !!label }));
       clearTimeout(hideT);
@@ -110,7 +116,11 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
     paging.current = true;
     setLoading(true);
     pagingUntil.current = Infinity;
+    hold.current = timeline.getEvents()[0] ?? null;
     await client.paginateEventTimeline(timeline, { backwards: true, limit: 40 }).catch(console.warn);
+    const page = timeline.getEvents().slice(0, Math.max(0, timeline.getEvents().indexOf(hold.current!)));
+    await Promise.all(page.map((e) => client.decryptEventIfNeeded(e).catch(() => {})));
+    hold.current = null;
     pagingUntil.current = Date.now() + 400; // Virtuoso re-anchors the prepended rows over the next frames
     paging.current = false;
     setLoading(false);
@@ -216,7 +226,7 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
       followOutput={() => (appended && (stuck.current || lastIsMine) ? "smooth" : false)}
       ref={list}
       scrollerRef={scrollerRef}
-      atBottomStateChange={(b) => { if (b && Date.now() > jumpingUntil.current && Date.now() > pagingUntil.current) stuck.current = true; setAtBottom(b); }}
+      atBottomStateChange={(b) => { bottomRef.current = b; if (b && Date.now() > jumpingUntil.current && Date.now() > pagingUntil.current) stuck.current = true; setAtBottom(b); }}
       // panel opening / images loading change heights; stay pinned if we were at the bottom
       totalListHeightChanged={() => stuck.current && Date.now() > pagingUntil.current && list.current?.scrollToIndex({ index: "LAST", align: "end" })}
       atBottomThreshold={80}
