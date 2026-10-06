@@ -3,12 +3,12 @@ import { createPortal } from "react-dom";
 import { Direction, Filter, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { avatarUrl, client, mediaUrl } from "../matrix.ts";
 import { usePromise } from "../hooks.ts";
-import { contentLinks, mediaKind, num, stamp, type MediaKind } from "../logic.ts";
+import { contentLinks, fmtDuration, mediaKind, num, stamp, type MediaKind } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 import { errText, previewText, senderName, Sheet, toast } from "./common.tsx";
 import { saveFile } from "../native.ts";
 import { FileRow } from "./Message.tsx";
-import { AudioPlayer, trackFor } from "./Voice.tsx";
+import { AudioPlayer, stopPlayer, trackFor } from "./Voice.tsx";
 import { requestJump } from "./Search.tsx";
 import { alertDialog } from "./dialog.tsx";
 
@@ -25,7 +25,7 @@ export function timelineMedia(room: Room, ev: MatrixEvent) {
 }
 
 /** Small preview: the sender's thumbnail if any, else a server-side one (encrypted media: the file itself). */
-const thumbFor = (c: Content) =>
+export const thumbFor = (c: Content) =>
   c.info?.thumbnail_file ? mediaUrl({ file: c.info.thumbnail_file })
   : c.info?.thumbnail_url ? mediaUrl({ url: c.info.thumbnail_url }, { w: 320, h: 320 })
   : c.msgtype === "m.video" ? null : mediaUrl(c, { w: 320, h: 320 });
@@ -130,7 +130,7 @@ export function MediaViewer({ items, start, onClose, onJump }: { items: MatrixEv
         onClick={(e) => { if (e.target === e.currentTarget && !down.current.moved) onClose(); }}
         onDoubleClick={(e) => !video && setZoom((z) => (z.s > 1 ? NO_ZOOM : zoomAt(z, 2.5, e.clientX, e.clientY)))}>
         {video ? (
-          full ? <video key={ev.getId()} src={full} controls autoPlay /> : <span className="spinner" />
+          full ? <VideoPlayer key={ev.getId()} src={full} duration={(c.info?.duration ?? 0) / 1000} /> : <span className="spinner" />
         ) : src ? (
           <img src={src} alt={c.body ?? ""} draggable={false} className={zoom.s > 1 ? "zoomed" : ""}
             style={{ transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.s})` }} />
@@ -139,6 +139,63 @@ export function MediaViewer({ items, start, onClose, onJump }: { items: MatrixEv
       {i > 0 && <button className="icon-btn mv-nav mv-prev" onClick={() => go(-1)} aria-label="قبلی"><Icon name="back" size={28} /></button>}
       {i < items.length - 1 && <button className="icon-btn mv-nav mv-next" onClick={() => go(1)} aria-label="بعدی"><Icon name="chevron" size={28} /></button>}
       {caption(c) && <p className="mv-caption" dir="auto">{caption(c)}</p>}
+    </div>
+  );
+}
+
+const SPEEDS = [1, 1.5, 2, 0.5];
+
+/** Our controls over a <video>: tap toggles play; a bar with seek, time, speed, mute, fullscreen that hides while playing.
+ *  `duration` (s) from the event covers files that report none (recorder webm). */
+function VideoPlayer({ src, duration }: { src: string; duration: number }) {
+  const v = useRef<HTMLVideoElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [pos, setPos] = useState(0);
+  const [dur, setDur] = useState(duration);
+  const [muted, setMuted] = useState(false);
+  const [speed, setSpeed] = useState(1);
+  const [shown, setShown] = useState(true);
+  const [full, setFull] = useState(false);
+  const hideT = useRef(0);
+  const poke = () => { setShown(true); clearTimeout(hideT.current); hideT.current = window.setTimeout(() => setShown(false), 2500); };
+  const toggle = () => { const el = v.current!; if (el.paused) el.play().catch(() => {}); else el.pause(); };
+  useEffect(() => {
+    const onFs = () => setFull(!!document.fullscreenElement);
+    const onKey = (e: KeyboardEvent) => { // space on a focused button already clicks it
+      if (e.key !== " " || (e.target as HTMLElement).closest("button, input, textarea")) return;
+      e.preventDefault();
+      toggle();
+    };
+    document.addEventListener("fullscreenchange", onFs);
+    addEventListener("keydown", onKey);
+    return () => { clearTimeout(hideT.current); document.removeEventListener("fullscreenchange", onFs); removeEventListener("keydown", onKey); };
+  }, []);
+  const seek = (t: number) => { v.current!.currentTime = t; setPos(t); };
+  const cycle = () => { const s = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; v.current!.playbackRate = s; setSpeed(s); };
+  return (
+    <div ref={box} className={"vp" + (shown || !playing ? " shown" : "")} onPointerMove={poke}>
+      <video ref={v} src={src} autoPlay playsInline onClick={toggle}
+        onPlay={() => { stopPlayer(); setPlaying(true); poke(); }} onPause={() => setPlaying(false)}
+        onTimeUpdate={(e) => setPos(e.currentTarget.currentTime)}
+        onDurationChange={(e) => Number.isFinite(e.currentTarget.duration) && setDur(e.currentTarget.duration)} />
+      {!playing && <button className="vp-big" onClick={toggle} aria-label="پخش"><Icon name="play" size={34} /></button>}
+      <div className="vp-bar" dir="ltr">
+        <button className="icon-btn" onClick={toggle} aria-label={playing ? "توقف" : "پخش"}><Icon name={playing ? "pause" : "play"} /></button>
+        <span className="vp-time">{fmtDuration(pos * 1000)}</span>
+        <input type="range" min={0} max={dur || 0} step="any" value={Math.min(pos, dur)} onChange={(e) => seek(+e.target.value)} aria-label="موقعیت پخش" />
+        <span className="vp-time">{fmtDuration(dur * 1000)}</span>
+        <button className="speed" onClick={cycle} aria-label="سرعت پخش">{num(speed)}×</button>
+        <button className="icon-btn" onClick={() => { v.current!.muted = !muted; setMuted(!muted); }} aria-label={muted ? "صدا" : "بی‌صدا"}>
+          <Icon name={muted ? "mute" : "speaker"} />
+        </button>
+        {document.fullscreenEnabled && (
+          <button className="icon-btn" aria-label={full ? "خروج از تمام‌صفحه" : "تمام‌صفحه"}
+            onClick={() => (full ? document.exitFullscreen() : box.current!.requestFullscreen()).catch(() => {})}>
+            <Icon name={full ? "shrink" : "expand"} />
+          </button>
+        )}
+      </div>
     </div>
   );
 }

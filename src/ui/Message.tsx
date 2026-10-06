@@ -7,7 +7,7 @@ import { EventStatus, EventType, M_POLL_START, RelationType, type MatrixEvent, t
 import { avatarUrl, client, isSavedGif, mediaUrl, pinnedIds, seenBy, toggleGif, togglePin } from "../matrix.ts";
 import { saveFile } from "../native.ts";
 import { usePromise } from "../hooks.ts";
-import { clock, isGif, num, osmUrl, parseGeoUri, stamp, textDir, type Gif } from "../logic.ts";
+import { clock, fmtDuration, isGif, num, osmUrl, parseGeoUri, stamp, textDir, type Gif } from "../logic.ts";
 import { Icon, iconSvg, type IconName } from "../icons.tsx";
 import { Avatar, colorFor, copyText, errText, formatSize, isGroupChat, me, previewText, senderMember, senderName, stripReplyFallback, toast } from "./common.tsx";
 import { AudioPlayer, trackFor } from "./Voice.tsx";
@@ -16,6 +16,7 @@ import { EmojiPanel, GifView } from "./Emoji.tsx";
 import { LinkPreview } from "./LinkPreview.tsx";
 import { captionOf, EDITABLE } from "./Composer.tsx";
 import { useBackdropHold } from "./useBackdropHold.ts";
+import { thumbFor } from "./Media.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 
 export type Actions = {
@@ -24,6 +25,7 @@ export type Actions = {
   thread?: (ev: MatrixEvent) => void; // absent inside a thread
   view: (ev: MatrixEvent) => void; // media viewer
   info: (ev: MatrixEvent) => void; // who has seen it
+  reactions: (ev: MatrixEvent) => void; // who reacted with what
   profile: (userId: string) => void;
   forward: (ev: MatrixEvent) => void;
   jump?: (eventId: string) => void; // reply quote → the original
@@ -101,6 +103,8 @@ export function Message({ ev, room, first, last, actions, flash }: Props) {
   const swipeOk = live && !selecting;
   const text = copyTextOf(ev);
   const mentioned = !mine && !!client.getPushActionsForEvent(ev)?.tweaks?.highlight;
+  const reacted = !!ev.getId() && !!room.relations.getChildEventsForEvent(ev.getId()!, RelationType.Annotation, EventType.Reaction)
+    ?.getSortedAnnotationsByKey()?.some(([, set]) => set.size > 0);
 
   const setX = (px: number) => { row.current!.style.setProperty("--sx", `${-px}px`); row.current!.style.setProperty("--sp", String(Math.min(1, px / SWIPE_AT))); };
   const end = (cancel: boolean) => {
@@ -229,6 +233,7 @@ export function Message({ ev, room, first, last, actions, flash }: Props) {
           canPin && { icon: "pin", label: pinned ? "برداشتن سنجاق" : "سنجاق", run: () => togglePin(room, ev.getId()!).catch((e) => alertDialog(errText(e))) },
           mine && EDITABLE.includes(content.msgtype ?? "") && { icon: "edit", label: "ویرایش", run: () => actions.edit(ev) },
           mine && { icon: "info", label: "دیده‌شده توسط", run: () => actions.info(ev) },
+          reacted && { icon: "smile", label: "واکنش‌ها", run: () => actions.reactions(ev) },
           actions.select && { icon: "select", label: "انتخاب", run: () => actions.select!(ev) },
           canDelete && { icon: "trash", label: "حذف", danger: true, run: () => confirmDialog("این پیام برای همه حذف شود؟", { danger: true }).then((y) => y && void client.redactEvent(room.roomId, ev.getId()!)) },
         ]} />
@@ -282,8 +287,8 @@ function Body({ ev, room, onView, onUser }: { ev: MatrixEvent; room: Room; onVie
   if (M_POLL_START.matches(ev.getType())) return <PollBody ev={ev} room={room} />;
   const caption = c.msgtype !== "m.audio" && captionOf(c) && <p className="msg-text caption" dir={textDir(c.body)}>{linkify(c.body)}</p>;
   if (c.msgtype === "m.image" || ev.getType() === EventType.Sticker) return <><Image c={c} onView={() => onView(ev)} />{caption}</>;
-  if (c.msgtype === "m.video" && isGif(c)) return <><div className="media-box gif" style={c.info?.w && c.info?.h ? fit(c.info) : undefined}><GifView c={c as Gif} /></div>{caption}</>;
-  if (c.msgtype === "m.video") return <><Video c={c} />{caption}</>;
+  if (c.msgtype === "m.video" && isGif(c)) return <><GifBox c={c} />{caption}</>;
+  if (c.msgtype === "m.video") return <><Video c={c} onView={() => onView(ev)} />{caption}</>;
   if (c.msgtype === "m.audio") return (
     <div onClick={(e) => e.stopPropagation()}>
       <AudioPlayer track={trackFor(ev)} />
@@ -387,9 +392,22 @@ function Image({ c, onView }: { c: Content; onView: () => void }) {
   );
 }
 
-function Video({ c }: { c: Content }) {
-  const url = usePromise(mediaUrl(c));
-  return <div className="media-box" style={fit(c.info)}>{url ? <video src={url} controls preload="metadata" /> : <span className="shimmer" />}</div>;
+/** Sized from the sender's info, then from the file itself: info may be missing (older Panbeh) or wrong. */
+function GifBox({ c }: { c: Content }) {
+  const [size, setSize] = useState<{ w: number; h: number } | undefined>(c.info?.w && c.info?.h ? c.info : undefined);
+  return <div className="media-box gif" style={fit(size)}><GifView c={c as Gif} onSize={(w, h) => w && h && setSize({ w, h })} /></div>;
+}
+
+/** The poster frame with ▶ and the length; the video itself downloads only once opened in the viewer. */
+function Video({ c, onView }: { c: Content; onView: () => void }) {
+  const thumb = usePromise(thumbFor(c));
+  return (
+    <button className="media-box video-box" style={fit(c.info)} onClick={onView} aria-label="پخش ویدیو">
+      {thumb && <img src={thumb} alt="" />}
+      <span className="play-badge"><Icon name="play" size={26} /></span>
+      {c.info?.duration > 0 && <span className="dur-badge">{fmtDuration(c.info.duration)}</span>}
+    </button>
+  );
 }
 
 const R = 20, C = 2 * Math.PI * R;

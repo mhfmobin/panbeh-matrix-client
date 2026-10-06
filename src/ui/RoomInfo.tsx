@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
-import { ClientEvent, EventType, RoomEvent, RoomStateEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
+import { ClientEvent, EventType, RelationType, RoomEvent, RoomStateEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { addToSpace, client, removeFromSpace, seenBy, setRoomAvatar } from "../matrix.ts";
 import { usePresence, useTick } from "../hooks.ts";
-import { JOIN_RULES, num, roleLabel, stamp } from "../logic.ts";
+import { JOIN_RULES, normalize, num, roleLabel, stamp } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 import { Avatar, errText, me, RoomAvatar, roomAvatarMxc, Sheet } from "./common.tsx";
 import { UserProfile } from "./Profile.tsx";
@@ -22,6 +22,7 @@ export function RoomInfo({ room, onClose }: { room: Room; onClose: () => void })
   const [profile, setProfile] = useState<string | null>(null);
   const [media, setMedia] = useState(false);
   const [viewing, setViewing] = useState(false);
+  const [q, setQ] = useState("");
   const closeViewer = useCallback(() => setViewing(false), []);
   const photo = roomAvatarMxc(room);
   const act = (fn: () => Promise<unknown>, then?: () => void) => {
@@ -131,7 +132,11 @@ export function RoomInfo({ room, onClose }: { room: Room; onClose: () => void })
       <KnockRequests room={room} onUser={setProfile} />
       <h3>اعضا ({num(room.getJoinedMemberCount())})</h3>
       {room.canInvite(me()) && <div className="row-actions"><button onClick={() => setView("invite")}><Icon name="plus" /> دعوت عضو</button></div>}
-      {members.map((m) => (
+      <label className="search">
+        <Icon name="search" size={16} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="جستجوی اعضا" aria-label="جستجوی اعضا" />
+      </label>
+      {members.filter((m) => normalize(m.name + " " + m.userId).includes(normalize(q.trim()))).map((m) => (
         <button key={m.userId} className="user-row" onClick={() => setProfile(m.userId)}>
           <Avatar mxc={m.getMxcAvatarUrl()} name={m.name} id={m.userId} size={42} />
           <span><b>{m.name}</b><small dir="ltr">{m.userId}</small><LastSeen userId={m.userId} /></span>
@@ -196,6 +201,39 @@ export function SeenBy({ room, ev, onClose }: { room: Room; ev: MatrixEvent; onC
           <Icon name="checks" size={18} />
         </button>
       ))}
+      {profile && <UserProfile userId={profile} room={room} onClose={() => setProfile(null)} onOpened={onClose} />}
+    </Sheet>
+  );
+}
+
+/** Who reacted to a message, with what; one tab per emoji when there are several. */
+export function ReactedBy({ room, ev, onClose }: { room: Room; ev: MatrixEvent; onClose: () => void }) {
+  useTick(client, [RoomEvent.Timeline, RoomEvent.Redaction]);
+  const [key, setKey] = useState<string | null>(null); // null = all
+  const [profile, setProfile] = useState<string | null>(null);
+  const groups = (room.relations.getChildEventsForEvent(ev.getId()!, RelationType.Annotation, EventType.Reaction)
+    ?.getSortedAnnotationsByKey() ?? []).filter(([, set]) => set.size > 0);
+  const rows = groups.filter(([k]) => key === null || k === key)
+    .flatMap(([k, set]) => [...set].filter((e) => !e.isRedacted()).map((e) => ({ k, e })));
+  return (
+    <Sheet title="واکنش‌ها" onClose={onClose}>
+      {groups.length > 1 && (
+        <div className="segmented reacted-tabs">
+          <button className={key === null ? "on" : ""} onClick={() => setKey(null)}>همه {num(groups.reduce((n, [, set]) => n + set.size, 0))}</button>
+          {groups.map(([k, set]) => <button key={k} className={key === k ? "on" : ""} onClick={() => setKey(k)}>{k} {num(set.size)}</button>)}
+        </div>
+      )}
+      {rows.length === 0 && <p className="muted">واکنشی نیست</p>}
+      {rows.map(({ k, e }) => {
+        const id = e.getSender()!, m = room.getMember(id);
+        return (
+          <button key={e.getId()} className="user-row" onClick={() => setProfile(id)}>
+            <Avatar mxc={m?.getMxcAvatarUrl()} name={m?.name ?? id} id={id} size={42} />
+            <span><b>{m?.name ?? id}</b><small>{stamp(e.getTs())}</small></span>
+            <span className="reacted-key">{k}</span>
+          </button>
+        );
+      })}
       {profile && <UserProfile userId={profile} room={room} onClose={() => setProfile(null)} onOpened={onClose} />}
     </Sheet>
   );
