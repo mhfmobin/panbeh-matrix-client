@@ -1,0 +1,49 @@
+# Used by ./build.sh; run from the repo root's local-build/ folder.
+# Caches live in named volumes so repeat builds are fast (npm, gradle, electron downloads, wine prefix).
+services:
+  android:
+    build:
+      context: .
+      dockerfile: Dockerfile.android
+    environment:
+      HOST_UID: ${HOST_UID:-1000}
+      HOST_GID: ${HOST_GID:-1000}
+      SKIP_TESTS: ${SKIP_TESTS:-0}
+      KEYSTORE_PATH: ${KEYSTORE_PATH:-}
+      ANDROID_KEYSTORE_PASSWORD: ${ANDROID_KEYSTORE_PASSWORD:-}
+      ANDROID_KEY_ALIAS: ${ANDROID_KEY_ALIAS:-}
+      ANDROID_KEY_PASSWORD: ${ANDROID_KEY_PASSWORD:-}
+      VERSION_CODE: ${VERSION_CODE:-1}
+      VERSION_NAME: ${VERSION_NAME:-0.1.0}
+    volumes:
+      - ..:/src:ro
+      - ./out:/out
+      - ${KEYSTORE_HOST_PATH:-./.no-keystore}:${KEYSTORE_PATH:-/tmp/no-keystore}:ro
+      - npm-cache:/root/.npm
+      - gradle-cache:/root/.gradle
+
+  desktop:
+    image: electronuserland/builder:wine
+    entrypoint: ["bash", "/build-desktop.sh"]
+    command: ["all"]
+    environment:
+      HOST_UID: ${HOST_UID:-1000}
+      HOST_GID: ${HOST_GID:-1000}
+      SKIP_TESTS: ${SKIP_TESTS:-0}
+      VERSION: ${VERSION:-}
+    working_dir: /work
+    volumes:
+      - ..:/src:ro
+      - ./out:/out
+      - ./build-desktop.sh:/build-desktop.sh:ro
+      - npm-cache:/root/.cache/npm
+      - electron-cache:/root/.cache/electron
+      - electron-builder-cache:/root/.cache/electron-builder
+      - wine-cache:/root/.wine
+
+volumes:
+  npm-cache:
+  gradle-cache:
+  electron-cache:
+  electron-builder-cache:
+  wine-cache:
