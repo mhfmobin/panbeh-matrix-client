@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { byListOrder, endpointOf, inArchive, isUnread } from "./logic.ts";
+import { applyFolderOrder, moveFolder, byListOrder, endpointOf, inArchive, isUnread } from "./logic.ts";
 import { aliasLocalpart, buildRows, roomName, dayLabel, downsample, fmtDuration, inFolder, isUserId, formatMessage, parseGeoUri, spaceRooms, stamp, normalizeServer, normalize, lastSeen, tallyPoll, fitSize, type Msg } from "./logic.ts";
 
 const T = new Date("2026-09-30T12:00:00").getTime();
@@ -278,4 +278,22 @@ test("links without a scheme: www. and bare domains are found, emails and file n
   assert.deepEqual(contentLinks({ body: "سلام www.example.com/a, و panbeh.ir. یا (example.org:8080/x?y=1) https://x.io" }),
     ["https://www.example.com/a", "https://panbeh.ir", "https://example.org:8080/x?y=1", "https://x.io"]);
   assert.deepEqual(contentLinks({ body: "mail me@example.com, see notes.txt and v1.2.3" }), []);
+});
+
+test("applyFolderOrder: all first, saved order, new spaces last, stale ids ignored", () => {
+  const f = (id: string) => ({ id, label: id });
+  const folders = ["all", "unread", "dms", "s1", "s2"].map(f);
+  assert.deepEqual(applyFolderOrder(folders, []).map((x) => x.id), ["all", "unread", "dms", "s1", "s2"]);
+  assert.deepEqual(applyFolderOrder(folders, ["s1", "gone", "dms"]).map((x) => x.id), ["all", "s1", "dms", "unread", "s2"]);
+  assert.deepEqual(applyFolderOrder(folders, ["dms", "all"]).map((x) => x.id), ["all", "dms", "unread", "s1", "s2"]);
+});
+
+test("moveFolder: never touches the first tab", () => {
+  const ids = ["all", "a", "b", "c"];
+  assert.deepEqual(moveFolder(ids, 3, 1), ["all", "c", "a", "b"]);
+  assert.deepEqual(moveFolder(ids, 1, 3), ["all", "b", "c", "a"]);
+  assert.equal(moveFolder(ids, 0, 2), ids);
+  assert.equal(moveFolder(ids, 2, 0), ids);
+  assert.equal(moveFolder(ids, 2, 9), ids);
+  assert.equal(moveFolder(ids, 2, 2), ids);
 });

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ClientEvent, EventType, M_POLL_START, RoomEvent, RoomMemberEvent, RoomStateEvent, UserEvent, type Room, type MatrixEvent } from "matrix-js-sdk";
-import { client, getUploads, subscribeUploads } from "./matrix.ts";
+import { client, getFolderOrder, getUploads, setFolderOrder, subscribeUploads } from "./matrix.ts";
 import { byListOrder, lastSeen, spaceRooms, type RoomInfo } from "./logic.ts";
 import { ARCHIVED, hasTag, isMarkedUnread, PINNED } from "./chats.ts";
 import { isMuted } from "./notify.ts";
@@ -131,4 +131,25 @@ export const isCallStart = (e: MatrixEvent) => [EventType.RTCNotification, Event
 function lastMessage(room: Room) {
   const evs = room.getLiveTimeline().getEvents();
   for (let i = evs.length - 1; i >= 0; i--) if (isMessage(evs[i]) || isCallStart(evs[i])) return evs[i];
+}
+
+const orderKey = () => `panbeh.folderOrder:${client.getUserId()}`;
+const cachedOrder = (): string[] => { try { return JSON.parse(localStorage.getItem(orderKey()) ?? "[]"); } catch { return []; } };
+
+/** The saved folder order: synced through account data, cached locally for the first paint, and updated at once on a change. */
+export function useFolderOrder(): [string[], (order: string[]) => void] {
+  useTick(client, [ClientEvent.AccountData]);
+  const remote = getFolderOrder();
+  const key = JSON.stringify(remote);
+  const [mine, setMine] = useState<string[] | null>(null);
+  useEffect(() => {
+    setMine(null); // the server's copy caught up (or another device changed it)
+    if (remote) localStorage.setItem(orderKey(), key);
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const set = (order: string[]) => {
+    setMine(order);
+    localStorage.setItem(orderKey(), JSON.stringify(order));
+    setFolderOrder(order).catch(() => setMine(null));
+  };
+  return [mine ?? remote ?? cachedOrder(), set];
 }

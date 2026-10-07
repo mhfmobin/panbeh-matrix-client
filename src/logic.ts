@@ -72,6 +72,23 @@ export const BASE_FOLDERS: Folder[] = [
   { id: "groups", label: "گروه‌ها" },
 ];
 
+/** Folders in the user's saved order. "all" always leads; folders the order doesn't know (a newly joined space)
+ *  follow in their default order, and ids that no longer exist are ignored. */
+export function applyFolderOrder(folders: Folder[], order: string[]): Folder[] {
+  const rank = new Map(order.map((id, i) => [id, i] as const));
+  const rest = folders.filter((f) => f.id !== "all");
+  const known = rest.filter((f) => rank.has(f.id)).sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+  return [...folders.filter((f) => f.id === "all"), ...known, ...rest.filter((f) => !rank.has(f.id))];
+}
+
+/** `ids` with the one at `from` moved to `to`. The first (the "all" tab) neither moves nor gets displaced. */
+export function moveFolder(ids: string[], from: number, to: number): string[] {
+  if (from < 1 || to < 1 || from >= ids.length || to >= ids.length || from === to) return ids;
+  const next = ids.slice();
+  next.splice(to, 0, ...next.splice(from, 1));
+  return next;
+}
+
 /** Archived chats live in the "archive" pseudo-folder and nowhere else. */
 export function inFolder(r: RoomInfo, folder: string) {
   if ((folder === "archive") !== inArchive(r)) return false;
