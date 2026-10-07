@@ -227,8 +227,15 @@ export function formatMessage(text: string, mentions: { name: string; id: string
   return used.size || h !== clean ? { html: h, ids: [...used] } : null;
 }
 
-/** Distinct http(s) links in text (same pattern as the bubble's linkify). */
-export const extractLinks = (text: string) => [...new Set(text.match(/https?:\/\/[^\s<]+[^\s<.,;:!?)"']/g) ?? [])];
+const TLDS = "com|org|net|edu|gov|int|io|ir|co|me|app|dev|info|biz|ai|tv|xyz|ly|gl|us|uk|de|fr|ru|tech|online|site|chat|link|page";
+/** What counts as a web link in plain text: http(s)://…, www.…, or a bare domain with a well-known TLD (not in emails). */
+export const LINK_SRC =
+  "(?:https?:\\/\\/|www\\.)[^\\s<]+[^\\s<.,;:!?)\"'`]" +
+  "|(?<![\\w@.\\/-])(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+(?:" + TLDS + ")(?![\\w@-])(?::\\d+)?(?:\\/[^\\s<]*[^\\s<.,;:!?)\"'`])?";
+/** href for a link found by LINK_SRC: scheme-less ones get https://. */
+export const linkHref = (u: string) => (/^(?:https?:|matrix:)/i.test(u) ? u : "https://" + u);
+/** Distinct web links in text (same pattern as the bubble's linkify), as hrefs. */
+export const extractLinks = (text: string) => [...new Set((text.match(new RegExp(LINK_SRC, "gi")) ?? []).map(linkHref))];
 /** Links in a message's own text, not in the quoted reply fallback. */
 export const contentLinks = (c: Record<string, unknown>) => extractLinks(String(c.body ?? "").replace(/^(> .*\n)+\n?/, ""));
 

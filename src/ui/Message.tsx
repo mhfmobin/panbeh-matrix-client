@@ -7,7 +7,7 @@ import { EventStatus, EventType, M_POLL_START, RelationType, type MatrixEvent, t
 import { avatarUrl, client, isSavedGif, mediaUrl, pinnedIds, seenBy, toggleGif, togglePin } from "../matrix.ts";
 import { saveFile } from "../native.ts";
 import { usePromise } from "../hooks.ts";
-import { clock, fmtDuration, isGif, num, osmUrl, parseGeoUri, stamp, textDir, type Gif } from "../logic.ts";
+import { LINK_SRC, clock, fmtDuration, isGif, linkHref, num, osmUrl, parseGeoUri, stamp, textDir, type Gif } from "../logic.ts";
 import { Icon, iconSvg, type IconName } from "../icons.tsx";
 import { Avatar, colorFor, copyText, errText, formatSize, isGroupChat, me, previewText, senderMember, senderName, stripReplyFallback, toast } from "./common.tsx";
 import { AudioPlayer, trackFor } from "./Voice.tsx";
@@ -366,11 +366,13 @@ function Html({ html, room, onUser }: { html: string; room: Room; onUser: (id: s
   return <span ref={ref} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
+const LINKIFY_RE = new RegExp(`(${LINK_SRC}|matrix:[^\\s<]+[^\\s<.,;:!?)"'])`, "gi");
+
 function linkify(text: string) {
-  return text.split(/((?:https?:\/\/|matrix:)[^\s<]+[^\s<.,;:!?)"'])/g).map((part, i) => {
+  return text.split(LINKIFY_RE).map((part, i) => {
     if (!(i % 2)) return part;
     if (part.startsWith("matrix:") && !parseMatrixLink(part)) return part;
-    return <a key={i} href={part} target="_blank" rel="noreferrer noopener" onClick={parseMatrixLink(part) ? (e) => { e.preventDefault(); handleIncomingLink(part); } : undefined}>{part}</a>;
+    return <a key={i} href={linkHref(part)} target="_blank" rel="noreferrer noopener" onClick={parseMatrixLink(part) ? (e) => { e.preventDefault(); handleIncomingLink(part); } : undefined}>{part}</a>;
   });
 }
 

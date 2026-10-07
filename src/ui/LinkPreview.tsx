@@ -3,17 +3,18 @@ import type { IPreviewUrlResponse, MatrixEvent } from "matrix-js-sdk";
 import { client, mediaUrl } from "../matrix.ts";
 import { usePromise } from "../hooks.ts";
 import { stripReplyFallback } from "./common.tsx";
+import { LINK_SRC, linkHref } from "../logic.ts";
 import { loadPrefs } from "./Settings.tsx";
 
 const TEXT = ["m.text", "m.notice", "m.emote"];
-const URL_RE = /https?:\/\/[^\s<]+[^\s<.,;:!?)"'`]/g;
+const URL_RE = new RegExp(LINK_SRC, "gi");
 const cache = new Map<string, Promise<IPreviewUrlResponse | null>>();
 
 /** First web link worth previewing: not a matrix.to pill, not inside code. */
 function firstUrl(c: Record<string, unknown>) {
   // bodies keep their Markdown, so code is still in backticks
   const body = typeof c.body === "string" ? stripReplyFallback(c.body).replace(/```[\s\S]*?```|`[^`\n]*`/g, "") : "";
-  return body.match(URL_RE)?.find((u) => !u.startsWith("https://matrix.to/"));
+  return body.match(URL_RE)?.map(linkHref).find((u) => !u.startsWith("https://matrix.to/"));
 }
 
 /** Card under a text message for its first link, from the homeserver's preview_url. Nothing on failure. */

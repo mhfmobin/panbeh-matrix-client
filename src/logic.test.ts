@@ -273,3 +273,9 @@ test("endpointOf names the endpoint for the net log", () => {
   assert.equal(endpointOf("https://hs.x/_matrix/client/v1/media/thumbnail/x/y?width=96"), "thumbnail");
   assert.equal(endpointOf("https://hs.x/_matrix/client/unstable/org.matrix.msc3575/sync"), "org.matrix.msc3575");
 });
+
+test("links without a scheme: www. and bare domains are found, emails and file names are not", () => {
+  assert.deepEqual(contentLinks({ body: "سلام www.example.com/a, و panbeh.ir. یا (example.org:8080/x?y=1) https://x.io" }),
+    ["https://www.example.com/a", "https://panbeh.ir", "https://example.org:8080/x?y=1", "https://x.io"]);
+  assert.deepEqual(contentLinks({ body: "mail me@example.com, see notes.txt and v1.2.3" }), []);
+});
