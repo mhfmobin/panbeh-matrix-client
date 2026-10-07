@@ -8,7 +8,12 @@ export type Row =
   | { type: "msg"; key: string; id: string; first: boolean; last: boolean };
 
 const LOCALE = "fa-IR"; // Jalali calendar + Persian digits
-export const num = (n: number) => n.toLocaleString(LOCALE);
+// formatters built once: toLocale*String builds a new one per call, which made every message re-render slow
+const fmt = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(LOCALE, o);
+const NUM = new Intl.NumberFormat(LOCALE), TIME = fmt({ hour: "2-digit", minute: "2-digit" }), YEAR = fmt({ year: "numeric" }),
+  DAY_MONTH = fmt({ month: "long", day: "numeric" }), DAY_MONTH_YEAR = fmt({ month: "long", day: "numeric", year: "numeric" }),
+  WEEKDAY = fmt({ weekday: "short" }), SHORT_DATE = fmt({ day: "numeric", month: "short" });
+export const num = (n: number) => NUM.format(n);
 
 const GROUP_GAP = 5 * 60_000;
 const day = (ts: number) => new Date(ts).toDateString();
@@ -40,20 +45,19 @@ export function dayLabel(ts: number, now = Date.now()) {
   if (diff === 0) return "امروز";
   if (diff === 1) return "دیروز";
   // Jalali years roll over at Nowruz, not Jan 1, so compare them in that calendar
-  const year = (t: Date) => t.toLocaleDateString(LOCALE, { year: "numeric" });
-  return d.toLocaleDateString(LOCALE, { month: "long", day: "numeric", year: year(d) === year(n) ? undefined : "numeric" });
+  return (YEAR.format(d) === YEAR.format(n) ? DAY_MONTH : DAY_MONTH_YEAR).format(d);
 }
 
 /** Chat-list timestamp: 14:05 today, "Mon" this week, "12 Mar" otherwise. */
 export function listTime(ts: number, now = Date.now()) {
   if (!(ts > 0)) return "";
   const d = new Date(ts);
-  if (day(ts) === day(now)) return d.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" });
-  if (now - ts < 6 * 86_400_000) return d.toLocaleDateString(LOCALE, { weekday: "short" });
-  return d.toLocaleDateString(LOCALE, { day: "numeric", month: "short" });
+  if (day(ts) === day(now)) return TIME.format(d);
+  if (now - ts < 6 * 86_400_000) return WEEKDAY.format(d);
+  return SHORT_DATE.format(d);
 }
 
-export const clock = (ts: number) => new Date(ts).toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" });
+export const clock = (ts: number) => TIME.format(ts);
 
 export type RoomInfo = {
   id: string; isDM: boolean; unread: number; spaces: string[];

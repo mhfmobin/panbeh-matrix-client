@@ -46,6 +46,11 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
     events = [...events].sort((a, b) => a.getTs() - b.getTs());
     if (thread.rootEvent && !events.some((e) => e.getId() === thread.id)) events.unshift(thread.rootEvent);
   }
+  // An older page shows up only once all of it is decrypted. Shown at once, its rows above the reader changed
+  // under them (undecrypted rows turning into hidden reactions, edits, call signalling) and the list jolted.
+  const hold = useRef<MatrixEvent | null>(null); // the oldest event shown while a page loads
+  const held = hold.current ? events.indexOf(hold.current) : -1;
+  if (held > 0) events = events.slice(held);
   // placed once on open and left there while the chat stays open
   const [unreadAfter] = useState(() => (thread ? undefined : unreadAnchor(room, events)));
   const [loading, setLoading] = useState(false);
@@ -58,21 +63,18 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   const pagingUntil = useRef(0); // while older history loads/settles, height changes mustn't drag us to the bottom
   // floating date: label of the topmost visible row while scrolling, hidden 1.2s after it stops
   const [floating, setFloating] = useState<{ label: string; show: boolean }>({ label: "", show: false });
+  const topLabel = useRef(""); // the topmost visible row's day; "" while a day pill itself is on top (no double pill)
+  const topKey = useRef<string | null>(null); // the topmost visible non-day row: what must stay put when rows change above it
+  const bottomRef = useRef(false); // Virtuoso's at-bottom, for the scroll handler: reading scroll sizes there forced a layout per event
   const scrollerRef = useCallback((el: HTMLElement | Window | null) => {
     if (!(el instanceof HTMLElement)) return;
-    let hideT = 0, raf = 0;
+    let hideT = 0;
     const onScroll = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        if (el.scrollHeight - el.scrollTop - el.clientHeight < 40) return; // at the very bottom (incl. new-message follow): nothing to show
-        const top = el.getBoundingClientRect().top;
-        const r = [...el.querySelectorAll<HTMLElement>(".row[data-ts],.row[data-label]")].find((x) => x.getBoundingClientRect().bottom > top + 1);
-        if (!r) return;
-        const label = r.dataset.label ?? dayLabel(Number(r.dataset.ts));
-        setFloating((f) => (f.show && f.label === label ? f : { label, show: true }));
-        clearTimeout(hideT);
-        hideT = window.setTimeout(() => setFloating((f) => ({ ...f, show: false })), 1200);
-      });
+      if (bottomRef.current) return; // at the very bottom (incl. new-message follow): nothing to show
+      const label = topLabel.current;
+      setFloating((f) => (f.show && f.label === label ? f : { label, show: !!label }));
+      clearTimeout(hideT);
+      hideT = window.setTimeout(() => setFloating((f) => ({ ...f, show: false })), 1200);
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     const unpin = () => { stuck.current = false; };
@@ -95,29 +97,36 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   }
   const rows = buildRows(msgs, undefined, unreadAfter);
 
-  // Virtuoso keeps scroll position on prepend only if firstItemIndex drops by the prepended count.
-  // Anchor on the first non-day row (day rows keep their key when older same-day messages arrive).
-  const anchor = useRef<{ key: string; abs: number } | null>(null);
+  // Virtuoso keeps the view still only if the row on screen keeps its absolute index (firstItemIndex + position):
+  // older pages prepend, and undecrypted rows above vanish once they turn out to be reactions or call signalling.
+  // So anchor on the topmost visible row, else any row that survived (not day rows: older same-day messages move them).
+  const absOf = useRef(new Map<string, number>());
   const firstItemIndex = useMemo(() => {
-    const pos = rows.findIndex((r) => r.type !== "day");
-    if (pos < 0) return START;
-    const prev = anchor.current;
-    const oldPos = prev ? rows.findIndex((r) => r.key === prev.key) : -1;
-    const first = prev && oldPos >= 0 ? prev.abs - oldPos : START;
-    anchor.current = { key: rows[pos].key, abs: first + pos };
+    const prev = absOf.current;
+    let pos = topKey.current && prev.has(topKey.current) ? rows.findIndex((r) => r.key === topKey.current) : -1;
+    if (pos < 0) pos = rows.findIndex((r) => r.type !== "day" && prev.has(r.key));
+    const first = pos >= 0 ? prev.get(rows[pos].key)! - pos : START;
+    absOf.current = new Map(rows.map((r, i) => [r.key, first + i]));
     return first;
   }, [rows.map((r) => r.key).join()]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const paging = useRef(false); // a ref, not `loading`: prefetch and startReached can both ask within one render
   const loadOlder = useCallback(async () => {
-    if (loading || !timeline.getPaginationToken(EventTimeline.BACKWARDS)) return;
+    if (paging.current || !timeline.getPaginationToken(EventTimeline.BACKWARDS)) return;
+    paging.current = true;
     setLoading(true);
     pagingUntil.current = Infinity;
+    hold.current = timeline.getEvents()[0] ?? null;
     await client.paginateEventTimeline(timeline, { backwards: true, limit: 40 }).catch(console.warn);
+    const page = timeline.getEvents().slice(0, Math.max(0, timeline.getEvents().indexOf(hold.current!)));
+    await Promise.all(page.map((e) => client.decryptEventIfNeeded(e).catch(() => {})));
+    hold.current = null;
     pagingUntil.current = Date.now() + 400; // Virtuoso re-anchors the prepended rows over the next frames
+    paging.current = false;
     setLoading(false);
     // opened with few messages (still pinned): settle at the bottom once the page is in
     setTimeout(() => { if (stuck.current) list.current?.scrollToIndex({ index: "LAST", align: "end" }); }, 420);
-  }, [timeline, loading]);
+  }, [timeline]);
 
   // fill the screen if we have only a handful of messages. Keep paging while pages bring only hidden
   // events (no overflow = startReached never fires again); one try per event count, so a failing request can't loop.
@@ -217,17 +226,22 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
       followOutput={() => (appended && (stuck.current || lastIsMine) ? "smooth" : false)}
       ref={list}
       scrollerRef={scrollerRef}
-      atBottomStateChange={(b) => { if (b && Date.now() > jumpingUntil.current && Date.now() > pagingUntil.current) stuck.current = true; setAtBottom(b); }}
+      atBottomStateChange={(b) => { bottomRef.current = b; if (b && Date.now() > jumpingUntil.current && Date.now() > pagingUntil.current) stuck.current = true; setAtBottom(b); }}
       // panel opening / images loading change heights; stay pinned if we were at the bottom
       totalListHeightChanged={() => stuck.current && Date.now() > pagingUntil.current && list.current?.scrollToIndex({ index: "LAST", align: "end" })}
       atBottomThreshold={80}
       startReached={() => { stuck.current = false; loadOlder(); }} // at the top we're reading history, not following the bottom
+      rangeChanged={({ startIndex }) => {
+        const r = rows[startIndex - firstItemIndex];
+        topKey.current = rows.slice(startIndex - firstItemIndex).find((x) => x.type !== "day")?.key ?? null; // day rows move
+        topLabel.current = !r || r.type === "day" ? "" : r.type === "unread" ? topLabel.current : dayLabel(byId.get(r.id)!.getTs());
+        if (startIndex - firstItemIndex < 15) loadOlder(); // fetch the next page while there's still some left to read
+      }}
       increaseViewportBy={{ top: 600, bottom: 200 }}
       computeItemKey={(_, r) => r.key}
       components={COMPONENTS}
       context={{ roomId: room.roomId, threadId: thread?.id ?? null }}
-      itemContent={(_, r: Row) => <div className="row" data-label={r.type === "day" ? r.label : undefined}
-        data-ts={r.type === "msg" || r.type === "notice" ? byId.get(r.id)?.getTs() : undefined}>{
+      itemContent={(_, r: Row) => <div className="row">{
         r.type === "day" ? <div className="pill day">{r.label}</div>
         : r.type === "notice" ? <div className="pill">{noticeText(byId.get(r.id)!)}</div>
         : r.type === "unread" ? <div className="unread-divider">پیام‌های خوانده‌نشده</div>

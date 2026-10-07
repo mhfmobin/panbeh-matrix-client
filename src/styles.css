@@ -298,14 +298,16 @@ div.msg-text blockquote { margin: 4px 0; padding-inline-start: 10px; border-inli
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .msg.mine .tick.read { color: var(--out-meta); } }
 
 .bubble.media { padding: 0; overflow: hidden; background: transparent; box-shadow: none; }
-.bubble.media .msg-sender, .bubble.media .reply-quote { padding: 6px 10px 0; background: var(--bubble-in); }
+/* a name / reply / forward header frames the media in a normal bubble, Telegram-style */
+.bubble.media:has(> .msg-sender, > .reply-quote, > .fwd-from) { padding: 4px; background: var(--bubble-in); box-shadow: var(--shadow); }
+.msg.mine .bubble.media:has(> .msg-sender, > .reply-quote, > .fwd-from) { background: var(--bubble-out); }
+.bubble.media > .msg-sender, .bubble.media > .fwd-from { padding: 2px 6px 0; }
+.bubble.media > .reply-quote { margin: 2px 2px 4px; }
+.bubble.media:has(> .msg-sender, > .reply-quote, > .fwd-from) > .media-box { border-radius: calc(var(--radius) - 4px); }
+.bubble.media:has(> .msg-sender, > .reply-quote, > .fwd-from) > .msg-meta { bottom: 9px; }
 .bubble.media .msg-meta { background: rgba(0, 0, 0, 0.45); color: #fff; padding: 2px 6px; border-radius: 10px; }
 .media-box { display: block; position: relative; border-radius: inherit; overflow: hidden; background: rgba(127, 127, 127, 0.15); }
 .media-box img, .media-box video { width: 100%; height: 100%; object-fit: cover; display: block; }
-/* a gif with no stored size (videos sent as gif) takes its own shape */
-.media-box.gif:not([style]) { width: fit-content; }
-.media-box.gif:not([style]) :is(img, video) { width: auto; height: auto; max-width: min(320px, 100%); max-height: 320px; }
-.media-box.gif:not([style]) .shimmer { display: block; width: 240px; height: 180px; }
 .shimmer {
   position: absolute; inset: 0;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
@@ -539,7 +541,7 @@ input[role="switch"]:checked::before { transform: translateX(-18px); }
 .up-state { position: absolute; inset: auto 0 8px; text-align: center; color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
 .up-ring { position: relative; flex: none; width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; color: var(--accent); }
 .up-box .up-ring { position: absolute; inset: 0; margin: auto; background: rgba(0, 0, 0, 0.45); color: #fff; }
-.up-ring > svg:first-child { position: absolute; inset: 0; transform: rotate(-90deg); }
+.up-ring > svg:first-child { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
 .up-ring circle { fill: none; stroke-width: 3; }
 .up-track { stroke: rgba(127, 127, 127, 0.3); }
 .up-arc { stroke: currentColor; stroke-linecap: round; transition: stroke-dashoffset 0.25s linear; }
@@ -559,7 +561,7 @@ input[role="switch"]:checked::before { transform: translateX(-18px); }
 .send-file > span:nth-child(2) { display: grid; min-width: 0; } /* name over size; the ✕ is last-child here */
 .send-file .send-x { top: 50%; transform: translateY(-50%); background: var(--hover); color: var(--muted); }
 .send-caption { resize: none; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: inherit; font: inherit; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.modal-actions { position: sticky; bottom: -16px; display: flex; justify-content: flex-end; gap: 8px; margin: 0 -16px -16px; padding: 8px 16px 16px; background: var(--panel); }
 .modal-actions button { padding: 8px 16px; border-radius: 10px; color: var(--accent); font-weight: 600; }
 .modal-actions button:hover { background: var(--hover); }
 .modal-actions button.primary { background: var(--accent); color: #fff; }
@@ -682,6 +684,9 @@ input[role="switch"]:checked::before { transform: translateX(-18px); }
 /* ---------- profile / forwarding ---------- */
 button.msg-sender { display: block; max-width: 100%; text-align: start; }
 .sheet > button.primary { width: 100%; margin-top: 12px; }
+/* the confirm button stays in reach however long the list above it is */
+.sheet-foot { position: sticky; bottom: -28px; margin: 12px -20px -28px; padding: 12px 20px 28px; background: var(--panel); }
+.sheet-foot > button.primary { width: 100%; }
 .fwd-from { display: block; margin-bottom: 2px; font-size: 13px; color: var(--accent); text-align: start; unicode-bidi: plaintext; }
 .msg.mine .fwd-from { color: inherit; opacity: .85; }
 
@@ -700,6 +705,9 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 
 /* devices */
 .user-row > .device-box, .user-row > .badge { flex: none; }
+.user-row > span.reacted-key { flex: none; display: block; font-size: 22px; }
+.reacted-tabs { margin-bottom: 8px; overflow-x: auto; }
+.reacted-tabs button { flex: none; padding: 0 12px; }
 .device-box { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: var(--hover); color: var(--accent); flex: none; }
 .user-row small bdi, .user-row small.id { font-size: 12px; }
 .sheet .form .error { margin: 0; }
@@ -716,12 +724,31 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .lightbox { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; background: rgba(0, 0, 0, 0.92); color: #fff; animation: fade 0.18s; }
 .mv-bar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; flex: none; }
 .mv-bar .icon-btn, .mv-nav { color: #fff; }
+.lightbox .icon-btn:hover { background: rgba(255, 255, 255, 0.15); color: #fff; } /* the light theme's hover color, on a dark viewer */
 .mv-who { flex: 1; min-width: 0; display: grid; }
 .mv-who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: plaintext; text-align: right; }
 .mv-who small { opacity: 0.7; font-size: 13px; }
 .mv-stage { flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; touch-action: none; padding: 0 56px 16px; }
 .mv-stage img, .mv-stage video { max-width: 100%; max-height: 100%; border-radius: 6px; user-select: none; animation: pop 0.2s ease-out; }
 .mv-stage img { cursor: zoom-in; transition: transform 0.08s ease-out; }
+/* video: our own player in the viewer */
+.vp { position: relative; width: 100%; height: 100%; min-height: 0; display: grid; place-items: center; }
+.vp:not(.shown) { cursor: none; }
+.vp > video, .vp-big { grid-area: 1 / 1; }
+.vp-big { width: 72px; height: 72px; display: grid; place-items: center; border-radius: 50%; background: rgba(0, 0, 0, 0.5); color: #fff; }
+.vp-bar {
+  position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); width: min(640px, 100%); display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; border-radius: 14px; background: rgba(0, 0, 0, 0.6); transition: opacity 0.2s;
+}
+.vp:not(.shown) .vp-bar { opacity: 0; pointer-events: none; }
+.vp-bar .icon-btn { color: #fff; flex: none; }
+.vp-bar input { flex: 1; min-width: 0; accent-color: var(--accent); }
+.vp-time { flex: none; min-width: 38px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; }
+.vp-bar .speed { flex: none; color: #fff; background: rgba(255, 255, 255, 0.15); }
+/* video in a bubble: the poster frame, opened in the viewer */
+.video-box { background: linear-gradient(135deg, #2b3440, #151a20); }
+.play-badge { position: absolute; inset: 0; margin: auto; width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; background: rgba(0, 0, 0, 0.5); color: #fff; }
+.dur-badge { position: absolute; top: 6px; left: 6px; padding: 1px 6px; border-radius: 10px; background: rgba(0, 0, 0, 0.5); color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; }
 .mv-stage img.zoomed { cursor: grab; border-radius: 0; }
 .mv-nav { position: absolute; top: 50%; translate: 0 -50%; width: 48px; height: 48px; background: rgba(255, 255, 255, 0.12); }
 .mv-nav:hover { background: rgba(255, 255, 255, 0.22); }
@@ -783,7 +810,7 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .emoji-grid { grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); }
 .emoji-grid button { height: 38px; font-size: 26px; line-height: 1; border-radius: 8px; }
 .emoji-grid button:hover, .gif-grid button:hover { background: var(--hover); }
-.gif-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 4px; }
+.gif-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); grid-auto-rows: max-content; gap: 4px; } /* auto rows would shrink to fit, overlapping the square buttons */
 .gif-grid button { position: relative; aspect-ratio: 1; padding: 4px; display: grid; place-items: center; border-radius: 10px; overflow: hidden; }
 .gif-grid img, .gif-grid video { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
 .gif-grid .shimmer { width: 100%; height: 100%; }

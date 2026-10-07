@@ -367,15 +367,26 @@ export async function sendFile(room: Room, file: File, threadId: string | null, 
   const info: Record<string, unknown> = { mimetype: file.type, size: file.size };
   const msgtype = asFile ? "m.file" : file.type.startsWith("image/") ? "m.image" : file.type.startsWith("video/") ? "m.video" : "m.file";
   if (msgtype === "m.image") Object.assign(info, await imageSize(file));
+  // encrypted rooms: the file goes up encrypted and the event carries its key (`file`); otherwise a plain `url`
+  const put = async (data: Blob, type: string, o: typeof up) => {
+    if (!encrypted) return { url: (await client.uploadContent(data, { type, ...o })).content_uri };
+    const { data: enc, info: fileInfo } = await encryptAttachment(await data.arrayBuffer());
+    const { content_uri } = await client.uploadContent(new Blob([enc]), { type: "application/octet-stream", includeFilename: false, ...o });
+    return { file: { ...fileInfo, url: content_uri, mimetype: type } };
+  };
+  if (msgtype === "m.video") { // size, duration and a poster frame, so bubbles (ours and other clients') are right before any download
+    const { thumb, ...v } = await videoInfo(file);
+    Object.assign(info, v);
+    if (thumb) {
+      const t = await put(thumb.blob, "image/jpeg", { abortController: abort, progressHandler: undefined });
+      if (t.file) info.thumbnail_file = t.file; else info.thumbnail_url = t.url;
+      info.thumbnail_info = { mimetype: "image/jpeg", size: thumb.blob.size, w: thumb.w, h: thumb.h };
+    }
+  }
 
   const content: Record<string, unknown> = { msgtype, body: caption || file.name, ...(caption && { filename: file.name }), ...extra, info: { ...info, ...(extra?.info as object) } };
-  if (encrypted) {
-    const { data, info: fileInfo } = await encryptAttachment(await file.arrayBuffer());
-    const { content_uri } = await client.uploadContent(new Blob([data]), { type: "application/octet-stream", includeFilename: false, ...up });
-    content.file = { ...fileInfo, url: content_uri, mimetype: file.type };
-  } else {
-    content.url = (await client.uploadContent(file, up)).content_uri;
-  }
+  const uploaded = await put(file, file.type, up);
+  if (encrypted) content.file = uploaded.file; else content.url = uploaded.url;
   if (abort?.signal.aborted) return;
   if (replyTo) content["m.relates_to"] = { "m.in_reply_to": { event_id: replyTo.getId() } };
   opts.onUploaded?.();
@@ -448,6 +459,29 @@ async function compressImage(file: File): Promise<File> {
     if (!blob || blob.size >= file.size) return file;
     return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
   } catch { return file; }
+}
+
+/** Size, duration (ms) and a first-frame JPEG of a video; whatever the browser could decode, possibly nothing. */
+function videoInfo(file: File): Promise<{ w?: number; h?: number; duration?: number; thumb?: { blob: Blob; w: number; h: number } }> {
+  const url = URL.createObjectURL(file);
+  const v = Object.assign(document.createElement("video"), { muted: true, playsInline: true, preload: "auto", src: url });
+  return new Promise((resolve) => {
+    let r: Awaited<ReturnType<typeof videoInfo>> = {};
+    const done = () => { clearTimeout(timer); v.removeAttribute("src"); v.load(); URL.revokeObjectURL(url); resolve(r); };
+    const timer = setTimeout(done, 10_000); // some codecs never seek
+    v.onerror = done;
+    v.onloadedmetadata = () => {
+      if (!v.videoWidth) return done(); // audio only
+      r = { w: v.videoWidth, h: v.videoHeight, ...(Number.isFinite(v.duration) && { duration: Math.round(v.duration * 1000) }) };
+      v.currentTime = Number.isFinite(v.duration) ? Math.min(0.1, v.duration / 2) : 0.1; // frame 0 is often black
+    };
+    v.onseeked = () => {
+      const { w, h } = fitSize(v.videoWidth, v.videoHeight, 800);
+      const canvas = Object.assign(document.createElement("canvas"), { width: w, height: h });
+      canvas.getContext("2d")!.drawImage(v, 0, 0, w, h);
+      canvas.toBlob((blob) => { if (blob) r.thumb = { blob, w, h }; done(); }, "image/jpeg", 0.8);
+    };
+  });
 }
 
 const imageSize = (file: File) =>

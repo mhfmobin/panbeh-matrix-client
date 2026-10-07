@@ -11,7 +11,7 @@ import { NowPlaying } from "./Voice.tsx";
 import { CallBar, CallButtons } from "./Call.tsx";
 import { Composer, DropZone, takeShared, type Mode } from "./Composer.tsx";
 import { copyMessages, copyTextOf, type Actions } from "./Message.tsx";
-import { RoomInfo, SeenBy } from "./RoomInfo.tsx";
+import { ReactedBy, RoomInfo, SeenBy } from "./RoomInfo.tsx";
 import { UserProfile } from "./Profile.tsx";
 import { ForwardSheet } from "./Forward.tsx";
 import { pendingJump, SearchSheet } from "./Search.tsx";
@@ -31,6 +31,7 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
   const [viewing, setViewing] = useState<MatrixEvent | null>(null);
   const [info, setInfo] = useState(false);
   const [seenFor, setSeenFor] = useState<MatrixEvent | null>(null);
+  const [reactionsFor, setReactionsFor] = useState<MatrixEvent | null>(null);
   const [profile, setProfile] = useState<string | null>(null);
   const [forwarding, setForwarding] = useState<MatrixEvent[] | null>(null);
   const [sel, setSel] = useState<ReadonlySet<string> | null>(null); // multi-select: event ids of the main timeline
@@ -60,6 +61,7 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
     },
     view: setViewing,
     info: setSeenFor,
+    reactions: setReactionsFor,
     profile: setProfile,
     forward: forward1,
     jump: (id: string) => void searchJump(id),
@@ -167,12 +169,13 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
             <div className="room-head-text"><b>رشته‌ی گفتگو</b><span>{num(thread.length)} پاسخ</span></div>
             <button className="icon-btn" onClick={() => setThreadId(null)} aria-label="بستن رشته"><Icon name="close" /></button>
           </header>
-          <ThreadView key={thread.id} room={room} threadId={thread.id} view={setViewing} info={setSeenFor} profile={setProfile} forward={forward1} />
+          <ThreadView key={thread.id} room={room} threadId={thread.id} view={setViewing} info={setSeenFor} reactions={setReactionsFor} profile={setProfile} forward={forward1} />
         </aside>
       )}
       {search && <SearchSheet room={room} onJump={(id, server) => searchJump(id, server ? 50 : undefined)} onClose={() => setSearch(false)} />}
       {info && <RoomInfo room={room} onClose={() => setInfo(false)} />}
       {seenFor && <SeenBy room={room} ev={seenFor} onClose={() => setSeenFor(null)} />}
+      {reactionsFor && <ReactedBy room={room} ev={reactionsFor} onClose={() => setReactionsFor(null)} />}
       {profile && <UserProfile userId={profile} room={room} onClose={() => setProfile(null)} />}
       {forwarding && <ForwardSheet evs={forwarding} onClose={() => setForwarding(null)} onSent={() => setSel(null)} />}
       {viewing && <MediaViewer items={timelineMedia(room, viewing)} start={viewing} onClose={() => setViewing(null)} onJump={(ev) => jump(ev.getId()!)} />}
@@ -180,8 +183,8 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
   );
 }
 
-type ThreadProps = { room: SdkRoom; threadId: string; view: (ev: MatrixEvent) => void; info: (ev: MatrixEvent) => void; profile: (id: string) => void; forward: (ev: MatrixEvent) => void };
-function ThreadView({ room, threadId, view, info, profile, forward }: ThreadProps) {
+type ThreadProps = { room: SdkRoom; threadId: string; view: (ev: MatrixEvent) => void; info: (ev: MatrixEvent) => void; reactions: (ev: MatrixEvent) => void; profile: (id: string) => void; forward: (ev: MatrixEvent) => void };
+function ThreadView({ room, threadId, view, info, reactions, profile, forward }: ThreadProps) {
   const [mode, setMode] = useState<Mode>(null);
   const [files, setFiles] = useState<File[]>([]);
   const jumper = useRef<Jumper>(null);
@@ -191,10 +194,11 @@ function ThreadView({ room, threadId, view, info, profile, forward }: ThreadProp
     edit: (ev: MatrixEvent) => setMode({ kind: "edit", ev }),
     view,
     info,
+    reactions,
     profile,
     forward,
     jump: (id: string) => void jumper.current?.(id),
-  }), [view, info, profile, forward]);
+  }), [view, info, reactions, profile, forward]);
   return (
     <DropZone onFiles={(f) => setFiles((x) => [...x, ...f])}>
       <Timeline room={room} thread={room.getThread(threadId)!} actions={actions} jumpRef={jumper} />

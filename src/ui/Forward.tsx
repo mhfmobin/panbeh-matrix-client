@@ -40,9 +40,11 @@ export function ForwardSheet({ evs, onClose, onSent }: { evs: MatrixEvent[]; onC
           {sel.includes(room.roomId) && <Icon name="check" size={18} />}
         </button>
       ))}
-      <button className="primary" disabled={!sel.length || busy} onClick={send}>
-        {busy ? "در حال ارسال…" : `ارسال به ${num(sel.length)} گفتگو`}
-      </button>
+      <div className="sheet-foot">
+        <button className="primary" disabled={!sel.length || busy} onClick={send}>
+          {busy ? "در حال ارسال…" : `ارسال به ${num(sel.length)} گفتگو`}
+        </button>
+      </div>
     </Sheet>
   );
 }

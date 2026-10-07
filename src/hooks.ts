@@ -7,16 +7,23 @@ import { isMuted } from "./notify.ts";
 
 type Emitter = { on(e: string, f: () => void): unknown; off(e: string, f: () => void): unknown };
 
-/** Re-render when any of `events` fire (React batches bursts). The SDK is the store. */
+/** Re-render when any of `events` fire, at most once a frame. The SDK is the store.
+ *  React only batches within one task; a page of history decrypts event by event across many, re-rendering each time. */
 export function useTick(emitter: Emitter | undefined, events: string[]) {
   const [, set] = useState(0);
   const key = events.join();
   useEffect(() => {
     if (!emitter) return;
-    const bump = () => set((n) => n + 1);
+    let cancel: (() => void) | null = null;
+    const bump = () => {
+      if (cancel) return;
+      const run = () => { cancel = null; set((n) => n + 1); };
+      if (document.hidden) { const t = setTimeout(run, 50); cancel = () => clearTimeout(t); } // no frames while hidden
+      else { const f = requestAnimationFrame(run); cancel = () => cancelAnimationFrame(f); }
+    };
     events.forEach((e) => emitter.on(e, bump));
-    bump(); // catch anything that fired between render and subscribe
-    return () => { events.forEach((e) => emitter.off(e, bump)); };
+    set((n) => n + 1); // catch anything that fired between render and subscribe
+    return () => { events.forEach((e) => emitter.off(e, bump)); cancel?.(); };
   }, [emitter, key]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 

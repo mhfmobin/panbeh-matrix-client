@@ -121,9 +121,11 @@ function GifGrid({ onPick }: { onPick: (g: Gif) => void }) {
   );
 }
 
-/** A gif in a message or the gif tab: plays by itself, looped and muted. */
-export function GifView({ c }: { c: Gif }) {
+/** A gif in a message or the gif tab: plays by itself, looped and muted. `onSize`: its real pixel size, once known. */
+export function GifView({ c, onSize }: { c: Gif; onSize?: (w: number, h: number) => void }) {
   const src = usePromise(mediaUrl(c as never)); // file carries the full IEncryptedFile; Gif only names its url
   if (!src) return <span className="shimmer" />;
-  return c.msgtype === "m.image" ? <img src={src} alt="" draggable={false} /> : <video src={src} autoPlay loop muted playsInline disablePictureInPicture />;
+  return c.msgtype === "m.image"
+    ? <img src={src} alt="" draggable={false} onLoad={(e) => onSize?.(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)} />
+    : <video src={src} autoPlay loop muted playsInline disablePictureInPicture onLoadedMetadata={(e) => onSize?.(e.currentTarget.videoWidth, e.currentTarget.videoHeight)} />;
 }
