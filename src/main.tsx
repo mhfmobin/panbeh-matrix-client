@@ -117,12 +117,11 @@ function Shell() {
     return () => clearTimeout(t);
   }, [room]);
   const shown = room ?? (leaving ? lastRoom.current : null);
-  if (!synced) return <Splash text="در حال همگام‌سازی گفتگوها…" />;
   const open = (id?: string) => { location.hash = id ?? ""; };
 
   return (
     <div className={"app" + (room ? " room-open" : "")}>
-      <Sidebar selected={roomId} onSelect={open} onSettings={() => setSettings(true)}
+      <Sidebar loading={!synced} selected={roomId} onSelect={open} onSettings={() => setSettings(true)}
         banner={<>
           {(sync === SyncState.Error || sync === SyncState.Reconnecting) && <div className="banner warn">در حال اتصال…</div>}
           {security !== "ok" && (
@@ -146,8 +145,7 @@ function Shell() {
 
 const Splash = ({ text }: { text: string }) => (
   <div className="splash wallpaper">
-    <div className="login-logo">✦</div><span><span className="spinner inline" /> {text}</span>
-    <div className="skeleton-list" aria-hidden>{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton-row" style={{ animationDelay: i * 0.12 + "s" }}><i className="skeleton avatar-sk" /><span><i className="skeleton" style={{ width: 60 - i * 6 + "%" }} /><i className="skeleton" style={{ width: 85 - i * 8 + "%" }} /></span></div>)}</div>
+    <div className="login-logo">✦</div><span className="spinner inline" /> {text}
   </div>
 );
 

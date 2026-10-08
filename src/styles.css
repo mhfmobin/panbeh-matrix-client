@@ -1147,7 +1147,7 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 /* chat list */
 .room-preview.changed { animation: preview-in 0.25s var(--ease-out); }
 .skeleton { display: block; height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--hover) 25%, color-mix(in srgb, var(--hover) 55%, var(--panel)) 50%, var(--hover) 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
-.skeleton-list { width: min(340px, 90vw); display: grid; gap: 14px; margin-top: 18px; }
+.skeleton-list { display: grid; gap: 16px; padding: 14px 18px; }
 .skeleton-row { display: flex; align-items: center; gap: 12px; animation: skeleton-in 0.4s var(--ease-out) both; }
 .skeleton-row > span { flex: 1; display: grid; gap: 8px; }
 .skeleton.avatar-sk { flex: none; width: 46px; height: 46px; border-radius: 50%; }

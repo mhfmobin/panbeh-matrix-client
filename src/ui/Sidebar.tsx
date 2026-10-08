@@ -20,11 +20,11 @@ import { MessageResults, requestJump } from "./Search.tsx";
 import { QuickSwitch } from "./QuickSwitch.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 
-type Props = { selected?: string; onSelect: (id: string) => void; onSettings: () => void; banner?: ReactNode };
+type Props = { loading?: boolean; selected?: string; onSelect: (id: string) => void; onSettings: () => void; banner?: ReactNode };
 const FOLDER_KEY = () => `panbeh.folder:${client.getUserId()}`;
 type Menu = { row: RoomRow; x: number; y: number };
 
-export function Sidebar({ selected, onSelect, onSettings, banner }: Props) {
+export function Sidebar({ loading, selected, onSelect, onSettings, banner }: Props) {
   const { rows, spaces } = useRooms();
   const [folder, setFolder] = useState(() => localStorage.getItem(FOLDER_KEY()) ?? "all");
   const [query, setQuery] = useState("");
@@ -161,8 +161,9 @@ export function Sidebar({ selected, onSelect, onSettings, banner }: Props) {
         </div>
       ) : (
         <div className="list-swipe" {...(inArchiveView ? {} : swipe)}>
-          {shown.length === 0
-            ? <p className="empty-list">هنوز چیزی اینجا نیست</p>
+          {shown.length === 0 && loading
+            ? <div className="skeleton-list" aria-busy aria-label="در حال همگام‌سازی گفتگوها…">{[0, 1, 2, 3, 4, 5, 6].map((i) => <div key={i} className="skeleton-row" style={{ animationDelay: i * 0.06 + "s" }}><i className="skeleton avatar-sk" /><span><i className="skeleton" style={{ width: 55 - (i % 3) * 8 + "%" }} /><i className="skeleton" style={{ width: 85 - (i % 4) * 10 + "%" }} /></span></div>)}</div>
+            : shown.length === 0 ? <p className="empty-list">هنوز چیزی اینجا نیست</p>
             : <Virtuoso className="room-list" data={shown} computeItemKey={(_, r) => r.id} itemContent={(_, r) => item(r)} />}
         </div>
       )}
