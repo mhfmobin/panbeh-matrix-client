@@ -4,9 +4,10 @@ import { Virtuoso } from "react-virtuoso";
 import { NotificationCountType, UserEvent, type Room } from "matrix-js-sdk";
 import { client, dmPeer } from "../matrix.ts";
 import { setMuted } from "../notify.ts";
-import { isCallStart, useRooms, useTick, type RoomRow } from "../hooks.ts";
+import { isCallStart, useFolderOrder, useRooms, useTick, type RoomRow } from "../hooks.ts";
 import { ARCHIVED, leaveAndForget, markRead, PINNED, setMarkedUnread, setTag } from "../chats.ts";
-import { BASE_FOLDERS, inFolder, isUnread, listTime, num } from "../logic.ts";
+import { applyFolderOrder, BASE_FOLDERS, inFolder, isUnread, listTime, moveFolder, num } from "../logic.ts";
+import { useSortableTabs } from "./useSortableTabs.ts";
 import { pushBack } from "../back.ts";
 import { setBadge } from "../desktop.ts";
 import { Icon } from "../icons.tsx";
@@ -30,7 +31,8 @@ export function Sidebar({ selected, onSelect, onSettings, banner }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [quick, setQuick] = useState(false);
 
-  const folders = [...BASE_FOLDERS, ...spaces.map((s) => ({ id: s.roomId, label: s.name }))];
+  const [order, setOrder] = useFolderOrder();
+  const folders = applyFolderOrder([...BASE_FOLDERS, ...spaces.map((s) => ({ id: s.roomId, label: s.name }))], order);
   const active = folders.some((f) => f.id === folder) ? folder : "all";
   const q = query.trim().toLowerCase();
   const archived = rows.filter((r) => inFolder(r, "archive"));
@@ -43,6 +45,7 @@ export function Sidebar({ selected, onSelect, onSettings, banner }: Props) {
   useEffect(() => () => setBadge(0), []); // signed out or switching accounts
 
   const nav = useRef<HTMLElement>(null);
+  const { dragging, barProps } = useSortableTabs(nav, folders.map((f) => f.id), (from, to) => setOrder(moveFolder(folders.map((f) => f.id), from, to)));
   // keep the active tab visible (e.g. a remembered space folder past the edge)
   useEffect(() => { nav.current?.querySelector(".on")?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, [active, q]);
 
@@ -113,13 +116,13 @@ export function Sidebar({ selected, onSelect, onSettings, banner }: Props) {
       {banner}
       {inArchiveView && <h2 className="archive-title">بایگانی</h2>}
       {!q && !inArchiveView && (
-        <nav className="folders" role="tablist" ref={nav}
+        <nav className={"folders" + (dragging ? " sorting" : "")} role="tablist" ref={nav} {...barProps}
           // mouse wheel scrolls the tabs sideways; RTL, so "down" moves toward the left end
           onWheel={(e) => { if (!e.deltaX) e.currentTarget.scrollBy({ left: -e.deltaY }); }}>
           {folders.map((f) => {
             const n = f.id === "unread" ? 0 : unreadIn(f.id);
             return (
-              <button key={f.id} role="tab" aria-selected={f.id === active} className={f.id === active ? "on" : ""} onClick={() => pick(f.id)}>
+              <button key={f.id} data-id={f.id} role="tab" aria-selected={f.id === active} className={(f.id === active ? "on" : "") + (f.id === dragging ? " dragging" : "")} onClick={() => pick(f.id)}>
                 {f.label}{n > 0 && <span className="folder-badge">{num(n)}</span>}
               </button>
             );

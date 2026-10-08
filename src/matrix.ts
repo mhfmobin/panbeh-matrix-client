@@ -639,6 +639,11 @@ export const isSavedGif = (c: Record<string, unknown>) => hasGif(savedGifs(), gi
 export const toggleGif = (c: Record<string, unknown>) =>
   isSavedGif(c) ? putGifs(withoutGif(savedGifs(), gifOf(c))) : saveGif(c);
 
+// ---------- folder order ----------
+const FOLDER_ORDER = "app.panbeh.folder_order";
+export const getFolderOrder = (): string[] | null => client.getAccountData(FOLDER_ORDER as never)?.getContent()?.order ?? null;
+export const setFolderOrder = (order: string[]) => client.setAccountData(FOLDER_ORDER as never, { order } as never);
+
 // ---------- forwarding ----------
 /** Content for a copy of `ev` in another room; remembers the original author across re-forwards. */
 export function forwardContent(ev: MatrixEvent): Record<string, unknown> {

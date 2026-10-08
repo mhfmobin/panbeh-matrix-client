@@ -172,6 +172,10 @@ button:disabled { opacity: 0.6; cursor: default; }
 }
 .folders button:hover { background: var(--hover); }
 .folders button.on { color: var(--accent); }
+/* reordering: the bar stops scrolling under the finger, the held tab floats above its neighbours */
+.folders.sorting { touch-action: none; user-select: none; -webkit-user-select: none; }
+.folders button { -webkit-touch-callout: none; }
+.folders button.dragging { z-index: 2; background: var(--hover); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25); transition: none !important; }
 .folders button.on::after {
   content: ""; position: absolute; left: 8px; right: 8px; bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: var(--accent);
 }
