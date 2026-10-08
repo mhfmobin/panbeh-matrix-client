@@ -24,6 +24,9 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import androidx.core.app.NotificationManagerCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
@@ -278,6 +281,19 @@ public class PanbehPlugin extends Plugin {
     public void setPip(PluginCall call) {
         MainActivity.pipAllowed = call.getBoolean("on", false);
         getActivity().runOnUiThread(() -> MainActivity.updatePip(getActivity()));
+        call.resolve();
+    }
+
+    /** A call's video fills the screen: status and navigation bars hidden (a swipe shows them for a moment). */
+    @PluginMethod
+    public void setImmersive(PluginCall call) {
+        boolean on = call.getBoolean("on", false);
+        getActivity().runOnUiThread(() -> {
+            WindowInsetsControllerCompat c = WindowCompat.getInsetsController(getActivity().getWindow(), getActivity().getWindow().getDecorView());
+            c.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            if (on) c.hide(WindowInsetsCompat.Type.systemBars());
+            else c.show(WindowInsetsCompat.Type.systemBars());
+        });
         call.resolve();
     }
 

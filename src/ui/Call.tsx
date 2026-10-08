@@ -9,7 +9,7 @@ import { answer, call, decline, flipCam, getCall, handOf, hangup, loadDevices, m
 import { usePromise, useTick } from "../hooks.ts";
 import { useExit } from "./useDismiss.ts";
 import { fmtDuration, num } from "../logic.ts";
-import { isNative, nativeAudioRoutes, nativePip, type AudioRoute } from "../native.ts";
+import { isNative, nativeAudioRoutes, nativeImmersive, nativePip, type AudioRoute } from "../native.ts";
 import { onPickSource, type ShareSource } from "../desktop.ts";
 import { pushBack } from "../back.ts";
 import { Icon, type IconName } from "../icons.tsx";
@@ -185,6 +185,35 @@ function CallScreen({ a, closing }: { a: Active; closing?: boolean }) {
   }, [hasVideo]);
   const [panel, setPanel] = useState<"devices" | "people" | "reactions" | "emoji" | { routes: AudioRoute[]; current: number } | null>(null);
   const toggle = (p: "devices" | "people" | "reactions") => setPanel(panel === p ? null : p);
+  // a video fills the screen (spotlit, or the other side of a 1:1): edge to edge, controls float over it and hide after a while, a tap brings them back
+  const immersive = !!(main ?? (pip ? tiles.find((t) => !t.local) : undefined))?.video;
+  const [bare, setBare] = useState(false);
+  const [poke, setPoke] = useState(0);
+  useEffect(() => {
+    if (!immersive || bare || panel) return;
+    const t = setTimeout(() => setBare(true), 4000);
+    return () => clearTimeout(t);
+  }, [immersive, bare, panel, poke]);
+  useEffect(() => { if (!immersive) setBare(false); }, [immersive]);
+  useEffect(() => {
+    if (!isNative || !immersive) return;
+    nativeImmersive(true);
+    return () => nativeImmersive(false);
+  }, [immersive]);
+  const screen = useRef<HTMLDivElement>(null);
+  useEffect(() => { // how tall the floating controls are, for what sits just above them
+    const el = screen.current, bar = el?.querySelector<HTMLElement>(".call-controls");
+    if (!immersive || !el || !bar) return;
+    const ro = new ResizeObserver(() => el.style.setProperty("--controls-h", bar.offsetHeight + "px"));
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, [immersive]);
+  const onTap = (e: React.MouseEvent) => {
+    if (!immersive) return;
+    if (bare) setBare(false);
+    else if ((e.target as Element).closest("button, .call-panel-backdrop, .react-picker")) setPoke((n) => n + 1); // using the controls keeps them up
+    else setBare(true);
+  };
   // Android: with a headset around, the speaker button picks where audio goes; otherwise it just toggles the speaker
   const speakerBtn = async () => {
     const r = await nativeAudioRoutes();
@@ -194,7 +223,7 @@ function CallScreen({ a, closing }: { a: Active; closing?: boolean }) {
   const tile = (t: TileData, focused = false) =>
     <Tile key={t.key} room={a.room} t={t} mirror={t.local && !t.screen && a.facing === "user"} focused={focused} onFocus={() => setFocus(focused ? null : t.key)} />;
   return (
-    <div className={"call-screen" + (closing ? " closing" : "")} role="dialog" aria-label="تماس">
+    <div className={"call-screen" + (closing ? " closing" : "") + (immersive ? " immersive" : "") + (bare ? " bare" : "")} role="dialog" aria-label="تماس" onClick={onTap} ref={screen}>
       <header className="call-head">
         <button className="icon-btn" onClick={hide} title="کوچک کردن" aria-label="کوچک کردن"><Icon name="down" /></button>
         <div><b>{a.room.name}</b><span>{status}</span></div>

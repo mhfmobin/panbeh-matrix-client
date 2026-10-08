@@ -29,6 +29,7 @@ interface PanbehPlugin {
   audioRoutes(): Promise<{ routes: AudioRoute[]; current: number }>;
   setAudioRoute(p: { id: number }): Promise<void>;
   setPip(p: { on: boolean }): Promise<void>;
+  setImmersive(p: { on: boolean }): Promise<void>;
   requestFullScreen(): Promise<void>;
   takeLaunchCall(): Promise<Partial<CallAction>>;
   saveFile(p: { name: string; mime: string; data: string }): Promise<void>;
@@ -115,6 +116,8 @@ export const nativeAudioRoutes = () => plugin.audioRoutes().catch(() => ({ route
 export const nativeSetAudioRoute = (id: number) => plugin.setAudioRoute({ id });
 /** A video call is on screen: leaving the app shrinks it to picture-in-picture. */
 export const nativePip = (on: boolean) => { if (!headless) plugin.setPip({ on }).catch(() => {}); };
+/** A call's video fills the screen: the system bars hide. */
+export const nativeImmersive = (on: boolean) => { if (!headless) plugin.setImmersive({ on }).catch(() => {}); };
 /** Android 14+: lets the user allow ringing over the lock screen. */
 export const requestFullScreen = () => plugin.requestFullScreen();
 
