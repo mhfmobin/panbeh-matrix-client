@@ -4,6 +4,7 @@ import { downsample, fmtDuration, num } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 import { audioDuration, errText, isVoice, senderName } from "./common.tsx";
 import { client, mediaUrl } from "../matrix.ts";
+import { eventsAround } from "../hooks.ts";
 import { alertDialog } from "./dialog.tsx";
 import { AUDIO_BPS } from "../call.ts";
 import { loadPrefs } from "./Settings.tsx";
@@ -57,8 +58,7 @@ async function start(t: Track) {
 
 function playNext(ev: MatrixEvent) {
   const room = client.getRoom(ev.getRoomId());
-  const root = ev.threadRootId;
-  const evs = (root && root !== ev.getId() ? room?.getThread(root)?.liveTimeline.getEvents() : room?.getLiveTimeline().getEvents()) ?? [];
+  const evs = room ? eventsAround(room, ev) : [];
   const next = evs.slice(evs.findIndex((e) => e.getId() === ev.getId()) + 1).find((e) => e.getContent().msgtype === "m.audio" && !e.isRedacted());
   if (evs.some((e) => e.getId() === ev.getId()) && next) return void start(trackFor(next));
   set({ pos: 0, state: "paused" });

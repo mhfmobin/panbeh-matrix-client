@@ -1,9 +1,26 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { ClientEvent, EventType, M_POLL_START, RoomEvent, RoomMemberEvent, RoomStateEvent, UserEvent, type Room, type MatrixEvent } from "matrix-js-sdk";
+import { ClientEvent, EventTimeline, EventType, M_POLL_START, RoomEvent, RoomMemberEvent, RoomStateEvent, UserEvent, type Room, type MatrixEvent } from "matrix-js-sdk";
 import { client, getFolderOrder, getUploads, setFolderOrder, subscribeUploads } from "./matrix.ts";
 import { byListOrder, lastSeen, spaceRooms, type RoomInfo } from "./logic.ts";
 import { ARCHIVED, hasTag, isMarkedUnread, PINNED } from "./chats.ts";
 import { isMuted } from "./notify.ts";
+
+/** The run of linked timelines `tl` belongs to, oldest first. A window opened around an old event (a pin, a reply)
+ *  is its own timeline until paging forwards reaches the live one; the SDK links them then. */
+export function chainOf(tl: EventTimeline) {
+  let first = tl;
+  for (let p; (p = first.getNeighbouringTimeline(EventTimeline.BACKWARDS)); ) first = p;
+  const out = [first];
+  for (let n; (n = out.at(-1)!.getNeighbouringTimeline(EventTimeline.FORWARDS)); ) out.push(n);
+  return out;
+}
+
+/** Loaded events around `ev`: its thread's, or the main-timeline run holding it. */
+export function eventsAround(room: Room, ev: MatrixEvent) {
+  const root = ev.threadRootId;
+  if (root && root !== ev.getId()) return room.getThread(root)?.liveTimeline.getEvents() ?? [];
+  return chainOf(room.getUnfilteredTimelineSet().getTimelineForEvent(ev.getId()!) ?? room.getLiveTimeline()).flatMap((t) => t.getEvents());
+}
 
 type Emitter = { on(e: string, f: () => void): unknown; off(e: string, f: () => void): unknown };
 

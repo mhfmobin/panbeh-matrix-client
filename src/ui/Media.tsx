@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import { createPortal } from "react-dom";
 import { Direction, Filter, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { avatarUrl, client, mediaUrl } from "../matrix.ts";
-import { usePromise } from "../hooks.ts";
+import { eventsAround, usePromise } from "../hooks.ts";
 import { contentLinks, fmtDuration, mediaKind, num, stamp, type MediaKind } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 import { errText, previewText, senderName, Sheet, toast } from "./common.tsx";
@@ -20,9 +20,7 @@ const isVisual = (e: MatrixEvent) => !e.isRedacted() && ["m.image", "m.video"].i
 
 /** Images/videos around `ev` in its loaded timeline (the thread's, for thread replies), oldest first. */
 export function timelineMedia(room: Room, ev: MatrixEvent) {
-  const root = ev.threadRootId;
-  const evs = (root && root !== ev.getId() ? room.getThread(root)?.liveTimeline.getEvents() : room.getLiveTimeline().getEvents()) ?? [];
-  const list = evs.filter(isVisual);
+  const list = eventsAround(room, ev).filter(isVisual);
   return list.some((e) => e.getId() === ev.getId()) ? list : [ev]; // e.g. a sticker
 }
 
