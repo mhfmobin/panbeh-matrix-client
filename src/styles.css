@@ -1016,6 +1016,7 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .call-stats { position: absolute; top: 46px; left: 8px; max-width: calc(100% - 16px); padding: 3px 7px; border-radius: 8px; background: rgba(0, 0, 0, 0.6); font: 11px/1.4 ui-monospace, monospace; pointer-events: none; }
 .call-strip .call-stats { top: 4px; left: 4px; font-size: 9px; }
 .call-head > div[role="button"] { cursor: pointer; }
+.call-chip { margin-inline-start: auto; flex: none; padding: 4px 10px; border-radius: 12px; background: rgba(244, 180, 0, 0.25); color: #ffd666; font-size: 12px; }
 .call-hand { position: absolute; top: 8px; inset-inline-start: 8px; font-size: 22px; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6)); }
 .call-reaction { position: absolute; inset: 0; display: grid; place-items: center; font-size: 64px; pointer-events: none; animation: reaction-float 3s ease-out forwards; }
 @keyframes reaction-float { 0% { transform: scale(0.4); opacity: 0; } 15% { transform: scale(1); opacity: 1; } 80% { opacity: 1; } 100% { transform: translateY(-30%); opacity: 0; } }

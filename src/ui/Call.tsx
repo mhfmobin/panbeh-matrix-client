@@ -5,7 +5,7 @@ import { CallState } from "matrix-js-sdk/lib/webrtc/call.js";
 import type { CallFeed } from "matrix-js-sdk/lib/webrtc/callFeed.js";
 import { ConnectionQuality, ConnectionState, Track, type VideoTrack } from "livekit-client";
 import { allowCalls, client, isDirect } from "../matrix.ts";
-import { answer, call, decline, flipCam, getCall, handOf, hangup, loadDevices, membershipOf, minimize, myMedia, ourTransport, react, reactionOf, REACTIONS, setAudioRoute, setDevice, setNoiseSuppression, toggleCam, toggleHand, toggleMic, toggleScreen, toggleSpeaker, useCall, type Active, type Incoming } from "../call.ts";
+import { answer, call, decline, flipCam, getCall, handOf, hangup, loadDevices, membershipOf, minimize, myMedia, ourTransport, react, reactionOf, REACTIONS, setAudioRoute, setDevice, setLowData, setNoiseSuppression, toggleCam, toggleHand, toggleMic, toggleScreen, toggleSpeaker, useCall, type Active, type Incoming } from "../call.ts";
 import { usePromise, useTick } from "../hooks.ts";
 import { useExit } from "./useDismiss.ts";
 import { fmtDuration, fmtStats, num, parseStats, type Stats } from "../logic.ts";
@@ -228,6 +228,7 @@ function CallScreen({ a, closing }: { a: Active; closing?: boolean }) {
         <button className="icon-btn" onClick={hide} title="کوچک کردن" aria-label="کوچک کردن"><Icon name="down" /></button>
         <div role="button" tabIndex={0} aria-pressed={stats} title="آمار اتصال" onClick={() => setStats(!stats)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setStats(!stats); }}>
           <b>{a.room.name}</b><span>{status}</span></div>
+        {a.lowData && <button className="call-chip" onClick={() => run(setLowData(false, true))} title="خاموش کردن تصویر کم‌مصرف برای این تماس">کم‌مصرف ✕</button>}
       </header>
       {main ? (
         <div className="call-grid focus">
