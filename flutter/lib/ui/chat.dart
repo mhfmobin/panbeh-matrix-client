@@ -11,11 +11,18 @@ import '../theme.dart';
 import 'common.dart';
 import 'composer.dart';
 import 'message.dart';
+import 'search.dart';
+import 'thread.dart';
+import 'forward.dart';
+import 'pinned.dart';
+import 'poll.dart';
 import 'voice.dart';
 
 class ChatPage extends StatefulWidget {
   final Room room;
-  const ChatPage({super.key, required this.room});
+  final String? eventId; // jump to this message once loaded (search result, link)
+  final bool fromSearch; // looks further back
+  const ChatPage({super.key, required this.room, this.eventId, this.fromSearch = false});
   @override
   State<ChatPage> createState() => _ChatPageState();
 }
@@ -35,6 +42,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Mode? _mode;
   List<TimelineRow> _rows = [];
   String? _unreadAfter, _bottomId, _sentRead, _flash;
+  Set<String>? _sel; // selected event ids (multi-select mode)
   bool _atBottom = true, _far = false, _resumed = true, _busy = false;
   int _triedAt = -1;
   ({String label, bool show}) _floating = (label: '', show: false);
@@ -57,7 +65,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       _bottomId = (anchored ?? tl.events.firstOrNull)?.eventId;
       setState(() {});
       // opening at the divider mustn't mark everything read
-      if (_unreadAfter != null) WidgetsBinding.instance.addPostFrameCallback((_) => _reveal('unread', .3));
+      final go = widget.eventId;
+      if (go != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _jump(go, pages: widget.fromSearch ? 50 : 10));
+      } else if (_unreadAfter != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _reveal('unread', .3));
+      }
     });
   }
 
@@ -81,7 +94,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   // ---------- data ----------
 
-  static bool _shown(Event ev) => isMessage(ev) || noticeText(ev) != null;
+  // thread replies live in their thread, not the main timeline
+  static bool _shown(Event ev) => (isMessage(ev) || noticeText(ev) != null) && ev.relationshipType != RelationshipTypes.thread;
   static String _rowId(Event ev) => ev.transactionId ?? ev.eventId; // stable across local echo → remote echo, so rows don't remount
   static Event? _byRowId(List<Event> evs, String id) => evs.where((e) => _rowId(e) == id).firstOrNull;
 
@@ -193,20 +207,29 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _jump(String eventId) async {
+  Future<void> _jump(String eventId, {int pages = 10}) async {
     final tl = _tl;
     if (tl == null) return;
-    for (var i = 0; i < 10 && !tl.events.any((e) => e.eventId == eventId) && tl.canRequestHistory; i++) {
+    for (var i = 0; i < pages && mounted && !tl.events.any((e) => e.eventId == eventId) && tl.canRequestHistory; i++) {
+      while (_busy && mounted) { await Future<void>.delayed(const Duration(milliseconds: 100)); }
       await _older();
     }
     final ev = tl.events.where((e) => e.eventId == eventId).firstOrNull;
     if (!mounted) return;
     if (ev == null) return toast(context, 'این پیام خیلی قدیمی است');
+    if (ev.relationshipType == RelationshipTypes.thread) return openThread(context, room, ev.relationshipEventId!); // replies aren't in this timeline
     setState(() => _flash = _rowId(ev));
     _flashT?.cancel();
     _flashT = Timer(const Duration(milliseconds: 1600), () { if (mounted) setState(() => _flash = null); });
     await WidgetsBinding.instance.endOfFrame;
     await _reveal(_rowId(ev), .5);
+  }
+
+  Future<void> _search() async {
+    final tl = _tl;
+    if (tl == null) return;
+    final id = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => SearchPage(room: room, timeline: tl)));
+    if (id != null && mounted) _jump(id, pages: 50);
   }
 
   void _toBottom() => _sc.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
@@ -229,8 +252,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final t = context.tk;
     final tl = _tl;
     final invite = room.membership == Membership.invite;
-    return Scaffold(
-      appBar: AppBar(
+    return PopScope(canPop: _sel == null, onPopInvokedWithResult: (didPop, _) { if (!didPop) setState(() => _sel = null); }, child: Scaffold(
+      appBar: _sel != null && tl != null ? selectionBar(context, tl, [for (final e in tl.events.reversed) if (_sel!.contains(e.eventId)) e], () => setState(() => _sel = null)) : AppBar(
         titleSpacing: 0,
         title: GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -246,6 +269,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           ]),
         ),
         actions: [
+          if (!invite) IconButton(icon: const Icon(Icons.search), tooltip: 'جستجو', onPressed: _search),
           if (!invite) PopupMenuButton<String>(
             onSelected: (_) => attempt(context, () => setMuted(room, !isMuted(room))).then((_) { if (mounted) setState(() {}); }),
             itemBuilder: (_) => [PopupMenuItem(value: 'mute', child: Text(isMuted(room) ? 'صدادار' : 'بی‌صدا'))],
@@ -254,10 +278,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ),
       body: invite ? _Invite(room) : Column(children: [
         NowPlaying(room: room, onJump: _jump),
+        PinnedBar(room: room, onJump: _jump),
         Expanded(child: Wallpaper(child: tl == null ? const SizedBox.shrink() : _timeline(tl, t))),
         if (tl != null) _bottomBar(tl),
       ]),
-    );
+    ));
   }
 
   Widget _timeline(Timeline tl, Tokens t) {
@@ -302,7 +327,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       }
     });
 
-    final actions = MsgActions(reply: (e) => setState(() => _mode = Mode.reply(e)), edit: (e) => setState(() => _mode = Mode.edit(e)), jump: _jump);
+    final actions = MsgActions(reply: (e) => setState(() => _mode = Mode.reply(e)), edit: (e) => setState(() => _mode = Mode.edit(e)), jump: _jump,
+      thread: (e) => openThread(context, room, e.eventId),
+      select: (e) => setState(() { // toggle; empty = leave selection mode
+        final n = {...?_sel};
+        if (!n.remove(e.eventId)) n.add(e.eventId);
+        _sel = n.isEmpty ? null : n;
+      }), selection: _sel);
     return Stack(children: [
       ListView.builder(
         key: _listKey, controller: _sc, reverse: true,
@@ -356,7 +387,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ]);
     }
     if (!room.canSendDefaultMessages) return bar([Text('فقط مدیران می‌توانند در این گروه پیام بفرستند', style: TextStyle(color: t.muted))]);
-    return Composer(room: room, timeline: tl, mode: _mode, onMode: (m) => setState(() => _mode = m));
+    return Composer(room: room, timeline: tl, mode: _mode, onMode: (m) => setState(() => _mode = m), onPoll: () => showPollForm(context, room));
   }
 
   Future<void> _goNew(String upgrader, String to) async {

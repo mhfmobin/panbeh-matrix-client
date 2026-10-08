@@ -8,11 +8,14 @@ import '../chats.dart';
 import '../logic.dart';
 import '../main.dart';
 import '../matrix.dart';
+import '../open_target.dart';
 import '../prefs.dart';
+import '../share.dart';
 import '../theme.dart';
 import 'chat.dart';
 import 'common.dart';
 import 'encryption.dart';
+import 'search.dart';
 import 'settings.dart';
 import 'voice.dart';
 
@@ -50,6 +53,8 @@ class _ChatListState extends State<ChatList> with TickerProviderStateMixin {
     super.initState();
     recovery.value = null;
     refreshRecovery(); // the first sync is done by the time the list shows
+    initLinks(); // so links and shares that came in before it are opened now
+    initShare();
     subs.add(client.onSync.stream.listen((_) => tick()));
     subs.add(client.onSyncStatus.stream.listen((s) {
       connecting = s.status == SyncStatus.error;
@@ -218,8 +223,13 @@ class _ChatListState extends State<ChatList> with TickerProviderStateMixin {
       );
     }
 
+    final matches = searching ? visible.where((r) => q.isEmpty || normalize(roomTitle(r.room)).contains(q)).toList() : <RoomRow>[];
     final Widget body = searching
-        ? list(visible.where((r) => q.isEmpty || normalize(roomTitle(r.room)).contains(q)).toList())
+        // from 2 characters, messages from all chats follow the matching chats
+        ? q.length < 2 ? list(matches) : Column(children: [
+            if (matches.isNotEmpty) ConstrainedBox(constraints: BoxConstraints(maxHeight: (matches.length * 72.0).clamp(0, MediaQuery.sizeOf(context).height * .4)), child: list(matches)),
+            Expanded(child: MessageResults(term: search.text, onPick: (ev) => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => ChatPage(room: ev.room, eventId: ev.eventId, fromSearch: true))))),
+          ])
         : archive
             ? list(archived)
             : TabBarView(controller: tabs, children: [

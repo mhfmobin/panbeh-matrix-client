@@ -543,14 +543,11 @@ class AttachButton extends StatelessWidget {
   final Event? replyTo;
   final VoidCallback onSent;
   final VoidCallback? onPoll;
-  const AttachButton({super.key, required this.room, this.replyTo, required this.onSent, this.onPoll});
+  final String? threadId;
+  const AttachButton({super.key, required this.room, this.replyTo, required this.onSent, this.onPoll, this.threadId});
 
   Future<void> _review(BuildContext context, List<Picked> files) async {
-    if (files.isEmpty || !context.mounted) return;
-    final r = await Navigator.push<_Send>(context, MaterialPageRoute(fullscreenDialog: true, builder: (_) => _SendPage(files)));
-    if (r == null || !context.mounted) return;
-    sendMedia(room, r.files, caption: r.caption, asFile: r.asFile, asGif: r.asGif, replyTo: replyTo, onError: (e) { if (context.mounted) alert(context, errText(e)); });
-    onSent();
+    if (await reviewAndSend(context, room, files, replyTo: replyTo, threadId: threadId)) onSent();
   }
 
   Future<void> _run(BuildContext context, Future<List<Picked>> Function() pick) async {
@@ -593,7 +590,7 @@ class AttachButton extends StatelessWidget {
       final p = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 15)));
       if (!context.mounted) return;
       if (!await confirm(context, 'موقعیت فعلی شما (با دقت حدود ${faNum(p.accuracy.round())} متر) ارسال شود؟', ok: 'ارسال') || !context.mounted) return;
-      await sendLocation(room, p.latitude, p.longitude, p.accuracy.round(), replyTo: replyTo);
+      await sendLocation(room, p.latitude, p.longitude, p.accuracy.round(), replyTo: replyTo, threadId: threadId);
       onSent();
     } on TimeoutException {
       if (context.mounted) alert(context, 'موقعیت مکانی پیدا نشد.');
@@ -626,6 +623,15 @@ class AttachButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       IconButton(icon: Icon(Icons.attach_file, color: context.tk.muted), tooltip: 'پیوست', onPressed: () => _sheet(context));
+}
+
+/// The send page for already-picked files (also the share target's entry point). True if they were sent.
+Future<bool> reviewAndSend(BuildContext context, Room room, List<Picked> files, {Event? replyTo, String? threadId}) async {
+  if (files.isEmpty || !context.mounted) return false;
+  final r = await Navigator.push<_Send>(context, MaterialPageRoute(fullscreenDialog: true, builder: (_) => _SendPage(files)));
+  if (r == null || !context.mounted) return false;
+  sendMedia(room, r.files, caption: r.caption, asFile: r.asFile, asGif: r.asGif, replyTo: replyTo, threadId: threadId, onError: (e) { if (context.mounted) alert(context, errText(e)); });
+  return true;
 }
 
 /// Full-screen "send these" page: thumbnails, caption, and the two switches (the web app's SendFiles).

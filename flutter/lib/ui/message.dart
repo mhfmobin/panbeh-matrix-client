@@ -14,13 +14,24 @@ import 'encryption.dart';
 import 'voice.dart';
 import 'link_preview.dart';
 import 'media.dart';
+import 'emoji.dart' show pickEmoji;
+import 'forward.dart';
+import 'pinned.dart';
+import 'poll.dart';
+import 'reactions.dart';
+import 'seen_by.dart';
+import 'thread.dart';
+import '../open_target.dart';
 
 enum Tick { none, sending, sent, read, failed }
 
 class MsgActions {
   final void Function(Event ev) reply, edit;
   final void Function(String id) jump;
-  const MsgActions({required this.reply, required this.edit, required this.jump});
+  final void Function(Event ev)? thread; // null inside a thread itself
+  final void Function(Event ev)? select; // toggles multi-select membership
+  final Set<String>? selection; // event ids; non-null = selecting
+  const MsgActions({required this.reply, required this.edit, required this.jump, this.thread, this.select, this.selection});
 }
 
 const editable = ['m.text', 'm.emote', 'm.notice'];
@@ -41,7 +52,9 @@ String copyTextOf(Event ev) {
 }
 
 Future<void> openLink(BuildContext context, String href) async {
-  if (parseMatrixLink(href) != null || href.startsWith('matrix:')) return toast(context, 'به‌زودی');
+  final target = parseMatrixLink(href);
+  if (target != null) return openTarget(context, target);
+  if (href.startsWith('matrix:')) return toast(context, 'باز کردن پیوند ممکن نشد');
   final ok = await launchUrl(Uri.parse(linkHref(href)), mode: LaunchMode.externalApplication).catchError((_) => false);
   if (!ok && context.mounted) toast(context, 'باز کردن پیوند ممکن نشد');
 }
@@ -74,6 +87,8 @@ class _ChatMessageState extends State<ChatMessage> {
   bool get mine => ev.senderId == me();
   bool get live => ev.status.isSynced && !ev.status.isError;
 
+  bool get selecting => widget.actions.selection != null;
+
   void _end() {
     final go = _dx <= -_swipeAt;
     setState(() { _dragging = false; _dx = 0; _crossed = false; });
@@ -83,19 +98,32 @@ class _ChatMessageState extends State<ChatMessage> {
   void _menu(Offset at) {
     if (!live) return;
     final disp = ev.getDisplayEvent(widget.timeline);
-    final text = copyTextOf(disp);
+    final text = copyTextOf(disp), pinned = pinnedIds(ev.room).contains(ev.eventId);
     HapticFeedback.mediumImpact();
     showMsgMenu(context, at, [
       MenuItem(Icons.reply, 'پاسخ', () => widget.actions.reply(ev)),
+      if (widget.actions.thread != null) MenuItem(Icons.forum_outlined, 'پاسخ در رشته', () => widget.actions.thread!(ev)),
       if (text.isNotEmpty) MenuItem(Icons.copy_outlined, 'کپی', () => copyText(context, text)),
+      if (!pollStart.contains(ev.type)) MenuItem(Icons.forward, 'هدایت', () => showForward(context, [disp])),
+      if (canPin(ev.room)) MenuItem(pinned ? Icons.push_pin : Icons.push_pin_outlined, pinned ? 'برداشتن سنجاق' : 'سنجاق', () => attempt(context, () => togglePin(ev.room, ev.eventId))),
+      if (reactionsOf(ev, widget.timeline).isNotEmpty) MenuItem(Icons.emoji_emotions_outlined, 'واکنش‌ها', () => showReactors(context, ev, widget.timeline)),
+      if (mine) MenuItem(Icons.done_all, 'دیده شده', () => showSeenBy(context, ev, widget.timeline)),
       ...mediaMenu(context, ev, disp),
       if (mine && editable.contains(disp.content['msgtype'])) MenuItem(Icons.edit_outlined, 'ویرایش', () => widget.actions.edit(ev)),
+      if (widget.actions.select != null) MenuItem(Icons.check_circle_outline, 'انتخاب', () => widget.actions.select!(ev)),
       if (ev.canRedact) MenuItem(Icons.delete_outline, 'حذف', () async {
         if (await confirm(context, 'این پیام برای همه حذف شود؟', ok: 'حذف', danger: true) && mounted) {
           await attempt(context, () async { await ev.room.redactEvent(ev.eventId); });
         }
       }, danger: true),
-    ]);
+    ], header: (close) => QuickReactions(
+      onPick: (k) { close(); toggleReaction(context, ev, widget.timeline, k); },
+      onMore: () async {
+        close();
+        final k = await pickEmoji(context);
+        if (k != null && mounted) toggleReaction(context, ev, widget.timeline, k);
+      },
+    ));
   }
 
   void _failed() => showModalBottomSheet<void>(context: context, builder: (c) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -123,9 +151,10 @@ class _ChatMessageState extends State<ChatMessage> {
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onLongPressStart: (d) => _menu(d.globalPosition),
+        onTap: selecting && live ? () => widget.actions.select!(ev) : null, // taps only toggle while selecting
         onHorizontalDragStart: (_) => setState(() => _dragging = true),
         onHorizontalDragUpdate: (d) {
-          if (!live) return;
+          if (!live || selecting) return;
           // swipe LEFT to reply (Telegram's direction); resistance past the max
           final raw = (-_dx + -d.delta.dx).clamp(0.0, double.infinity);
           setState(() => _dx = -(raw <= _swipeMax ? raw : _swipeMax + (raw - _swipeMax) * .25).clamp(0.0, _swipeMax + 30));
@@ -138,7 +167,7 @@ class _ChatMessageState extends State<ChatMessage> {
         onHorizontalDragCancel: _end,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 300),
-          color: widget.flash ? t.accent.withValues(alpha: .25) : Colors.transparent,
+          color: widget.flash || (widget.actions.selection?.contains(ev.eventId) ?? false) ? t.accent.withValues(alpha: .25) : Colors.transparent,
           padding: EdgeInsets.fromLTRB(8, widget.first ? 5 : 1.5, 8, widget.last ? 3 : 1.5),
           child: Stack(children: [
             if (live) Positioned.fill(child: Align(alignment: Alignment.centerRight, child: Opacity(
@@ -147,24 +176,37 @@ class _ChatMessageState extends State<ChatMessage> {
             AnimatedContainer(
               duration: _dragging ? Duration.zero : const Duration(milliseconds: 200),
               transform: Matrix4.translationValues(_dx, 0, 0),
-              child: Row(
+              child: AbsorbPointer(absorbing: selecting, child: Row(
                 mainAxisAlignment: mine ? MainAxisAlignment.end : MainAxisAlignment.start,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  if (selecting) Padding(padding: const EdgeInsets.only(right: 6, bottom: 4), child: _SelectMark(widget.actions.selection!.contains(ev.eventId))),
                   if (showAvatar) SizedBox(width: 38, child: widget.last ? Avatar(mxc: user.avatarUrl, name: senderName(ev), id: ev.senderId, size: 34) : null),
                   Flexible(child: ConstrainedBox(
                     constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * .8),
-                    child: DecoratedBox(decoration: BoxDecoration(color: mine ? t.bubbleOut : t.bubbleIn, borderRadius: radius,
-                      boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 1, offset: Offset(0, 1))]), child: bubble),
+                    child: Column(crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                      DecoratedBox(decoration: BoxDecoration(color: mine ? t.bubbleOut : t.bubbleIn, borderRadius: radius,
+                        boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 1, offset: Offset(0, 1))]), child: bubble),
+                      ReactionChips(ev, widget.timeline),
+                    ]),
                   )),
                 ],
-              ),
+              )),
             ),
           ]),
         ),
       ),
     );
   }
+}
+
+class _SelectMark extends StatelessWidget {
+  final bool on;
+  const _SelectMark(this.on);
+  @override
+  Widget build(BuildContext context) => Container(width: 22, height: 22,
+    decoration: BoxDecoration(shape: BoxShape.circle, color: on ? context.tk.accent : Colors.transparent, border: Border.all(color: on ? context.tk.accent : context.tk.muted, width: 1.5)),
+    child: on ? const Icon(Icons.check, size: 15, color: Colors.white) : null);
 }
 
 class _Bubble extends StatelessWidget {
@@ -204,6 +246,7 @@ class _Bubble extends StatelessWidget {
     if (mc != null) text = mc.caption;
     final inset = mc?.visual == true, overlay = inset && mc!.caption.isEmpty; // overlay: no caption, so the time sits on the picture
     Widget pad(Widget w) => inset ? Padding(padding: const EdgeInsets.fromLTRB(7, 3, 7, 3), child: w) : w;
+    final poll = pollStart.contains(ev.type);
     final dir = textDir(text) == 'rtl' ? TextDirection.rtl : TextDirection.ltr;
     // the time/ticks sit on the side the text leaves free
     final audio = ev.type == EventTypes.Message && c['msgtype'] == 'm.audio';
@@ -211,14 +254,15 @@ class _Bubble extends StatelessWidget {
 
     final mcol = overlay ? Colors.white : metaColor;
     final meta = Row(mainAxisSize: MainAxisSize.min, children: [
+      if (pinnedIds(ev.room).contains(ev.eventId)) Padding(padding: const EdgeInsetsDirectional.only(end: 3), child: Icon(Icons.push_pin, size: 11, color: mcol)),
       if (edited) Text('ویرایش‌شده  ', style: TextStyle(fontSize: 11, color: mcol)),
       Text(clock(ev.originServerTs.millisecondsSinceEpoch), style: TextStyle(fontSize: 11, color: mcol)),
       if (mine) ...[const SizedBox(width: 3), _TickIcon(s.widget.tick, mcol, t.readTick, s._failed)],
     ]);
-    final metaW = (mine ? 62.0 : 40.0) + (edited ? 52 : 0);
+    final metaW = (mine ? 62.0 : 40.0) + (edited ? 52 : 0) + (pinnedIds(ev.room).contains(ev.eventId) ? 14 : 0);
 
     final trailing = WidgetSpan(child: SizedBox(width: metaW, height: 14));
-    final body = overlay ? <Widget>[] : blocks != null
+    final body = overlay || poll ? <Widget>[] : blocks != null
         ? [for (var i = 0; i < blocks.length; i++)
             blocks[i] is List<InlineSpan>
                 ? Text.rich(TextSpan(children: [...(blocks[i] as List<InlineSpan>), if (i == blocks.length - 1) trailing]), textDirection: dir, style: base)
@@ -239,10 +283,13 @@ class _Bubble extends StatelessWidget {
           if (!mine && isGroupChat(ev.room) && first)
             pad(Padding(padding: const EdgeInsets.only(bottom: 2), child: Text(senderName(ev), textDirection: TextDirection.ltr,
               style: TextStyle(color: colorFor(ev.senderId), fontWeight: FontWeight.w600, fontSize: 13.5)))),
+          if (c['app.panbeh.forwarded'] is Map) pad(_Forwarded(c['app.panbeh.forwarded'] as Map, ev.room, t.accent, mine)),
           if (replyId != null) pad(_Quote(s.widget.timeline, replyId, mine, s.widget.actions.jump)),
           if (mc != null) mc.widget,
+          if (poll) ...[PollBody(ev, s.widget.timeline, mine: mine), const SizedBox(height: 16)],
           if (audio) VoiceBubble(ev: ev, timeline: s.widget.timeline, mine: mine, metaW: metaW) else ...body.map(pad),
           if (ev.type == EventTypes.Message) LinkPreview(disp),
+          if (s.widget.actions.thread != null) ThreadSummary(root: ev, timeline: s.widget.timeline, mine: mine, onTap: () => s.widget.actions.thread!(ev)),
           if (lastIsBlock) const SizedBox(height: 16),
         ])),
         Positioned(bottom: overlay ? 6 : inset ? 3 : 0, left: overlay ? null : metaLeft ? (inset ? 7 : 0) : null, right: overlay ? 6 : metaLeft ? null : (inset ? 7 : 0),
@@ -252,6 +299,23 @@ class _Bubble extends StatelessWidget {
     );
     // not decryptable yet: a tap goes to where it gets fixed
     return locked ? GestureDetector(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EncryptionPage())), child: bubble) : bubble;
+  }
+}
+
+class _Forwarded extends StatelessWidget {
+  final Map f;
+  final Room room;
+  final Color accent;
+  final bool mine;
+  const _Forwarded(this.f, this.room, this.accent, this.mine);
+  @override
+  Widget build(BuildContext context) {
+    final id = '${f['sender']}', known = room.getState(EventTypes.RoomMember, id) != null;
+    final name = known ? room.unsafeGetUserFromMemoryOrFallback(id).calcDisplayname() : '${f['name'] ?? id}';
+    return Padding(padding: const EdgeInsets.only(bottom: 2), child: Text.rich(TextSpan(children: [
+      TextSpan(text: 'هدایت‌شده از ', style: TextStyle(color: mine ? context.tk.outMeta : context.tk.muted)),
+      TextSpan(text: bdi(name), style: TextStyle(color: mine ? context.tk.outText : accent, fontWeight: FontWeight.w600)),
+    ]), textDirection: TextDirection.rtl, style: const TextStyle(fontSize: 13.5)));
   }
 }
 
@@ -310,10 +374,10 @@ class MenuItem {
 }
 
 /// Telegram-style popup over a dimmed background, near the press point.
-void showMsgMenu(BuildContext context, Offset at, List<MenuItem> items) {
+void showMsgMenu(BuildContext context, Offset at, List<MenuItem> items, {Widget Function(VoidCallback close)? header}) {
   final size = MediaQuery.sizeOf(context);
-  const w = 200.0;
-  final h = items.length * 48.0 + 16;
+  final w = header == null ? 200.0 : 300.0;
+  final h = items.length * 48.0 + 16 + (header == null ? 0 : 52);
   showGeneralDialog<void>(
     context: context, barrierDismissible: true, barrierLabel: 'بستن', barrierColor: Colors.black45,
     transitionDuration: const Duration(milliseconds: 150),
@@ -323,6 +387,7 @@ void showMsgMenu(BuildContext context, Offset at, List<MenuItem> items) {
       return Stack(children: [Positioned(
         left: (at.dx - w / 2).clamp(8.0, size.width - w - 8), top: at.dy.clamp(8.0, size.height - h - 8),
         child: Material(color: t.panel, elevation: 8, borderRadius: BorderRadius.circular(14), clipBehavior: Clip.antiAlias, child: SizedBox(width: w, child: Column(mainAxisSize: MainAxisSize.min, children: [
+          if (header != null) ...[header(() => Navigator.pop(c)), Divider(height: 1, color: t.border)],
           const SizedBox(height: 8),
           for (final it in items) InkWell(
             onTap: () { Navigator.pop(c); it.run(); },
@@ -408,7 +473,7 @@ List<Object> _htmlBlocks(BuildContext context, String src, Room room, TextStyle 
         if (target != null && target.kind == 'user' && target.eventId == null) {
           final name = room.unsafeGetUserFromMemoryOrFallback(target.id).calcDisplayname();
           final col = mine ? st.color! : colorFor(target.id);
-          final r = TapGestureRecognizer()..onTap = () => toast(context, 'به‌زودی');
+          final r = TapGestureRecognizer()..onTap = () => openTarget(context, target);
           recs.add(r);
           cur.add(TextSpan(text: name, recognizer: r, style: st.copyWith(color: col, fontWeight: FontWeight.w600, backgroundColor: col.withValues(alpha: .12))));
         } else {

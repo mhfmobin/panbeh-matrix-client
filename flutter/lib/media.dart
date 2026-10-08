@@ -13,6 +13,7 @@ import 'package:video_player/video_player.dart';
 import 'logic.dart';
 import 'matrix.dart';
 import 'ui/common.dart' show loadMxc, me;
+import 'ui/thread.dart' show relatesTo;
 
 const _native = MethodChannel('ir.panbeh.flutter/native');
 
@@ -37,10 +38,10 @@ Future<void> _queue = Future.value(); // one file at a time, in order
 // ponytail: the SDK reports no upload bytes (and can't abort): the bubble shows its stage, not a percentage
 
 /// The first file carries the caption and the reply (like the web app). Returns at once; the SDK's local echo is the pending bubble.
-void sendMedia(Room room, List<Picked> files, {String caption = '', bool asFile = false, bool asGif = false, Event? replyTo, void Function(Object)? onError}) {
+void sendMedia(Room room, List<Picked> files, {String caption = '', bool asFile = false, bool asGif = false, Event? replyTo, String? threadId, void Function(Object)? onError}) {
   for (var i = 0; i < files.length; i++) {
     final f = files[i], first = i == 0;
-    _queue = _queue.then((_) => _one(room, f, first ? caption : '', asFile, asGif, first ? replyTo : null)).catchError((Object e) {
+    _queue = _queue.then((_) => _one(room, f, first ? caption : '', asFile, asGif, first ? replyTo : null, threadId)).catchError((Object e) {
       onError?.call(e);
     });
   }
@@ -61,7 +62,7 @@ Uint8List? _compress(Uint8List bytes) {
   return out.length < bytes.length ? out : null;
 }
 
-Future<void> _one(Room room, Picked f, String caption, bool asFile, bool asGif, Event? replyTo) async {
+Future<void> _one(Room room, Picked f, String caption, bool asFile, bool asGif, Event? replyTo, String? threadId) async {
   var bytes = await File(f.path).readAsBytes();
   var name = f.name;
   final c = room.client, txid = c.generateUniqueTransactionId();
@@ -69,10 +70,8 @@ Future<void> _one(Room room, Picked f, String caption, bool asFile, bool asGif, 
   final extra = <String, dynamic>{
     if (caption.isNotEmpty) ...{'body': caption, 'filename': name},
     if (asFile || !visual) 'msgtype': 'm.file',
-    if (replyTo != null) ...{
-      'm.relates_to': {'m.in_reply_to': {'event_id': replyTo.eventId}},
-      if (replyTo.senderId != me()) 'm.mentions': {'user_ids': [replyTo.senderId]},
-    },
+    'm.relates_to': ?relatesTo(threadId, replyTo),
+    if (replyTo != null && replyTo.senderId != me()) 'm.mentions': {'user_ids': [replyTo.senderId]},
   };
   MatrixFile file;
   MatrixImageFile? thumb;
@@ -157,7 +156,7 @@ Future<void> sendGif(Room room, Map<String, dynamic> gif, {Event? replyTo}) asyn
 
 // ---------- location ----------
 
-Future<void> sendLocation(Room room, double lat, double lon, int accuracy, {Event? replyTo}) {
+Future<void> sendLocation(Room room, double lat, double lon, int accuracy, {Event? replyTo, String? threadId}) {
   final la = double.parse(lat.toStringAsFixed(6)), lo = double.parse(lon.toStringAsFixed(6));
   final geo = 'geo:$la,$lo;u=$accuracy';
   return room.sendEvent({
@@ -168,7 +167,7 @@ Future<void> sendLocation(Room room, double lat, double lon, int accuracy, {Even
     'org.matrix.msc3488.location': {'uri': geo},
     'org.matrix.msc3488.asset': {'type': 'm.self'},
     'org.matrix.msc3488.ts': DateTime.now().millisecondsSinceEpoch,
-    if (replyTo != null) 'm.relates_to': {'m.in_reply_to': {'event_id': replyTo.eventId}},
+    'm.relates_to': ?relatesTo(threadId, replyTo),
   });
 }
 

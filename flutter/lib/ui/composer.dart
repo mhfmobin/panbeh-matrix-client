@@ -8,6 +8,7 @@ import 'common.dart';
 import 'voice.dart';
 import 'emoji.dart';
 import 'media.dart';
+import 'thread.dart';
 
 
 class Mode {
@@ -20,13 +21,17 @@ class Mode {
 typedef _Mention = ({String name, String id});
 final _drafts = <String, String>{}; // per room, in memory
 
+/// Text shared into the app: becomes the draft of the chosen chat.
+void addDraft(String roomId, String text) => _drafts[roomId] = [if ((_drafts[roomId] ?? '').isNotEmpty) _drafts[roomId]!, text].join('\n');
+
 class Composer extends StatefulWidget {
   final Room room;
   final Timeline timeline;
   final Mode? mode;
   final ValueChanged<Mode?> onMode;
   final VoidCallback? onPoll; // the attach sheet's «نظرسنجی»
-  const Composer({super.key, required this.room, required this.timeline, required this.mode, required this.onMode, this.onPoll});
+  final String? threadId; // sending into this thread (ThreadPage)
+  const Composer({super.key, required this.room, required this.timeline, required this.mode, required this.onMode, this.onPoll, this.threadId});
   @override
   State<Composer> createState() => _ComposerState();
 }
@@ -190,7 +195,7 @@ class _ComposerState extends State<Composer> {
     } else {
       room.sendEvent({
         'msgtype': 'm.text', ..._compose(body),
-        if (m != null) 'm.relates_to': {'m.in_reply_to': {'event_id': m.ev.eventId}},
+        'm.relates_to': ?_rel(m),
       }).catchError((_) => null);
     }
     _mentions.clear();
@@ -198,10 +203,15 @@ class _ComposerState extends State<Composer> {
     widget.onMode(null);
   }
 
+  Map<String, dynamic>? _rel(Mode? m) {
+    final id = widget.threadId;
+    return relatesTo(id, m != null && !m.edit ? m.ev : null, id == null ? null : threadReplies(widget.timeline, id).lastOrNull?.eventId);
+  }
+
   Future<void> _sendVoice(VoiceResult r) async {
-    final m = mode, to = m != null && !m.edit ? m.ev : null;
+    final m = mode, to = m != null && !m.edit ? m.ev : null, rel = _rel(m);
     widget.onMode(null);
-    await sendVoice(room, r, replyTo: to, extra: {'m.mentions': {'user_ids': [if (to != null && to.senderId != me()) to.senderId]}}).catchError((e) {
+    await sendVoice(room, r, extra: {'m.mentions': {'user_ids': [if (to != null && to.senderId != me()) to.senderId]}, 'm.relates_to': ?rel}).catchError((e) {
       if (mounted) alert(context, errText(e));
       return null;
     });
@@ -273,7 +283,7 @@ class _ComposerState extends State<Composer> {
                       contentPadding: const EdgeInsets.symmetric(vertical: 10)),
                   ),
                 )),
-                if (m?.edit != true) AttachButton(room: room, replyTo: m?.ev, onSent: () => widget.onMode(null), onPoll: widget.onPoll) else const SizedBox(width: 8),
+                if (m?.edit != true) AttachButton(room: room, replyTo: m?.ev, threadId: widget.threadId, onSent: () => widget.onMode(null), onPoll: widget.onPoll) else const SizedBox(width: 8),
               ]),
             )),
             const SizedBox(width: 6),
