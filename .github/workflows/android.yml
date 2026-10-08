@@ -62,18 +62,22 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon assembleRelease
-          mv app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/panbeh.apk"
+          mv app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/Panbeh.apk"
+
+      - name: Version the APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: mv Panbeh.apk "Panbeh-$GITHUB_REF_NAME.apk"
 
       - uses: actions/upload-artifact@v7
         with:
-          path: panbeh.apk
-          archive: false # the artifact is the raw panbeh.apk, not a zip
+          path: Panbeh*.apk
+          archive: false # the artifact is the raw Panbeh.apk, not a zip
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: panbeh.apk
+          files: Panbeh-*.apk
 
       # rolling pre-release: always the newest main build. Pushing the tag doesn't retrigger this workflow (tags filter is v* only)
       - name: Move latest tag
@@ -90,7 +94,7 @@ jobs:
           name: Panbeh (latest build)
           prerelease: true
           make_latest: false
-          files: panbeh.apk # same-named asset is replaced (overwrite_files defaults to true)
+          files: Panbeh.apk # same-named asset is replaced (overwrite_files defaults to true)
           body: |
             Latest build of `main`: ${{ github.sha }}
             Version: 0.1.0-${{ github.run_number }}

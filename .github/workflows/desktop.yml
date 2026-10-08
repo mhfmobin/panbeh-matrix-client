@@ -17,8 +17,9 @@ jobs:
         include:
           - os: windows-latest
             target: --win
-          - os: macos-latest
-            target: --mac
+          # macOS disabled: uncomment to build it again (and the .dmg line in the rolling release below)
+          # - os: macos-latest
+          #   target: --mac
           - os: ubuntu-latest
             target: --linux
     runs-on: ${{ matrix.os }}
@@ -105,6 +106,6 @@ jobs:
           make_latest: false
           files: |
             out/Panbeh-windows-setup.exe
-            out/Panbeh-mac.dmg
+            # out/Panbeh-mac.dmg
             out/Panbeh-linux-*.AppImage
             out/Panbeh-linux-*.deb
