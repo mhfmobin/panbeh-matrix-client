@@ -223,7 +223,8 @@ function CallScreen({ a, closing }: { a: Active; closing?: boolean }) {
   const tile = (t: TileData, focused = false) =>
     <Tile key={t.key} room={a.room} t={t} mirror={t.local && !t.screen && a.facing === "user"} focused={focused} stats={stats} onFocus={() => setFocus(focused ? null : t.key)} />;
   return (
-    <div className={"call-screen" + (closing ? " closing" : "") + (immersive ? " immersive" : "") + (bare ? " bare" : "")} role="dialog" aria-label="تماس" onClick={onTap} ref={screen}>
+    <div className={"call-screen" + (closing ? " closing" : "") + (immersive ? " immersive" : "") + (bare ? " bare" : "")} role="dialog" aria-label="تماس" onClick={onTap} ref={screen}
+      onPointerMove={(e) => { if (bare && e.pointerType === "mouse") setBare(false); }}>
       <header className="call-head">
         <button className="icon-btn" onClick={hide} title="کوچک کردن" aria-label="کوچک کردن"><Icon name="down" /></button>
         <div role="button" tabIndex={0} aria-pressed={stats} title="آمار اتصال" onClick={() => setStats(!stats)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setStats(!stats); }}>
