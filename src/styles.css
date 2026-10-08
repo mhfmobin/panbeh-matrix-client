@@ -1047,19 +1047,25 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .call-screen.immersive .call-grid { padding: 0; }
 .call-screen.immersive .call-grid > .call-tile, .call-screen.immersive .call-tile.main { border-radius: 0; outline: none; }
 .call-screen.immersive :is(.call-head, .call-controls, .call-strip, .call-focus, .call-name) { transition: opacity 0.25s; }
-.call-screen.immersive :is(.call-head, .call-controls) { position: absolute; z-index: 1; left: 0; right: 0; }
+.call-screen.immersive :is(.call-head, .call-controls) { position: absolute; z-index: 2; left: 0; right: 0; } /* 2: over .call-tile.main, which phones' .main pane rule lifts to 1 */
 .call-screen.immersive .call-head { top: 0; padding: calc(10px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 28px calc(12px + env(safe-area-inset-left)); background: linear-gradient(rgba(0, 0, 0, 0.55), transparent); }
 .call-screen.immersive .call-controls { bottom: 0; padding: 36px calc(12px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left)); background: linear-gradient(transparent, rgba(0, 0, 0, 0.55)); }
-.call-screen.immersive .call-strip { position: absolute; z-index: 1; bottom: calc(var(--controls-h, 120px) + 4px); inset-inline: 8px; } /* --controls-h: set by CallScreen, the controls wrap on narrow phones */
+.call-screen.immersive .call-strip { position: absolute; z-index: 2; bottom: calc(var(--controls-h, 120px) + 4px); inset-inline: 8px; } /* --controls-h: set by CallScreen, the controls wrap on narrow phones */
 .call-screen.immersive .call-strip .call-tile { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5); }
 .call-screen.immersive .call-grid.pip .call-tile.local { bottom: calc(var(--controls-h, 120px) + 4px); transition: bottom 0.25s; }
+/* what sits on top of the big feed moves below the floating header */
+.call-screen.immersive .call-tile.main :is(.call-focus, .call-hand) { top: calc(64px + env(safe-area-inset-top)); }
+.call-screen.immersive .call-tile.main .call-stats { top: calc(64px + env(safe-area-inset-top)); left: auto; right: 8px; }
+.call-screen.immersive .call-tile.main .call-name { bottom: calc(var(--controls-h, 120px) + 4px); }
+.call-screen.immersive .call-grid:has(.call-strip:not(:empty)) .call-tile.main .call-name { bottom: calc(var(--controls-h, 120px) + 112px); } /* above the thumbnails */
 .call-screen.bare { cursor: none; }
 .call-screen.bare :is(.call-head, .call-controls, .call-strip, .call-focus, .call-name) { opacity: 0; pointer-events: none; }
 .call-screen.bare .call-grid.pip .call-tile.local { bottom: calc(16px + env(safe-area-inset-bottom)); }
 /* a phone on its side: thumbnails stack down the side instead of covering the middle, our own window goes landscape */
 @media (orientation: landscape) and (max-height: 560px) {
-  .call-screen.immersive .call-strip { flex-direction: column; top: calc(64px + env(safe-area-inset-top)); inset-inline: auto calc(8px + env(safe-area-inset-left)); overflow: hidden auto; }
+  .call-screen.immersive .call-strip { flex-direction: column; top: calc(108px + env(safe-area-inset-top)); inset-inline: auto calc(8px + env(safe-area-inset-left)); overflow: hidden auto; }
   .call-screen.immersive .call-strip .call-tile { width: 140px; height: 88px; }
+  .call-screen.immersive .call-grid:has(.call-strip:not(:empty)) .call-tile.main .call-name { bottom: calc(var(--controls-h, 120px) + 4px); } /* the thumbnails moved to the side */
   .call-screen.immersive .call-grid.pip .call-tile.local { width: auto; height: 34vh; aspect-ratio: 4 / 3; }
 }
 /* Android picture-in-picture: a tiny window with just the other side's video */
