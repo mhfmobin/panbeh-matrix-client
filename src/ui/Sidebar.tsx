@@ -1,5 +1,7 @@
 import { useBackdropHold } from "./useBackdropHold.ts";
-import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from "react";
+import { useDismiss } from "./useDismiss.ts";
+import { flipRow } from "./useSlider.ts";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type TouchEvent } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { NotificationCountType, UserEvent, type Room } from "matrix-js-sdk";
 import { client, dmPeer } from "../matrix.ts";
@@ -11,18 +13,18 @@ import { useSortableTabs } from "./useSortableTabs.ts";
 import { pushBack } from "../back.ts";
 import { setBadge } from "../desktop.ts";
 import { Icon } from "../icons.tsx";
-import { bdi, errText, me, noticeText, previewText, RoomAvatar, senderName } from "./common.tsx";
+import { bdi, Dots, errText, useChange, me, noticeText, previewText, RoomAvatar, senderName } from "./common.tsx";
 import { NewChat } from "./NewChat.tsx";
 import { RoomInfo } from "./RoomInfo.tsx";
 import { MessageResults, requestJump } from "./Search.tsx";
 import { QuickSwitch } from "./QuickSwitch.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 
-type Props = { selected?: string; onSelect: (id: string) => void; onSettings: () => void; banner?: ReactNode };
+type Props = { loading?: boolean; selected?: string; onSelect: (id: string) => void; onSettings: () => void; banner?: ReactNode };
 const FOLDER_KEY = () => `panbeh.folder:${client.getUserId()}`;
 type Menu = { row: RoomRow; x: number; y: number };
 
-export function Sidebar({ selected, onSelect, onSettings, banner }: Props) {
+export function Sidebar({ loading, selected, onSelect, onSettings, banner }: Props) {
   const { rows, spaces } = useRooms();
   const [folder, setFolder] = useState(() => localStorage.getItem(FOLDER_KEY()) ?? "all");
   const [query, setQuery] = useState("");
@@ -45,6 +47,19 @@ export function Sidebar({ selected, onSelect, onSettings, banner }: Props) {
   useEffect(() => () => setBadge(0), []); // signed out or switching accounts
 
   const nav = useRef<HTMLElement>(null);
+  const indicator = useRef<HTMLSpanElement>(null);
+  const tabsKey = folders.map((f) => f.id).join("\n");
+  useLayoutEffect(() => { // the underline slides to the active tab; the first placement and resizes don't animate
+    const bar = nav.current, ind = indicator.current, tab = bar?.querySelector<HTMLElement>("button.on");
+    if (!bar || !ind) return;
+    if (!tab) { ind.style.opacity = "0"; return; }
+    const place = () => { ind.style.opacity = "1"; ind.style.width = tab.offsetWidth - 16 + "px"; ind.style.transform = `translateX(${tab.offsetLeft + 8}px)`; };
+    place();
+    requestAnimationFrame(() => ind.classList.add("ready"));
+    const ro = new ResizeObserver(() => { ind.classList.remove("ready"); place(); requestAnimationFrame(() => ind.classList.add("ready")); });
+    ro.observe(tab);
+    return () => ro.disconnect();
+  }, [active, tabsKey, !q && !inArchiveView]); // eslint-disable-line react-hooks/exhaustive-deps
   const { dragging, barProps } = useSortableTabs(nav, folders.map((f) => f.id), (from, to) => setOrder(moveFolder(folders.map((f) => f.id), from, to)));
   // keep the active tab visible (e.g. a remembered space folder past the edge)
   useEffect(() => { nav.current?.querySelector(".on")?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, [active, q]);
@@ -127,6 +142,7 @@ export function Sidebar({ selected, onSelect, onSettings, banner }: Props) {
               </button>
             );
           })}
+          <span className="folder-indicator" ref={indicator} aria-hidden />
         </nav>
       )}
       {!q && !inArchiveView && activeSpace && (
@@ -145,8 +161,9 @@ export function Sidebar({ selected, onSelect, onSettings, banner }: Props) {
         </div>
       ) : (
         <div className="list-swipe" {...(inArchiveView ? {} : swipe)}>
-          {shown.length === 0
-            ? <p className="empty-list">هنوز چیزی اینجا نیست</p>
+          {shown.length === 0 && loading
+            ? <div className="skeleton-list" aria-busy aria-label="در حال همگام‌سازی گفتگوها…">{[0, 1, 2, 3, 4, 5, 6].map((i) => <div key={i} className="skeleton-row" style={{ animationDelay: i * 0.06 + "s" }}><i className="skeleton avatar-sk" /><span><i className="skeleton" style={{ width: 55 - (i % 3) * 8 + "%" }} /><i className="skeleton" style={{ width: 85 - (i % 4) * 10 + "%" }} /></span></div>)}</div>
+            : shown.length === 0 ? <p className="empty-list">هنوز چیزی اینجا نیست</p>
             : <Virtuoso className="room-list" data={shown} computeItemKey={(_, r) => r.id} itemContent={(_, r) => item(r)} />}
         </div>
       )}
@@ -195,12 +212,16 @@ function RoomItem({ row, active, onClick, onMenu }: { row: RoomRow; active: bool
     preview = (who ? who + ": " : "") + previewText(last);
   }
   const typing = row.invite ? [] : room.getMembers().filter((m) => m.typing && m.userId !== me());
-  if (typing.length) preview = (row.isDM ? "" : bdi(typing[0].name.split(" ")[0]) + " ") + "در حال نوشتن…";
+  if (typing.length) preview = (row.isDM ? "" : bdi(typing[0].name.split(" ")[0]) + " ") + "در حال نوشتن";
   const muted = !!row.muted;
+  const bumped = useChange(row.unread);
+  const previewChanged = useChange(preview, 350);
   const mentioned = row.unread > 0 && room.getUnreadNotificationCount(NotificationCountType.Highlight) > 0;
   const cancel = () => { if (press.current) clearTimeout(press.current.timer); };
+  const el = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => { if (el.current) flipRow(el.current, row.id); }); // a chat that moved up or down slides there
   return (
-    <button className={"room-item" + (active ? " active" : "")}
+    <button ref={el} className={"room-item" + (active ? " active" : "")}
       onClick={() => { if (press.current?.fired) press.current = null; else onClick(); }}
       onContextMenu={row.invite ? undefined : (e) => { e.preventDefault(); cancel(); onMenu(e.clientX, e.clientY); }}
       // iOS Safari fires no contextmenu on long-press
@@ -218,9 +239,9 @@ function RoomItem({ row, active, onClick, onMenu }: { row: RoomRow; active: bool
           <span className="room-time">{listTime(row.ts)}</span>
         </div>
         <div className="room-item-bottom">
-          <span className={"room-preview" + (typing.length ? " typing" : "")}>{preview}</span>
+          <span className={"room-preview" + (typing.length ? " typing" : "") + (previewChanged ? " changed" : "")}>{preview}{typing.length > 0 && <Dots />}</span>
           {mentioned && <span className="badge">@</span>}
-          {(row.unread > 0 || row.invite) ? <span className={"badge" + (muted ? " muted" : "")}>{row.invite ? "!" : num(row.unread)}</span>
+          {(row.unread > 0 || row.invite) ? <span className={"badge" + (muted ? " muted" : "") + (bumped ? " bump" : "")}>{row.invite ? "!" : num(row.unread)}</span>
             : row.marked ? <span className={"badge dot" + (muted ? " muted" : "")} aria-label="خوانده‌نشده" />
             : row.pinned && <span className="room-pin" aria-label="سنجاق‌شده"><Icon name="pin" size={16} /></span>}
         </div>
@@ -232,6 +253,7 @@ function RoomItem({ row, active, onClick, onMenu }: { row: RoomRow; active: bool
 function ChatMenu({ row, x, y, onClose }: Menu & { onClose: () => void }) {
   const { room } = row;
   const ref = useRef<HTMLDivElement>(null);
+  const [closing, close] = useDismiss(onClose, 160);
   const [pos, setPos] = useState({ left: x, top: y });
   useEffect(() => { // keep it on screen
     const r = ref.current!.getBoundingClientRect();
@@ -239,15 +261,15 @@ function ChatMenu({ row, x, y, onClose }: Menu & { onClose: () => void }) {
     ref.current!.querySelector("button")?.focus();
   }, [x, y]);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); close(); } };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [close]);
   const run = (fn: () => Promise<unknown>) => { onClose(); fn().catch((e) => alertDialog(errText(e))); };
   const ops = chatOps(row), unread = ops.unread;
-  const backdrop = useBackdropHold(onClose, ".room-item"); // holding another chat switches the menu to it
+  const backdrop = useBackdropHold(onClose, ".room-item", close); // holding another chat switches the menu to it
   return (
-    <div className="chat-menu-backdrop" {...backdrop}>
+    <div className={"chat-menu-backdrop" + (closing ? " closing" : "")} {...backdrop}>
       <div className="chat-menu" role="menu" ref={ref} style={pos} onClick={(e) => e.stopPropagation()}>
         <button role="menuitem" onClick={() => run(ops.pin)}>
           <Icon name="pin" /> {row.pinned ? "برداشتن سنجاق" : "سنجاق"}</button>

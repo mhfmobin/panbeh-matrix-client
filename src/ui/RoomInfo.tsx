@@ -5,6 +5,7 @@ import { usePresence, useTick } from "../hooks.ts";
 import { JOIN_RULES, normalize, num, roleLabel, stamp } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 import { Avatar, errText, me, RoomAvatar, roomAvatarMxc, Sheet } from "./common.tsx";
+import { useSlider } from "./useSlider.ts";
 import { UserProfile } from "./Profile.tsx";
 import { ChatForm, UserPicker } from "./NewChat.tsx";
 import { isMuted, setMuted } from "../notify.ts";
@@ -210,6 +211,7 @@ export function SeenBy({ room, ev, onClose }: { room: Room; ev: MatrixEvent; onC
 export function ReactedBy({ room, ev, onClose }: { room: Room; ev: MatrixEvent; onClose: () => void }) {
   useTick(client, [RoomEvent.Timeline, RoomEvent.Redaction]);
   const [key, setKey] = useState<string | null>(null); // null = all
+  const pill = useSlider<HTMLDivElement>();
   const [profile, setProfile] = useState<string | null>(null);
   const groups = (room.relations.getChildEventsForEvent(ev.getId()!, RelationType.Annotation, EventType.Reaction)
     ?.getSortedAnnotationsByKey() ?? []).filter(([, set]) => set.size > 0);
@@ -218,7 +220,7 @@ export function ReactedBy({ room, ev, onClose }: { room: Room; ev: MatrixEvent; 
   return (
     <Sheet title="واکنش‌ها" onClose={onClose}>
       {groups.length > 1 && (
-        <div className="segmented reacted-tabs">
+        <div className="segmented reacted-tabs" data-pill ref={pill}>
           <button className={key === null ? "on" : ""} onClick={() => setKey(null)}>همه {num(groups.reduce((n, [, set]) => n + set.size, 0))}</button>
           {groups.map(([k, set]) => <button key={k} className={key === k ? "on" : ""} onClick={() => setKey(k)}>{k} {num(set.size)}</button>)}
         </div>

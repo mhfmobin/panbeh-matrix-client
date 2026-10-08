@@ -23,7 +23,7 @@ export function PinnedBar({ room, onJump }: { room: Room; onJump: (id: string) =
       <div className="pinned-bar">
         <button className="pinned-main" onClick={() => { jump(ids[i]); setIdx((i - 1 + ids.length) % ids.length); }}>
           <span className="pinned-ticks">{ids.length > 1 && ids.slice(-4).map((id) => <i key={id} className={id === ids[i] ? "on" : ""} />)}</span>
-          <span className="pinned-text">
+          <span className="pinned-text" key={ids[i]}>
             <b>پیام سنجاق‌شده{ids.length > 1 && ` ${num(i + 1)} از ${num(ids.length)}`}</b>
             <span dir="auto">{ev ? previewText(ev) : "…"}</span>
           </span>

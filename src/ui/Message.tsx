@@ -9,13 +9,14 @@ import { saveFile } from "../native.ts";
 import { usePromise } from "../hooks.ts";
 import { LINK_SRC, clock, fmtDuration, isGif, linkHref, num, osmUrl, parseGeoUri, stamp, textDir, type Gif } from "../logic.ts";
 import { Icon, iconSvg, type IconName } from "../icons.tsx";
-import { Avatar, colorFor, copyText, errText, formatSize, isGroupChat, me, previewText, senderMember, senderName, stripReplyFallback, toast } from "./common.tsx";
+import { Avatar, colorFor, copyText, errText, formatSize, isGroupChat, me, previewText, senderMember, senderName, stripReplyFallback, toast, useChange } from "./common.tsx";
 import { AudioPlayer, trackFor } from "./Voice.tsx";
 import { PollBody } from "./Poll.tsx";
 import { EmojiPanel, GifView } from "./Emoji.tsx";
 import { LinkPreview } from "./LinkPreview.tsx";
 import { captionOf, EDITABLE } from "./Composer.tsx";
 import { useBackdropHold } from "./useBackdropHold.ts";
+import { reducedMotion, useDismiss } from "./useDismiss.ts";
 import { thumbFor } from "./Media.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 
@@ -77,9 +78,9 @@ function openRoomPill(a: HTMLAnchorElement) {
   else window.open(a.href, "_blank", "noopener");
 }
 
-type Props = { ev: MatrixEvent; room: Room; first: boolean; last: boolean; actions: Actions; flash?: boolean };
+type Props = { ev: MatrixEvent; room: Room; first: boolean; last: boolean; actions: Actions; flash?: boolean; enter?: boolean };
 
-export function Message({ ev, room, first, last, actions, flash }: Props) {
+export function Message({ ev, room, first, last, actions, flash, enter }: Props) {
   const [picker, setPicker] = useState(false);
   const [fullPicker, setFullPicker] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null); // touch screens have no hover: a tap (or right-click) opens this
@@ -87,6 +88,12 @@ export function Message({ ev, room, first, last, actions, flash }: Props) {
   const g = useRef<{ id: number; x: number; y: number; tap: boolean; lock: boolean; px: number; crossed: boolean } | null>(null);
   const swallow = useRef(false); // the click that follows a swipe / long-press
   const mine = ev.getSender() === me();
+  const [deleting, setDeleting] = useState(false);
+  const remove = () => void confirmDialog("این پیام برای همه حذف شود؟", { danger: true }).then((y) => { // the bubble shrinks away, then the redaction removes the row
+    if (!y) return;
+    setDeleting(true);
+    setTimeout(() => { client.redactEvent(room.roomId, ev.getId()!).catch((e) => { setDeleting(false); alertDialog(errText(e)); }); }, reducedMotion() ? 0 : 200);
+  });
   const failed = ev.status === EventStatus.NOT_SENT;
   const group = isGroupChat(room);
   const content = ev.getContent();
@@ -151,7 +158,7 @@ export function Message({ ev, room, first, last, actions, flash }: Props) {
   };
 
   return (
-    <div ref={row} className={`msg ${mine ? "mine" : "theirs"}${first ? " first" : ""}${last ? " last" : ""}${failed ? " failed" : ""}${flash ? " flash" : ""}${selecting ? " selecting" : ""}${selected ? " selected" : ""}`}
+    <div ref={row} className={`msg ${mine ? "mine" : "theirs"}${first ? " first" : ""}${last ? " last" : ""}${failed ? " failed" : ""}${flash ? " flash" : ""}${enter ? " enter" : ""}${deleting ? " deleting" : ""}${selecting ? " selecting" : ""}${selected ? " selected" : ""}`}
       onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => end(true)}
       onContextMenu={(e) => { if (!live || selecting || !inside(e)) return; e.preventDefault(); setMenu((m) => m ?? { x: e.clientX, y: e.clientY }); }}
       onClickCapture={(e) => {
@@ -212,7 +219,7 @@ export function Message({ ev, room, first, last, actions, flash }: Props) {
           {canPin && <button title={pinned ? "برداشتن سنجاق" : "سنجاق"} aria-label={pinned ? "برداشتن سنجاق" : "سنجاق"}
             onClick={() => togglePin(room, ev.getId()!).catch((e) => alertDialog(errText(e)))}><Icon name="pin" size={17} /></button>}
           {mine && EDITABLE.includes(content.msgtype ?? "") && <button title="ویرایش" aria-label="ویرایش" onClick={() => actions.edit(ev)}><Icon name="edit" size={17} /></button>}
-          {canDelete && <button title="حذف" aria-label="حذف" onClick={() => confirmDialog("این پیام برای همه حذف شود؟", { danger: true }).then((y) => y && void client.redactEvent(room.roomId, ev.getId()!))}><Icon name="trash" size={17} /></button>}
+          {canDelete && <button title="حذف" aria-label="حذف" onClick={() => remove()}><Icon name="trash" size={17} /></button>}
           {picker && (
             <div className="quick-react" onMouseLeave={() => setPicker(false)}>
               {QUICK.map((k) => <button key={k} onClick={() => { toggleReaction(room, ev, k); setPicker(false); }}>{k}</button>)}
@@ -235,7 +242,7 @@ export function Message({ ev, room, first, last, actions, flash }: Props) {
           mine && { icon: "info", label: "دیده‌شده توسط", run: () => actions.info(ev) },
           reacted && { icon: "smile", label: "واکنش‌ها", run: () => actions.reactions(ev) },
           actions.select && { icon: "select", label: "انتخاب", run: () => actions.select!(ev) },
-          canDelete && { icon: "trash", label: "حذف", danger: true, run: () => confirmDialog("این پیام برای همه حذف شود؟", { danger: true }).then((y) => y && void client.redactEvent(room.roomId, ev.getId()!)) },
+          canDelete && { icon: "trash", label: "حذف", danger: true, run: remove },
         ]} />
       )}
       {/* portal: .msg-actions fades out when the pointer leaves the message */}
@@ -252,6 +259,7 @@ type MenuItem = { icon: IconName; label: string; run: () => unknown; danger?: bo
 function MsgMenu({ x, y, items, onReact, onMore, onClose }: { x: number; y: number; items: (MenuItem | false | "" | undefined)[];
   onReact: (k: string) => void; onMore: () => void; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [closing, close] = useDismiss(onClose, 160);
   const [pos, setPos] = useState<{ left: number; top: number }>();
   useEffect(() => { // keep it on screen
     const r = ref.current!.getBoundingClientRect();
@@ -259,14 +267,14 @@ function MsgMenu({ x, y, items, onReact, onMore, onClose }: { x: number; y: numb
     ref.current!.focus({ preventScroll: true });
   }, [x, y]);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); close(); } };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [close]);
   const act = (fn: () => unknown) => { onClose(); fn(); };
-  const backdrop = useBackdropHold(onClose, ".msg"); // holding another message switches the menu to it
+  const backdrop = useBackdropHold(onClose, ".msg", close); // holding another message switches the menu to it
   return createPortal(
-    <div className="chat-menu-backdrop msg-menu-backdrop" {...backdrop}>
+    <div className={"chat-menu-backdrop msg-menu-backdrop" + (closing ? " closing" : "")} {...backdrop}>
       <div className="chat-menu msg-menu" role="menu" aria-label="گزینه‌های پیام" tabIndex={-1} ref={ref} style={pos ?? { left: x, top: y, visibility: "hidden" }} onClick={(e) => e.stopPropagation()}>
         <div className="quick-react">
           {QUICK.map((k) => <button key={k} role="menuitem" onClick={() => act(() => onReact(k))}>{k}</button>)}
@@ -484,30 +492,41 @@ function ReplyQuote({ room, id, onJump }: { room: Room; id: string; onJump?: (id
 }
 
 function Ticks({ ev, room }: { ev: MatrixEvent; room: Room }) {
-  if (ev.status === EventStatus.NOT_SENT) return <span className="tick failed" title="ارسال نشد">!</span>;
-  if (ev.status) return <span className="tick"><Icon name="clock" size={13} /></span>;
-  const seen = seenBy(room, ev);
+  const failed = ev.status === EventStatus.NOT_SENT;
+  const sending = !failed && !!ev.status;
+  const seen = failed || sending ? [] : seenBy(room, ev);
+  const changed = useChange(failed ? 0 : sending ? 1 : seen.length ? 3 : 2); // clock → check → checks pop when they change
+  if (failed) return <span className="tick failed" title="ارسال نشد">!</span>;
+  if (sending) return <span className="tick"><Icon name="clock" size={13} /></span>;
   const title = !seen.length ? "ارسال شد"
     : isGroupChat(room) ? `دیده‌شده توسط ${num(seen.length)} نفر`
     : seen[0].ts ? `دیده‌شده ${stamp(seen[0].ts)}` : "دیده‌شده";
-  return <span className={"tick" + (seen.length ? " read" : "")} title={title}><Icon name={seen.length ? "checks" : "check"} size={15} /></span>;
+  return <span className={"tick" + (seen.length ? " read" : "") + (changed ? " changed" : "")} title={title}><Icon name={seen.length ? "checks" : "check"} size={15} /></span>;
 }
 
 function Reactions({ ev, room }: { ev: MatrixEvent; room: Room }) {
   const rel = room.relations.getChildEventsForEvent(ev.getId()!, RelationType.Annotation, EventType.Reaction);
   const list = rel?.getSortedAnnotationsByKey()?.filter(([, set]) => set.size > 0);
+  // chips present when the message mounted don't animate (scrolling a row back into view); ones added later pop in
+  const initial = useRef<Set<string>>(null);
+  if (!initial.current) initial.current = new Set(list?.map(([k]) => k));
   if (!list?.length) return null;
   return (
     <div className="reactions">
-      {list.map(([key, set]) => {
-        const mineToo = [...set].some((e) => e.getSender() === me());
-        return (
-          <button key={key} className={mineToo ? "on" : ""} title={[...set].map(senderName).join(", ")} onClick={() => toggleReaction(room, ev, key)}>
-            {key} <span>{num(set.size)}</span>
-          </button>
-        );
-      })}
+      {list.map(([key, set]) => (
+        <ReactionChip key={key} room={room} ev={ev} emoji={key} users={[...set]} added={!initial.current!.has(key)} />
+      ))}
     </div>
+  );
+}
+
+function ReactionChip({ room, ev, emoji, users, added }: { room: Room; ev: MatrixEvent; emoji: string; users: MatrixEvent[]; added: boolean }) {
+  const bump = useChange(users.length);
+  const mineToo = users.some((e) => e.getSender() === me());
+  return (
+    <button className={(mineToo ? "on" : "") + (added ? " added" : "")} title={users.map(senderName).join(", ")} onClick={() => toggleReaction(room, ev, emoji)}>
+      {emoji} <span className={bump ? "bump" : undefined}>{num(users.length)}</span>
+    </button>
   );
 }
 

@@ -10,6 +10,7 @@ import { PollForm } from "./Poll.tsx";
 import { EmojiPanel } from "./Emoji.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 import { isSendKey } from "./Settings.tsx";
+import { reducedMotion, useExit } from "./useDismiss.ts";
 
 export type Mode = { kind: "reply" | "edit"; ev: MatrixEvent } | null;
 const MEDIA = ["m.image", "m.video", "m.file"];
@@ -39,10 +40,12 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
   const [text, setText] = useState(drafts.get(draftKey) ?? "");
   const mediaEdit = mode?.kind === "edit" && MEDIA.includes(mode.ev.getContent().msgtype ?? "");
   const [menu, setMenu] = useState(false);
+  const [menuShown, menuClosing] = useExit(menu);
   const [pollForm, setPollForm] = useState(false);
   const [recording, setRecording] = useState(false);
   const [locating, setLocating] = useState(false);
   const [emoji, setEmoji] = useState(false);
+  const [emojiShown, emojiClosing] = useExit(emoji && !recording);
   const [caret, setCaret] = useState(0);
   const [sel, setSel] = useState(0);
   const [closedAt, setClosedAt] = useState(-1); // Esc hides the mention list for this "@"
@@ -58,8 +61,11 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
   useEffect(() => { // autosize
     const el = ta.current;
     if (!el) return;
+    const from = el.offsetHeight;
     el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 200) + "px";
+    const to = Math.min(el.scrollHeight, 200);
+    if (from && from !== to && !reducedMotion()) { el.style.height = from + "px"; void el.offsetHeight; } // transition from where it was
+    el.style.height = to + "px";
   }, [text, recording]);
   useEffect(() => {
     const edit = mode?.kind === "edit";
@@ -261,10 +267,10 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
         <div className="composer-row">
           {/* RTL: first child sits on the right — send/mic there, attach + emoji on the left */}
           {canRecord ? (
-            <button className="send-btn" onClick={() => setRecording(true)} title="پیام صوتی" aria-label="ضبط پیام صوتی"><Icon name="mic" /></button>
+            <button className="send-btn" onClick={() => setRecording(true)} title="پیام صوتی" aria-label="ضبط پیام صوتی"><Icon key="mic" name="mic" /></button>
           ) : (
             <button className={"send-btn" + (text.trim() || mediaEdit ? " ready" : "")} onClick={send} aria-label="ارسال" disabled={!text.trim() && !mediaEdit}>
-              <Icon name={mode?.kind === "edit" ? "check" : "send"} />
+              <Icon key={mode?.kind === "edit" ? "check" : "send"} name={mode?.kind === "edit" ? "check" : "send"} />
             </button>
           )}
           <textarea ref={ta} rows={1} value={text} placeholder={mediaEdit ? "کپشن…" : "پیام"} aria-label="پیام"
@@ -276,10 +282,10 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
             {/* outside the menu: picking closes the menu, and an unmounted input never gets its change event */}
             <input ref={fileInput} type="file" multiple hidden onChange={(e) => { const f = [...e.target.files!]; setFiles((x) => [...x, ...f]); e.target.value = ""; }} />
             <button className="icon-btn" title="پیوست" aria-label="پیوست" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><Icon name="attach" /></button>
-            {menu && (
+            {menuShown && (
               <>
                 <div className="menu-backdrop" onClick={() => setMenu(false)} />
-                <div className="attach-menu" role="menu" onClick={() => setMenu(false)}>
+                <div className={"attach-menu" + (menuClosing ? " closing" : "")} role="menu" onClick={() => setMenu(false)}>
                   <button role="menuitem" onClick={() => fileInput.current?.click()}><Icon name="file" /> فایل یا عکس</button>
                   <button role="menuitem" onClick={() => setPollForm(true)}><Icon name="poll" /> نظرسنجی</button>
                   <button role="menuitem" onClick={shareLocation}><Icon name="location" /> موقعیت مکانی</button>
@@ -289,7 +295,7 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
           </div>
         </div>
       )}
-      {emoji && !recording && <EmojiPanel onEmoji={insert} onClose={() => setEmoji(false)} gifs={mode?.kind === "edit" ? undefined : { onPick: sendGif }} />}
+      {emojiShown && <EmojiPanel closing={emojiClosing} onEmoji={insert} onClose={() => setEmoji(false)} gifs={mode?.kind === "edit" ? undefined : { onPick: sendGif }} />}
       {files.length > 0 && <SendFiles files={files} setFiles={setFiles} onSend={sendFiles} />}
       {pollForm && <PollForm room={room} threadId={threadId} onClose={() => setPollForm(false)} />}
     </div>

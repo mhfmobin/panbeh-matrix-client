@@ -7,6 +7,7 @@ import { usePromise } from "../hooks.ts";
 import { getCallNotificationExpiry, type IRTCNotificationContent } from "matrix-js-sdk/lib/matrixrtc/index.js";
 import { fmtDuration, HISTORY, isGif, isVideoOffer, JOIN_RULES, legacyOutcome, levelChanges, num, roleLabel, rtcOutcome, type CallEv, type CallOutcome } from "../logic.ts";
 import { Icon } from "../icons.tsx";
+import { useDismiss } from "./useDismiss.ts";
 
 const COLORS = ["#e17076", "#faa774", "#a695e7", "#7bc862", "#6ec9cb", "#65aadd", "#ee7aae"];
 export const colorFor = (id: string) => COLORS[([...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0) >>> 0) % COLORS.length];
@@ -34,11 +35,29 @@ export const RoomAvatar = ({ room, size }: { room: Room; size?: number }) => (
 export const senderMember = (ev: MatrixEvent) => client.getRoom(ev.getRoomId())?.getMember(ev.getSender()!) ?? ev.sender;
 export const senderName = (ev: MatrixEvent) => senderMember(ev)?.name ?? ev.getSender() ?? "";
 
+/** Three bouncing dots after "typing" text. */
+export const Dots = () => <span className="dots" aria-hidden><i /><i /><i /></span>;
+
+/** True for a moment after `value` changes (not on mount): drives one-shot "bump" animations. */
+export function useChange(value: unknown, ms = 450) {
+  const prev = useRef(value);
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    if (prev.current === value) return;
+    prev.current = value;
+    setOn(true);
+    const t = setTimeout(() => setOn(false), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return on;
+}
+
 /** Small transient message at the bottom of the screen. */
 export function toast(text: string) {
   const el = Object.assign(document.createElement("div"), { className: "toast", textContent: text });
   el.setAttribute("role", "status");
   document.body.append(el);
+  setTimeout(() => el.classList.add("closing"), 1550);
   setTimeout(() => el.remove(), 1800);
 }
 
@@ -194,12 +213,13 @@ export function formatSize(n: number) {
 
 /** Side sheet: settings, chat info, new chat, seen-by. */
 export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const [closing, close] = useDismiss(onClose, 220);
   return (
-    <div className="sheet-backdrop" onClick={onClose} onKeyDown={(e) => e.key === "Escape" && onClose()}>
+    <div className={"sheet-backdrop" + (closing ? " closing" : "")} onClick={close} onKeyDown={(e) => e.key === "Escape" && close()}>
       <div className="sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={title}>
         <header className="sheet-head">
           <h2>{title}</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="بستن"><Icon name="close" /></button>
+          <button className="icon-btn" onClick={close} aria-label="بستن"><Icon name="close" /></button>
         </header>
         {children}
       </div>
@@ -211,6 +231,7 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
 export function Select<T extends string | number>({ value, options, onChange, disabled }:
   { value: T; options: [T, string][]; onChange: (v: T) => void; disabled?: boolean }) {
   const [at, setAt] = useState<DOMRect | null>(null);
+  const [closing, close] = useDismiss(() => setAt(null), 150);
   const menu = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number }>();
   useLayoutEffect(() => { // under the button, kept on screen
@@ -221,10 +242,10 @@ export function Select<T extends string | number>({ value, options, onChange, di
   }, [at]);
   useEffect(() => {
     if (!at) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); setAt(null); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); close(); } };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [at]);
+  }, [at, close]);
   const pick = (v: T) => { setAt(null); if (v !== value) onChange(v); };
   return (
     <>
@@ -233,7 +254,7 @@ export function Select<T extends string | number>({ value, options, onChange, di
         <span>{options.find(([v]) => v === value)?.[1] ?? String(value)}</span><Icon name="down" size={18} />
       </button>
       {at && createPortal(
-        <div className="chat-menu-backdrop msg-menu-backdrop select-backdrop" onClick={() => setAt(null)}>
+        <div className={"chat-menu-backdrop msg-menu-backdrop select-backdrop" + (closing ? " closing" : "")} onClick={close}>
           <div className="chat-menu msg-menu select-menu" role="listbox" tabIndex={-1} ref={menu} onClick={(e) => e.stopPropagation()}
             style={{ minWidth: at.width, ...(pos ?? { left: 0, top: 0, visibility: "hidden" }) }}>
             {options.map(([v, label]) => (

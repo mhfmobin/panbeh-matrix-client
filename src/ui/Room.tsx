@@ -4,7 +4,7 @@ import { addDirect, client, dmPeer, isDirect, loadEvent } from "../matrix.ts";
 import { usePresence, useTick } from "../hooks.ts";
 import { Icon } from "../icons.tsx";
 import { num, stamp } from "../logic.ts";
-import { bdi, errText, me, RoomAvatar, senderName } from "./common.tsx";
+import { bdi, Dots, errText, me, RoomAvatar, senderName } from "./common.tsx";
 import { Timeline, type Jumper } from "./Timeline.tsx";
 import { PinnedBar } from "./Pinned.tsx";
 import { NowPlaying } from "./Voice.tsx";
@@ -18,6 +18,7 @@ import { pendingJump, SearchSheet } from "./Search.tsx";
 import { MediaViewer, timelineMedia } from "./Media.tsx";
 import { Predecessor, Upgraded } from "./Admin.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
+import { useExit } from "./useDismiss.ts";
 
 export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
   useTick(client, [RoomMemberEvent.Typing, "Room.myMembership", "Room.name"]);
@@ -89,10 +90,14 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
 
   const typing = room.getMembers().filter((m) => m.typing && m.userId !== me()).map((m) => bdi(m.name.split(" ")[0]));
   const subtitle = typing.length
-    ? `${typing.length > 2 ? `${typing.slice(0, 2).join("، ")} و ${num(typing.length - 2)} نفر دیگر` : typing.join(" و ")} در حال نوشتن…`
+    ? `${typing.length > 2 ? `${typing.slice(0, 2).join("، ")} و ${num(typing.length - 2)} نفر دیگر` : typing.join(" و ")} در حال نوشتن`
     : room.getMyMembership() === KnownMembership.Invite ? "دعوت‌نامه" // invites carry no member counts
     : seen.text ?? `${num(room.getJoinedMemberCount())} عضو`;
-  const thread = threadId ? room.getThread(threadId) : null;
+  const liveThread = threadId ? room.getThread(threadId) : null;
+  const [threadShown, threadClosing] = useExit(!!liveThread, 240);
+  const lastThread = useRef(liveThread);
+  if (liveThread) lastThread.current = liveThread;
+  const thread = liveThread ?? (threadShown ? lastThread.current : null); // keeps rendering while the panel slides out
 
   async function jump(id: string, maxPages?: number) {
     const ev = await loadEvent(room, id).catch(() => null);
@@ -141,7 +146,7 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
             <RoomAvatar room={room} size={40} />
             <div className="room-head-text">
               <b>{room.name}</b>
-              <span className={typing.length || seen.online ? "typing" : ""}>{subtitle}</span>
+              <span className={typing.length || seen.online ? "typing" : ""}>{subtitle}{typing.length > 0 && <Dots />}</span>
             </div>
           </button>
           {room.getMyMembership() !== KnownMembership.Invite && <>
@@ -164,7 +169,7 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
         )}
       </div>
       {thread && (
-        <aside className="thread-panel">
+        <aside className={"thread-panel" + (threadClosing ? " closing" : "")} inert={threadClosing}>
           <header className="room-head">
             <div className="room-head-text"><b>رشته‌ی گفتگو</b><span>{num(thread.length)} پاسخ</span></div>
             <button className="icon-btn" onClick={() => setThreadId(null)} aria-label="بستن رشته"><Icon name="close" /></button>

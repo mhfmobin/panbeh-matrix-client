@@ -5,6 +5,7 @@ import { aliasLocalpart, isUserId, num } from "../logic.ts";
 import { Icon, type IconName } from "../icons.tsx";
 import { Avatar, errText, me, Select, Sheet } from "./common.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
+import { useExit } from "./useDismiss.ts";
 
 type Kind = "dm" | "group" | "space" | "join";
 const MENU: [Kind, IconName, string][] = [
@@ -19,12 +20,13 @@ const TITLES = Object.fromEntries(MENU.map(([k, , t]) => [k, t])) as Record<Kind
 /** `onOpen(id, true)` = a space: shown as a folder, not opened as a chat. */
 export function NewChat({ activeSpace, onOpen }: { activeSpace?: string; onOpen: (roomId: string, space: boolean) => void }) {
   const [menu, setMenu] = useState(false);
+  const [menuShown, menuClosing] = useExit(menu);
   const [kind, setKind] = useState<Kind | null>(null);
   const done = (id: string, space = kind === "space") => { setKind(null); onOpen(id, space); };
   return (
     <>
-      {menu && (
-        <div className="fab-backdrop" onClick={() => setMenu(false)} onKeyDown={(e) => e.key === "Escape" && setMenu(false)}>
+      {menuShown && (
+        <div className={"fab-backdrop" + (menuClosing ? " closing" : "")} onClick={() => setMenu(false)} onKeyDown={(e) => e.key === "Escape" && setMenu(false)}>
           <div className="fab-menu" role="menu">
             {MENU.map(([k, icon, label]) => (
               <button key={k} role="menuitem" onClick={() => { setKind(k); setMenu(false); }}><Icon name={icon} /> {label}</button>
