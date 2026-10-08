@@ -794,6 +794,12 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .archive-row small { color: var(--muted); font-weight: 400; }
 .archive-row .badge { margin-inline-start: auto; }
 .archive-title { margin: 4px 20px 6px; font-size: 17px; }
+/* calls list (sidebar): a chat row plus a call-back button */
+.calls-tabs { flex: none; }
+.call-row { display: flex; align-items: center; padding-inline-end: 8px; }
+.call-row .room-item { flex: 1; min-width: 0; width: auto; margin-inline-end: 0; }
+.call-missed { color: #e53935; }
+.call-dir { font-size: 13px; }
 .chat-menu-backdrop { position: fixed; inset: 0; z-index: 45; touch-action: none; }
 .chat-menu-backdrop, .chat-menu-backdrop * { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .chat-menu {

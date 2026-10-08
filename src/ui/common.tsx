@@ -172,18 +172,26 @@ export function noticeText(ev: MatrixEvent): string | null {
     case EventType.RoomHistoryVisibility:
       return prev.history_visibility && c.history_visibility !== prev.history_visibility ? `${who} دسترسی به تاریخچه را به «${HISTORY[c.history_visibility] ?? c.history_visibility}» تغییر داد` : null;
     case EventType.RoomTombstone: return `${who} این گروه را ارتقا داد`;
-    case EventType.RTCNotification: {
-      const kind = c["m.call.intent"] === "video" ? "تماس تصویری" : "تماس صوتی";
-      if (c.notification_type !== "ring") return `${who} ${kind} گروهی را شروع کرد`;
-      return callLine(ev, who, kind, rtcOutcome(callEv(ev), getCallNotificationExpiry(c as IRTCNotificationContent, ev.getTs()), eventsAfter(ev)));
+    case EventType.RTCNotification:
+    case EventType.CallInvite: {
+      const i = callInfo(ev);
+      if (!i) return `${who} ${c["m.call.intent"] === "video" ? "تماس تصویری" : "تماس صوتی"} گروهی را شروع کرد`;
+      return callLine(ev, who, i.video ? "تماس تصویری" : "تماس صوتی", i.outcome);
     }
-    case EventType.CallInvite: return callLine(ev, who, isVideoOffer(c as { offer?: { sdp?: string } }) ? "تماس تصویری" : "تماس صوتی", legacyOutcome(callEv(ev), eventsAfter(ev)));
   }
   return null;
 }
 
 const callEv = (e: MatrixEvent): CallEv => ({ id: e.getId(), type: e.getType(), sender: e.getSender()!, ts: e.getTs(), content: e.getContent() });
 /** The loaded events after `ev`, to see how its call went. */
+/** A 1:1 ring (MatrixRTC or legacy): video or not, and how it went. Null for a group call's "started" alert. */
+export function callInfo(ev: MatrixEvent): { video: boolean; outcome: CallOutcome } | null {
+  const c = ev.getContent();
+  if (ev.getType() === EventType.CallInvite) return { video: isVideoOffer(c as { offer?: { sdp?: string } }), outcome: legacyOutcome(callEv(ev), eventsAfter(ev)) };
+  if (c.notification_type !== "ring") return null;
+  return { video: c["m.call.intent"] === "video", outcome: rtcOutcome(callEv(ev), getCallNotificationExpiry(c as IRTCNotificationContent, ev.getTs()), eventsAfter(ev)) };
+}
+
 function eventsAfter(ev: MatrixEvent) {
   const evs = client.getRoom(ev.getRoomId())?.getTimelineForEvent(ev.getId()!)?.getEvents() ?? [];
   return evs.slice(evs.indexOf(ev) + 1).map(callEv);
