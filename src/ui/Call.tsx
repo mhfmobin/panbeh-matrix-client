@@ -8,7 +8,7 @@ import { allowCalls, client, isDirect } from "../matrix.ts";
 import { answer, call, decline, flipCam, getCall, handOf, hangup, loadDevices, membershipOf, minimize, myMedia, ourTransport, react, reactionOf, REACTIONS, setAudioRoute, setDevice, setNoiseSuppression, toggleCam, toggleHand, toggleMic, toggleScreen, toggleSpeaker, useCall, type Active, type Incoming } from "../call.ts";
 import { usePromise, useTick } from "../hooks.ts";
 import { useExit } from "./useDismiss.ts";
-import { fmtDuration, num } from "../logic.ts";
+import { fmtDuration, fmtStats, num, parseStats, type Stats } from "../logic.ts";
 import { isNative, nativeImmersive, nativePip, type AudioRoute } from "../native.ts";
 import { onPickSource, type ShareSource } from "../desktop.ts";
 import { pushBack } from "../back.ts";
@@ -170,6 +170,7 @@ function CallScreen({ a, closing }: { a: Active; closing?: boolean }) {
     : a.lk.state !== ConnectionState.Connected ? "در حال اتصال…"
     : !a.since ? (isDirect(a.room) ? "در حال زنگ زدن…" : "در انتظار دیگران…")
     : !others ? "تنها هستید" : fmtDuration(now - a.since);
+  const [stats, setStats] = useState(false); // tap the status line: numbers on every feed
   const [focus, setFocus] = useState<string | null>(null); // a feed blown up to most of the screen
   const main = tiles.find((t) => t.key === focus); // gone (left, stopped sharing) = back to the grid
   const pip = !main && tiles.length === 2 && others === 1; // 1:1: the other side fills the screen, we're in the corner
@@ -211,7 +212,7 @@ function CallScreen({ a, closing }: { a: Active; closing?: boolean }) {
   const onTap = (e: React.MouseEvent) => {
     if (!immersive) return;
     if (bare) setBare(false);
-    else if ((e.target as Element).closest("button, .call-panel-backdrop, .react-picker")) setPoke((n) => n + 1); // using the controls keeps them up
+    else if ((e.target as Element).closest("button, [role=button], .call-panel-backdrop, .react-picker")) setPoke((n) => n + 1); // using the controls keeps them up
     else setBare(true);
   };
   // Android: the audio button shows where call audio goes; with a headset around it opens the list, otherwise it toggles the speaker
@@ -220,12 +221,13 @@ function CallScreen({ a, closing }: { a: Active; closing?: boolean }) {
   const headset = routes.some((r) => r.kind === "wired" || r.kind === "bluetooth");
   const speakerBtn = () => headset ? setPanel(panel === "routes" ? null : "routes") : toggleSpeaker();
   const tile = (t: TileData, focused = false) =>
-    <Tile key={t.key} room={a.room} t={t} mirror={t.local && !t.screen && a.facing === "user"} focused={focused} onFocus={() => setFocus(focused ? null : t.key)} />;
+    <Tile key={t.key} room={a.room} t={t} mirror={t.local && !t.screen && a.facing === "user"} focused={focused} stats={stats} onFocus={() => setFocus(focused ? null : t.key)} />;
   return (
     <div className={"call-screen" + (closing ? " closing" : "") + (immersive ? " immersive" : "") + (bare ? " bare" : "")} role="dialog" aria-label="تماس" onClick={onTap} ref={screen}>
       <header className="call-head">
         <button className="icon-btn" onClick={hide} title="کوچک کردن" aria-label="کوچک کردن"><Icon name="down" /></button>
-        <div><b>{a.room.name}</b><span>{status}</span></div>
+        <div role="button" tabIndex={0} aria-pressed={stats} title="آمار اتصال" onClick={() => setStats(!stats)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setStats(!stats); }}>
+          <b>{a.room.name}</b><span>{status}</span></div>
       </header>
       {main ? (
         <div className="call-grid focus">
@@ -345,6 +347,7 @@ const leavePip = () => document.pictureInPictureElement ? document.exitPictureIn
 type TileData = {
   key: string; userId: string; local: boolean; screen: boolean; video?: VideoTrack | MediaStream; micOff: boolean; speaking: boolean;
   hand?: boolean; reaction?: string; quality?: ConnectionQuality; // group calls
+  stats?: () => Promise<RTCStatsReport | undefined>; // for the stats overlay: this feed's video, else its audio
 };
 
 /** Everyone's camera (or avatar), plus any screen being shared; others = how many other people are in the call. */
@@ -354,6 +357,7 @@ function tilesOf(a: Active): { tiles: TileData[]; others: number } {
     const feed = (f: CallFeed | undefined, local: boolean, screen: boolean): TileData[] => !f ? [] : [{
       key: (local ? "me" : "them") + (screen ? ":screen" : ""), userId: local ? me() : them, local, screen,
       video: !f.isVideoMuted() && f.stream.getVideoTracks().length ? f.stream : undefined, micOff: f.isAudioMuted(), speaking: false,
+      stats: async () => mc.peerConn?.getStats(),
     }];
     const remote = feed(mc.remoteUsermediaFeed, false, false);
     return { others: 1, tiles: [ // while it rings, the other side is their avatar
@@ -366,13 +370,14 @@ function tilesOf(a: Active): { tiles: TileData[]; others: number } {
     const userId = m?.userId ?? p.identity.slice(0, p.identity.lastIndexOf(":"));
     const video = (src: Track.Source) => { const pub = p.getTrackPublication(src); return pub && !pub.isMuted ? pub.videoTrack : undefined; };
     const t = { userId, local: p.isLocal, micOff: !p.isMicrophoneEnabled, speaking: p.isSpeaking, hand: handOf(m?.eventId), reaction: reactionOf(m?.eventId), quality: p.connectionQuality };
-    return [{ ...t, key: p.identity + Track.Source.Camera, screen: false, video: video(Track.Source.Camera) }]
-      .concat(p.isScreenShareEnabled ? [{ ...t, key: p.identity + Track.Source.ScreenShare, screen: true, video: video(Track.Source.ScreenShare) }] : []);
+    const cam = video(Track.Source.Camera), mic = p.getTrackPublication(Track.Source.Microphone)?.audioTrack, screen = video(Track.Source.ScreenShare);
+    return [{ ...t, key: p.identity + Track.Source.Camera, screen: false, video: cam, stats: async () => (cam ?? mic)?.getRTCStatsReport() }]
+      .concat(p.isScreenShareEnabled ? [{ ...t, key: p.identity + Track.Source.ScreenShare, screen: true, video: screen, stats: async () => screen?.getRTCStatsReport() }] : []);
   });
   return { tiles, others: others.length };
 }
 
-function Tile({ room, t, mirror, focused, onFocus }: { room: Room; t: TileData; mirror: boolean; focused: boolean; onFocus: () => void }) {
+function Tile({ room, t, mirror, focused, stats, onFocus }: { room: Room; t: TileData; mirror: boolean; focused: boolean; stats: boolean; onFocus: () => void }) {
   const ref = useRef<HTMLVideoElement>(null);
   const { video } = t;
   useEffect(() => {
@@ -394,6 +399,7 @@ function Tile({ room, t, mirror, focused, onFocus }: { room: Room; t: TileData; 
         {(t.quality === ConnectionQuality.Poor || t.quality === ConnectionQuality.Lost) && <i className={"call-quality " + t.quality} title={QUALITY[t.quality]} />}
         {t.local ? "شما" : m?.name ?? t.userId}{t.micOff && <Icon name="micOff" size={14} />}
       </span>
+      {stats && t.stats && <StatsBox get={t.stats} local={t.local} />}
       {t.hand && !t.screen && <span className="call-hand" aria-label="دست بالا">🖐️</span>}
       {t.reaction && !t.screen && <span key={t.reaction} className="call-reaction" aria-hidden>{t.reaction}</span>}
       <button className="call-focus" onClick={onFocus} title={focused ? "بازگشت به همه" : "بزرگ‌نمایی"} aria-label={focused ? "بازگشت به همه" : "بزرگ‌نمایی"}>
@@ -401,6 +407,25 @@ function Tile({ room, t, mirror, focused, onFocus }: { room: Room; t: TileData; 
       </button>
     </div>
   );
+}
+
+/** A feed's numbers, sampled every second while the overlay is on. */
+function StatsBox({ get, local }: { get: () => Promise<RTCStatsReport | undefined>; local: boolean }) {
+  const getter = useRef(get);
+  getter.current = get; // a new closure every render; the polling keeps going
+  const [s, setS] = useState<Stats>();
+  useEffect(() => {
+    let prev: Stats | undefined, live = true;
+    const sample = async () => {
+      const r = await getter.current().catch(() => undefined);
+      if (live && r) setS(prev = parseStats(r.values(), local ? "out" : "in", prev));
+    };
+    void sample();
+    const t = setInterval(sample, 1000);
+    return () => { live = false; clearInterval(t); };
+  }, [local]);
+  const text = s && fmtStats(s);
+  return text ? <span className="call-stats" dir="ltr">{text}</span> : null;
 }
 
 function CallBtn({ icon, label, on, ok, danger, onClick }: { icon: IconName; label: string; on?: boolean; ok?: boolean; danger?: boolean; onClick: () => void }) {

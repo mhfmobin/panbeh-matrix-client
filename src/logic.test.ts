@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyFolderOrder, moveFolder, byListOrder, endpointOf, inArchive, isUnread } from "./logic.ts";
+import { applyFolderOrder, moveFolder, byListOrder, endpointOf, inArchive, isUnread, parseStats, fmtStats } from "./logic.ts";
 import { aliasLocalpart, buildRows, roomName, dayLabel, downsample, fmtDuration, inFolder, isUserId, formatMessage, parseGeoUri, spaceRooms, stamp, normalizeServer, normalize, lastSeen, tallyPoll, fitSize, type Msg } from "./logic.ts";
 
 const T = new Date("2026-09-30T12:00:00").getTime();
@@ -296,4 +296,22 @@ test("moveFolder: never touches the first tab", () => {
   assert.equal(moveFolder(ids, 2, 0), ids);
   assert.equal(moveFolder(ids, 2, 9), ids);
   assert.equal(moveFolder(ids, 2, 2), ids);
+});
+
+test("parseStats: video over audio, simulcast adds up, bitrate from the last sample", () => {
+  const report = (bytes: number, ts: number) => [
+    { type: "outbound-rtp", kind: "audio", bytesSent: 999999, timestamp: ts },
+    { type: "outbound-rtp", kind: "video", bytesSent: bytes / 2, frameWidth: 640, frameHeight: 360, framesPerSecond: 15, codecId: "c1", timestamp: ts },
+    { type: "outbound-rtp", kind: "video", bytesSent: bytes / 2, frameWidth: 1280, frameHeight: 720, framesPerSecond: 30, codecId: "c1", timestamp: ts },
+    { type: "remote-inbound-rtp", kind: "video", fractionLost: 0.0125 },
+    { type: "candidate-pair", nominated: true, state: "succeeded", currentRoundTripTime: 0.042 },
+    { type: "codec", id: "c1", mimeType: "video/VP8" },
+  ];
+  const a = parseStats(report(100_000, 1000), "out");
+  assert.equal(a.kbps, undefined);
+  const b = parseStats(report(250_000, 2000), "out", a);
+  assert.deepEqual([b.w, b.h, b.fps, b.kbps, b.loss, b.rtt, b.codec], [1280, 720, 30, 1200, 1.3, 42, "VP8"]);
+  assert.equal(fmtStats(b), "1280×720 · 30fps · 1200kbps · 1.3% · 42ms · VP8");
+  const audio = parseStats([{ type: "inbound-rtp", kind: "audio", bytesReceived: 10, packetsLost: 1, packetsReceived: 199, timestamp: 5 }], "in");
+  assert.deepEqual([audio.w, audio.loss], [undefined, 0.5]);
 });

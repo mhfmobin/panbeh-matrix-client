@@ -366,5 +366,42 @@ export function rtcOutcome(ring: CallEv, until: number, after: CallEv[], now = D
   return gaveUp || until <= now ? { state: "missed" } : { state: "ringing" };
 }
 
+// ---------- call stats (the overlay on each feed) ----------
+
+/** One feed's numbers; bytes/ts carry over to the next sample for the bitrate. loss in %, rtt in ms. */
+export type Stats = { w?: number; h?: number; fps?: number; kbps?: number; loss?: number; rtt?: number; codec?: string; bytes: number; ts: number };
+
+/**
+ * A WebRTC stats report (its values) → one feed's numbers: received (in) or sent (out). Video wins over audio; simulcast layers add up.
+ * prev: the last sample, for the bitrate.
+ */
+export function parseStats(entries: Iterable<Record<string, any>>, dir: "in" | "out", prev?: Stats): Stats {
+  const all = [...entries], type = dir === "in" ? "inbound-rtp" : "outbound-rtp";
+  const rtp = all.filter((e) => e.type === type);
+  const kind = rtp.some((e) => e.kind === "video") ? "video" : "audio";
+  const mine = rtp.filter((e) => e.kind === kind);
+  const max = (k: string) => mine.reduce<number | undefined>((m, e) => typeof e[k] === "number" && e[k] > (m ?? -1) ? e[k] : m, undefined);
+  const sum = (k: string) => mine.reduce((n, e) => n + (e[k] ?? 0), 0);
+  const ts = mine[0]?.timestamp ?? Date.now(), bytes = sum(dir === "in" ? "bytesReceived" : "bytesSent");
+  const s: Stats = { bytes, ts, w: max("frameWidth"), h: max("frameHeight"), fps: max("framesPerSecond") };
+  if (prev && ts > prev.ts && bytes >= prev.bytes) s.kbps = Math.round((bytes - prev.bytes) * 8 / (ts - prev.ts));
+  if (dir === "in") {
+    const lost = sum("packetsLost"), got = sum("packetsReceived");
+    if (lost + got > 0) s.loss = Math.round(1000 * lost / (lost + got)) / 10;
+  } else {
+    const remote = all.filter((e) => e.type === "remote-inbound-rtp" && e.kind === kind && typeof e.fractionLost === "number");
+    if (remote.length) s.loss = Math.round(1000 * Math.max(...remote.map((e) => e.fractionLost))) / 10;
+  }
+  const pair = all.find((e) => e.type === "candidate-pair" && e.nominated && e.state === "succeeded" && typeof e.currentRoundTripTime === "number");
+  if (pair) s.rtt = Math.round(pair.currentRoundTripTime * 1000);
+  const codec = all.find((e) => e.type === "codec" && e.id === mine[0]?.codecId);
+  if (codec?.mimeType) s.codec = String(codec.mimeType).split("/")[1];
+  return s;
+}
+
+/** "1280×720 · 30fps · 1200kbps · 0.5% · 40ms · VP8" */
+export const fmtStats = (s: Stats) => [s.w && s.h ? `${s.w}×${s.h}` : "", s.fps ? `${Math.round(s.fps)}fps` : "", s.kbps !== undefined ? `${s.kbps}kbps` : "",
+  s.loss !== undefined ? `${s.loss}%` : "", s.rtt !== undefined ? `${s.rtt}ms` : "", s.codec ?? ""].filter(Boolean).join(" · ");
+
 /** Endpoint name for the net log: /_matrix/client/v3/rooms/!x/send/… → rooms. */
 export const endpointOf = (url: string) => new URL(url).pathname.split("/").slice(2).find((x) => !/^(client|media|v\d+|r0|unstable)$/.test(x)) ?? "?";
