@@ -12,6 +12,7 @@ import '../prefs.dart';
 import '../theme.dart';
 import 'chat.dart';
 import 'common.dart';
+import 'encryption.dart';
 import 'settings.dart';
 
 String _folderKey() => 'panbeh.folder:${client.userID}';
@@ -46,6 +47,8 @@ class _ChatListState extends State<ChatList> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    recovery.value = null;
+    refreshRecovery(); // the first sync is done by the time the list shows
     subs.add(client.onSync.stream.listen((_) => tick()));
     subs.add(client.onSyncStatus.stream.listen((s) {
       connecting = s.status == SyncStatus.error;
@@ -285,10 +288,37 @@ class _ChatListState extends State<ChatList> with TickerProviderStateMixin {
           bottom: tabBar,
         ),
         floatingActionButton: selecting ? null : FloatingActionButton(onPressed: newThing, child: const Icon(Icons.edit)),
-        body: body,
+        body: Column(children: [const _RecoveryBanner(), Expanded(child: body)]),
       ),
     );
   }
+}
+
+/// Thin Telegram-style strip: this device can't read old encrypted messages yet (or nothing is set up).
+class _RecoveryBanner extends StatelessWidget {
+  const _RecoveryBanner();
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder(
+    valueListenable: recovery,
+    builder: (context, r, _) {
+      if (r == null || r == Recovery.ok) return const SizedBox.shrink();
+      final t = context.tk;
+      return Material(
+        color: t.accent.withValues(alpha: .12),
+        child: InkWell(
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EncryptionPage())),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+            child: Row(spacing: 10, children: [
+              Icon(Icons.lock_outline, size: 18, color: t.accent),
+              Expanded(child: Text(r == Recovery.unlock ? 'برای خواندن پیام‌های رمزنگاری‌شده‌ی قبلی، این دستگاه را تأیید کنید' : 'بازیابی رمزنگاری را راه‌اندازی کنید',
+                style: TextStyle(fontSize: 13.5, color: t.accent, fontWeight: FontWeight.w500))),
+            ]),
+          ),
+        ),
+      );
+    },
+  );
 }
 
 class _Badge extends StatelessWidget {

@@ -10,6 +10,7 @@ import '../logic.dart';
 import '../theme.dart';
 import '../uri.dart';
 import 'common.dart';
+import 'encryption.dart';
 
 enum Tick { none, sending, sent, read, failed }
 
@@ -219,7 +220,8 @@ class _Bubble extends StatelessWidget {
     final lastIsBlock = blocks != null && blocks.isNotEmpty && blocks.last is! List<InlineSpan>;
 
     final replyId = ev.inReplyToEventId(includingFallback: false);
-    return Padding(
+    final locked = ev.type == EventTypes.Encrypted && ev.messageType == MessageTypes.BadEncrypted && recovery.value != Recovery.ok;
+    final bubble = Padding(
       padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
       child: Stack(children: [
         Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
@@ -233,6 +235,8 @@ class _Bubble extends StatelessWidget {
         Positioned(bottom: 0, left: metaLeft ? 0 : null, right: metaLeft ? null : 0, child: Directionality(textDirection: TextDirection.rtl, child: meta)),
       ]),
     );
+    // not decryptable yet: a tap goes to where it gets fixed
+    return locked ? GestureDetector(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EncryptionPage())), child: bubble) : bubble;
   }
 }
 

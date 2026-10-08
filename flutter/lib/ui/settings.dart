@@ -5,6 +5,7 @@ import '../matrix.dart';
 import '../prefs.dart';
 import '../theme.dart';
 import 'common.dart';
+import 'encryption.dart';
 
 /// Own profile (name + avatar) for the drawer and settings.
 Future<({String name, Uri? avatar})> ownProfile() async {
@@ -95,6 +96,11 @@ class SettingsPage extends StatelessWidget {
             ),
           ]),
           Section(children: [
+            ListTile(
+              leading: const Icon(Icons.lock_outline),
+              title: const Text('رمزنگاری'),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EncryptionPage())),
+            ),
             ListTile(
               leading: const Icon(Icons.logout, color: Color(0xffe53935)),
               title: const Text('خروج از این حساب', style: TextStyle(color: Color(0xffe53935))),

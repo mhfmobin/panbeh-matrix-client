@@ -14,6 +14,8 @@ environment:
 # versions available, run `flutter pub outdated`.
 dependencies:
   app_links: ^7.2.2
+  cryptography: ^2.9.0
+  file_picker: ^13.1.0
   flutter:
     sdk: flutter
   flutter_localizations:

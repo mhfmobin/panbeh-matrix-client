@@ -6,6 +6,7 @@ import 'prefs.dart';
 import 'theme.dart';
 import 'ui/chat_list.dart';
 import 'ui/login.dart';
+import 'ui/verify.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -93,7 +94,7 @@ class RootState extends State<Root> {
       _ => StreamBuilder(
         // the cached rooms show at once; only a first-ever login waits for the initial sync
         stream: client.onSync.stream,
-        builder: (context, _) => client.prevBatch == null ? const Splash('در حال همگام‌سازی گفتگوها…') : ChatList(key: ValueKey(client.clientName)),
+        builder: (context, _) => client.prevBatch == null ? const Splash('در حال همگام‌سازی گفتگوها…') : VerificationGate(key: ValueKey(client.clientName), child: const ChatList()),
       ),
     };
   }
