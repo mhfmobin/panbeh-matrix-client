@@ -145,7 +145,10 @@ function Shell() {
 }
 
 const Splash = ({ text }: { text: string }) => (
-  <div className="splash wallpaper"><div className="login-logo">✦</div><span className="spinner inline" /> {text}</div>
+  <div className="splash wallpaper">
+    <div className="login-logo">✦</div><span><span className="spinner inline" /> {text}</span>
+    <div className="skeleton-list" aria-hidden>{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton-row" style={{ animationDelay: i * 0.12 + "s" }}><i className="skeleton avatar-sk" /><span><i className="skeleton" style={{ width: 60 - i * 6 + "%" }} /><i className="skeleton" style={{ width: 85 - i * 8 + "%" }} /></span></div>)}</div>
+  </div>
 );
 
 /** The background service's copy of the app (Android, app closed): sync and notify, nothing on screen. */

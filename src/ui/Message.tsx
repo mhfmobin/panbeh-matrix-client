@@ -16,6 +16,7 @@ import { EmojiPanel, GifView } from "./Emoji.tsx";
 import { LinkPreview } from "./LinkPreview.tsx";
 import { captionOf, EDITABLE } from "./Composer.tsx";
 import { useBackdropHold } from "./useBackdropHold.ts";
+import { reducedMotion, useDismiss } from "./useDismiss.ts";
 import { thumbFor } from "./Media.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 
@@ -87,6 +88,12 @@ export function Message({ ev, room, first, last, actions, flash, enter }: Props)
   const g = useRef<{ id: number; x: number; y: number; tap: boolean; lock: boolean; px: number; crossed: boolean } | null>(null);
   const swallow = useRef(false); // the click that follows a swipe / long-press
   const mine = ev.getSender() === me();
+  const [deleting, setDeleting] = useState(false);
+  const remove = () => void confirmDialog("این پیام برای همه حذف شود؟", { danger: true }).then((y) => { // the bubble shrinks away, then the redaction removes the row
+    if (!y) return;
+    setDeleting(true);
+    setTimeout(() => { client.redactEvent(room.roomId, ev.getId()!).catch((e) => { setDeleting(false); alertDialog(errText(e)); }); }, reducedMotion() ? 0 : 200);
+  });
   const failed = ev.status === EventStatus.NOT_SENT;
   const group = isGroupChat(room);
   const content = ev.getContent();
@@ -151,7 +158,7 @@ export function Message({ ev, room, first, last, actions, flash, enter }: Props)
   };
 
   return (
-    <div ref={row} className={`msg ${mine ? "mine" : "theirs"}${first ? " first" : ""}${last ? " last" : ""}${failed ? " failed" : ""}${flash ? " flash" : ""}${enter ? " enter" : ""}${selecting ? " selecting" : ""}${selected ? " selected" : ""}`}
+    <div ref={row} className={`msg ${mine ? "mine" : "theirs"}${first ? " first" : ""}${last ? " last" : ""}${failed ? " failed" : ""}${flash ? " flash" : ""}${enter ? " enter" : ""}${deleting ? " deleting" : ""}${selecting ? " selecting" : ""}${selected ? " selected" : ""}`}
       onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => end(true)}
       onContextMenu={(e) => { if (!live || selecting || !inside(e)) return; e.preventDefault(); setMenu((m) => m ?? { x: e.clientX, y: e.clientY }); }}
       onClickCapture={(e) => {
@@ -212,7 +219,7 @@ export function Message({ ev, room, first, last, actions, flash, enter }: Props)
           {canPin && <button title={pinned ? "برداشتن سنجاق" : "سنجاق"} aria-label={pinned ? "برداشتن سنجاق" : "سنجاق"}
             onClick={() => togglePin(room, ev.getId()!).catch((e) => alertDialog(errText(e)))}><Icon name="pin" size={17} /></button>}
           {mine && EDITABLE.includes(content.msgtype ?? "") && <button title="ویرایش" aria-label="ویرایش" onClick={() => actions.edit(ev)}><Icon name="edit" size={17} /></button>}
-          {canDelete && <button title="حذف" aria-label="حذف" onClick={() => confirmDialog("این پیام برای همه حذف شود؟", { danger: true }).then((y) => y && void client.redactEvent(room.roomId, ev.getId()!))}><Icon name="trash" size={17} /></button>}
+          {canDelete && <button title="حذف" aria-label="حذف" onClick={() => remove()}><Icon name="trash" size={17} /></button>}
           {picker && (
             <div className="quick-react" onMouseLeave={() => setPicker(false)}>
               {QUICK.map((k) => <button key={k} onClick={() => { toggleReaction(room, ev, k); setPicker(false); }}>{k}</button>)}
@@ -235,7 +242,7 @@ export function Message({ ev, room, first, last, actions, flash, enter }: Props)
           mine && { icon: "info", label: "دیده‌شده توسط", run: () => actions.info(ev) },
           reacted && { icon: "smile", label: "واکنش‌ها", run: () => actions.reactions(ev) },
           actions.select && { icon: "select", label: "انتخاب", run: () => actions.select!(ev) },
-          canDelete && { icon: "trash", label: "حذف", danger: true, run: () => confirmDialog("این پیام برای همه حذف شود؟", { danger: true }).then((y) => y && void client.redactEvent(room.roomId, ev.getId()!)) },
+          canDelete && { icon: "trash", label: "حذف", danger: true, run: remove },
         ]} />
       )}
       {/* portal: .msg-actions fades out when the pointer leaves the message */}
@@ -252,6 +259,7 @@ type MenuItem = { icon: IconName; label: string; run: () => unknown; danger?: bo
 function MsgMenu({ x, y, items, onReact, onMore, onClose }: { x: number; y: number; items: (MenuItem | false | "" | undefined)[];
   onReact: (k: string) => void; onMore: () => void; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [closing, close] = useDismiss(onClose, 160);
   const [pos, setPos] = useState<{ left: number; top: number }>();
   useEffect(() => { // keep it on screen
     const r = ref.current!.getBoundingClientRect();
@@ -259,14 +267,14 @@ function MsgMenu({ x, y, items, onReact, onMore, onClose }: { x: number; y: numb
     ref.current!.focus({ preventScroll: true });
   }, [x, y]);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); close(); } };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [close]);
   const act = (fn: () => unknown) => { onClose(); fn(); };
-  const backdrop = useBackdropHold(onClose, ".msg"); // holding another message switches the menu to it
+  const backdrop = useBackdropHold(onClose, ".msg", close); // holding another message switches the menu to it
   return createPortal(
-    <div className="chat-menu-backdrop msg-menu-backdrop" {...backdrop}>
+    <div className={"chat-menu-backdrop msg-menu-backdrop" + (closing ? " closing" : "")} {...backdrop}>
       <div className="chat-menu msg-menu" role="menu" aria-label="گزینه‌های پیام" tabIndex={-1} ref={ref} style={pos ?? { left: x, top: y, visibility: "hidden" }} onClick={(e) => e.stopPropagation()}>
         <div className="quick-react">
           {QUICK.map((k) => <button key={k} role="menuitem" onClick={() => act(() => onReact(k))}>{k}</button>)}

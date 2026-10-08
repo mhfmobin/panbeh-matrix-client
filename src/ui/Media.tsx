@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent, type WheelEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent, type WheelEvent } from "react";
 import { createPortal } from "react-dom";
 import { Direction, Filter, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { avatarUrl, client, mediaUrl } from "../matrix.ts";
@@ -10,6 +10,7 @@ import { saveFile } from "../native.ts";
 import { FileRow } from "./Message.tsx";
 import { AudioPlayer, stopPlayer, trackFor } from "./Voice.tsx";
 import { requestJump } from "./Search.tsx";
+import { growFrom, takeOrigin, useDismiss } from "./useDismiss.ts";
 import { alertDialog } from "./dialog.tsx";
 
 type Content = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -48,12 +49,14 @@ export function MediaViewer({ items, start, onClose, onJump }: { items: MatrixEv
   const thumb = usePromise(thumbFor(c));
 
   const [zoom, setZoom] = useState(NO_ZOOM);
-  const go = (d: number) => { const n = items[i + d]; if (n) { setId(n.getId()); setZoom(NO_ZOOM); } };
+  const [closing, close] = useDismiss(onClose, 200);
+  const dir = useRef(0); // which way the last prev/next went: the new item slides in from there
+  const go = (d: number) => { const n = items[i + d]; if (n) { dir.current = d; setId(n.getId()); setZoom(NO_ZOOM); } };
   const goRef = useRef(go);
   goRef.current = go;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") close();
       else if (e.key === "ArrowLeft") goRef.current(1);
       else if (e.key === "ArrowRight") goRef.current(-1);
       else return;
@@ -62,10 +65,12 @@ export function MediaViewer({ items, start, onClose, onJump }: { items: MatrixEv
     };
     addEventListener("keydown", onKey, true);
     return () => removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  }, [close]);
 
   // zoom keeps the point under the cursor/fingers still: t' = p - c - (s'/s)(p - c - t), c = stage center
   const stage = useRef<HTMLDivElement>(null);
+  const [from] = useState(takeOrigin);
+  useLayoutEffect(() => { if (from && stage.current) growFrom(stage.current, from); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const zoomAt = (z: Zoom, s2: number, px: number, py: number, mx = px, my = py): Zoom => {
     const r = stage.current!.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     s2 = clampScale(s2);
@@ -115,9 +120,9 @@ export function MediaViewer({ items, start, onClose, onJump }: { items: MatrixEv
 
   const src = full ?? thumb;
   return (
-    <div className="lightbox" role="dialog" aria-label="نمایش رسانه">
+    <div className={"lightbox" + (closing ? " closing" : "") + (from ? " from-thumb" : "")} role="dialog" aria-label="نمایش رسانه">
       <header className="mv-bar">
-        <button className="icon-btn" onClick={onClose} aria-label="بستن"><Icon name="close" /></button>
+        <button className="icon-btn" onClick={close} aria-label="بستن"><Icon name="close" /></button>
         <span className="mv-who">
           <b dir="auto">{senderName(ev)}</b>
           <small>{stamp(ev.getTs())}{items.length > 1 && ` · ${num(i + 1)} از ${num(items.length)}`}</small>
@@ -127,13 +132,13 @@ export function MediaViewer({ items, start, onClose, onJump }: { items: MatrixEv
       </header>
       <div className="mv-stage" ref={stage} onWheel={onWheel} onPointerDown={onPointerDown} onPointerMove={onPointerMove}
         onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onPointerLeave={onPointerUp}
-        onClick={(e) => { if (e.target === e.currentTarget && !down.current.moved) onClose(); }}
+        onClick={(e) => { if (e.target === e.currentTarget && !down.current.moved) close(); }}
         onDoubleClick={(e) => !video && setZoom((z) => (z.s > 1 ? NO_ZOOM : zoomAt(z, 2.5, e.clientX, e.clientY)))}>
         {video ? (
           full ? <VideoPlayer key={ev.getId()} src={full} duration={(c.info?.duration ?? 0) / 1000} /> : <span className="spinner" />
         ) : src ? (
-          <img src={src} alt={c.body ?? ""} draggable={false} className={zoom.s > 1 ? "zoomed" : ""}
-            style={{ transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.s})` }} />
+          <img key={dir.current ? ev.getId() : "first"} src={src} alt={c.body ?? ""} draggable={false} className={(zoom.s > 1 ? "zoomed" : "") + (dir.current ? " slide" : "")}
+            style={{ transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.s})`, "--dir": dir.current } as CSSProperties} />
         ) : <span className="spinner" />}
       </div>
       {i > 0 && <button className="icon-btn mv-nav mv-prev" onClick={() => go(-1)} aria-label="قبلی"><Icon name="back" size={28} /></button>}
@@ -204,24 +209,28 @@ function VideoPlayer({ src, duration }: { src: string; duration: number }) {
 export function PhotoViewer({ mxc, name, onClose }: { mxc: string; name: string; onClose: () => void }) {
   const full = usePromise(mediaUrl({ url: mxc }));
   const thumb = usePromise(avatarUrl(mxc, 96 * 2)); // the avatar's own cached size, shown until the original loads
+  const [closing, close] = useDismiss(onClose, 200);
+  const stage = useRef<HTMLDivElement>(null);
+  const [from] = useState(takeOrigin);
+  useLayoutEffect(() => { if (from && stage.current) growFrom(stage.current, from); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       e.preventDefault();
       e.stopImmediatePropagation(); // mustn't also close the sheet underneath
-      onClose();
+      close();
     };
     addEventListener("keydown", onKey, true);
     return () => removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  }, [close]);
   const src = full ?? thumb;
   return createPortal(
-    <div className="lightbox" role="dialog" aria-label="نمایش عکس">
+    <div className={"lightbox" + (closing ? " closing" : "") + (from ? " from-thumb" : "")} role="dialog" aria-label="نمایش عکس">
       <header className="mv-bar">
-        <button className="icon-btn" onClick={onClose} aria-label="بستن"><Icon name="close" /></button>
+        <button className="icon-btn" onClick={close} aria-label="بستن"><Icon name="close" /></button>
         <span className="mv-who"><b dir="auto">{name}</b></span>
       </header>
-      <div className="mv-stage" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="mv-stage" ref={stage} onClick={(e) => e.target === e.currentTarget && close()}>
         {src ? <img src={src} alt={name} draggable={false} style={{ cursor: "default" }} /> : <span className="spinner" />}
       </div>
     </div>,

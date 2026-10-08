@@ -50,7 +50,7 @@ function remember(u: string) {
 type Props = { onEmoji: (e: string) => void; onClose: () => void; gifs?: { onPick: (g: Gif) => void } };
 
 /** Emoji (+ optional saved gifs) popover; closes on outside click / Esc. Picking doesn't close it. */
-export function EmojiPanel({ onEmoji, onClose, gifs }: Props) {
+export function EmojiPanel({ onEmoji, onClose, gifs, closing }: Props & { closing?: boolean }) {
   const [tab, setTab] = useState<"emoji" | "gif">("emoji");
   useEffect(() => {
     const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -60,7 +60,7 @@ export function EmojiPanel({ onEmoji, onClose, gifs }: Props) {
   return (
     <>
       <div className="menu-backdrop" onClick={onClose} />
-      <div className="emoji-panel" role="dialog" aria-label="اموجی">
+      <div className={"emoji-panel" + (closing ? " closing" : "")} role="dialog" aria-label="اموجی">
         {gifs && (
           <div className="segmented">
             <button className={tab === "emoji" ? "on" : ""} onClick={() => setTab("emoji")}>اموجی</button>

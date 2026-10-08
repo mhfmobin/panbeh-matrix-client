@@ -187,9 +187,9 @@ button:disabled { opacity: 0.6; cursor: default; }
 .folders.sorting { touch-action: none; user-select: none; -webkit-user-select: none; }
 .folders button { -webkit-touch-callout: none; }
 .folders button.dragging { z-index: 2; background: var(--hover); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25); transition: none !important; }
-.folders button.on::after {
-  content: ""; position: absolute; left: 8px; right: 8px; bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: var(--accent);
-}
+.folders { position: relative; }
+.folder-indicator { position: absolute; left: 0; bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: var(--accent); opacity: 0; pointer-events: none; }
+.folder-indicator.ready { transition: transform var(--dur-slow) var(--ease-out), width var(--dur-slow) var(--ease-out), opacity var(--dur-fast); }
 .folder-badge, .badge {
   display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
   background: var(--muted); color: var(--panel); font-size: 12px; font-weight: 600;
@@ -201,7 +201,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 .empty-list { color: var(--muted); text-align: center; margin-top: 40px; }
 .room-item {
   display: flex; align-items: center; gap: 12px; width: calc(100% - 16px); margin: 0 8px; padding: 9px 10px;
-  border-radius: 12px; text-align: start; transition: background 0.12s;
+  border-radius: 12px; text-align: start; transition: background 0.2s, color 0.2s;
 }
 .room-item:hover { background: var(--hover); }
 .room-item.active { background: var(--accent); color: #fff; }
@@ -400,7 +400,7 @@ div.msg-text blockquote { margin: 4px 0; padding-inline-start: 10px; border-inli
   width: 54px; height: 54px; flex: none; display: grid; place-items: center; border-radius: 50%;
   background: var(--panel); color: var(--muted); box-shadow: var(--shadow); transition: background 0.18s, color 0.18s, transform 0.18s;
 }
-.send-btn.ready { background: var(--accent); color: #fff; transform: rotate(0); }
+.send-btn.ready { background: var(--accent); color: #fff; }
 .send-btn:disabled { opacity: 1; }
 
 /* ---------- invite ---------- */
@@ -425,7 +425,7 @@ div.msg-text blockquote { margin: 4px 0; padding-inline-start: 10px; border-inli
 .profile form { flex: 1; gap: 6px; }
 .profile span { color: var(--muted); font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
 .segmented { display: flex; padding: 3px; border-radius: 12px; background: var(--hover); }
-.segmented button { flex: 1; height: 36px; border-radius: 10px; font-weight: 500; color: var(--muted); transition: background 0.15s; }
+.segmented button { flex: 1; height: 36px; border-radius: 10px; font-weight: 500; color: var(--muted); transition: background 0.2s, color 0.2s, box-shadow 0.2s; }
 .segmented button.on { background: var(--panel); color: var(--text); box-shadow: var(--shadow); }
 .swatches { display: flex; gap: 12px; margin: 14px 0; }
 .swatches button { width: 32px; height: 32px; border-radius: 50%; transition: transform 0.15s; }
@@ -517,7 +517,7 @@ input[role="switch"] {
 }
 input[role="switch"]::before {
   content: ""; position: absolute; top: 3px; right: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff;
-  transition: transform 0.15s;
+  transition: transform 0.25s var(--ease-spring);
 }
 input[role="switch"]:checked { background: var(--accent); }
 input[role="switch"]:checked::before { transform: translateX(-18px); }
@@ -1105,11 +1105,80 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .send-btn:not(:disabled):active { transform: scale(0.9); }
 .send-btn.ready { box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 45%, transparent); }
 
-.room-item { transition: background 0.12s, transform var(--dur-fast); }
+.room-item { transition: background 0.2s, color 0.2s, transform var(--dur-fast); }
 .room-item:active { transform: scale(0.985); }
 
 /* ---------- reduced motion ---------- */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0s !important; transition-duration: 0.01ms !important; transition-delay: 0s !important; }
   .spinner, .rec-dot { animation-duration: 1s !important; animation-iteration-count: infinite !important; } /* progress, not decoration */
+  .skeleton, .dots i, .splash .login-logo, .incoming .call-who .avatar { animation: none !important; } /* decorative loops just stop */
+}
+
+/* ---------- motion, round 2 ---------- */
+@keyframes sheet-down { to { transform: translateY(100%); } }
+@keyframes preview-in { from { opacity: 0; transform: translateY(6px); } }
+@keyframes msg-out { to { opacity: 0; transform: scale(0.8); } }
+@keyframes check-in { from { transform: scale(0); opacity: 0; } }
+@keyframes slide-item { from { opacity: 0; transform: translateX(calc(var(--fwd) * var(--dir, 1) * 70px)); } }
+@keyframes zoom-out { to { opacity: 0; transform: scale(0.94); } }
+@keyframes logo-pulse { 50% { transform: scale(1.08); } }
+@keyframes skeleton-in { from { opacity: 0; transform: translateY(6px); } }
+
+/* menus and popups leave the way they came */
+.chat-menu-backdrop.closing, .fab-backdrop.closing { animation: fade-out 0.15s ease-in forwards; pointer-events: none; }
+.chat-menu-backdrop.closing > .chat-menu, .fab-backdrop.closing > .fab-menu { animation: pop-out 0.15s ease-in forwards; }
+.attach-menu.closing, .emoji-panel.closing { animation: pop-out 0.15s ease-in forwards; pointer-events: none; }
+.attach-menu { animation: pop 0.16s var(--ease-out); transform-origin: bottom right; }
+.emoji-panel { animation: pop 0.18s var(--ease-out); transform-origin: bottom left; }
+.fab-menu { transform-origin: bottom right; }
+@media (max-width: 700px) {
+  .chat-menu-backdrop.closing > .msg-menu { animation: sheet-down 0.18s ease-in forwards; }
+}
+
+/* lightbox */
+.lightbox.closing { animation: fade-out 0.2s ease-in forwards; pointer-events: none; }
+.lightbox.closing .mv-stage { animation: zoom-out 0.2s ease-in forwards; }
+.lightbox.from-thumb .mv-stage img:not(.slide) { animation: none; }
+.mv-stage img.slide { animation: slide-item 0.28s var(--ease-out); }
+.mv-nav { transition: transform var(--dur-fast), background var(--dur-fast); }
+.mv-nav:active { transform: scale(0.9); }
+
+/* chat list */
+.room-preview.changed { animation: preview-in 0.25s var(--ease-out); }
+.skeleton { display: block; height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--hover) 25%, color-mix(in srgb, var(--hover) 55%, var(--panel)) 50%, var(--hover) 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
+.skeleton-list { width: min(340px, 90vw); display: grid; gap: 14px; margin-top: 18px; }
+.skeleton-row { display: flex; align-items: center; gap: 12px; animation: skeleton-in 0.4s var(--ease-out) both; }
+.skeleton-row > span { flex: 1; display: grid; gap: 8px; }
+.skeleton.avatar-sk { flex: none; width: 46px; height: 46px; border-radius: 50%; }
+.skeleton-timeline { width: min(520px, 100%); margin: auto; padding: 24px 12px; display: grid; gap: 12px; }
+.skeleton-timeline .skeleton { height: 44px; border-radius: 16px; animation: shimmer 1.2s infinite, skeleton-in 0.4s var(--ease-out) both; }
+.skeleton-timeline .skeleton.mine { justify-self: end; }
+.login, .splash { animation: fade 0.25s; }
+.splash .login-logo { animation: logo-pulse 1.8s ease-in-out infinite; }
+
+/* messages */
+.msg.deleting .bubble, .msg.deleting .reactions { animation: msg-out 0.2s ease-in forwards; transform-origin: center; }
+.msg.selecting .sel-check { animation: check-in 0.25s var(--ease-spring); }
+.msg.selected .sel-check svg { animation: tick-pop 0.3s var(--ease-spring); }
+.pinned-text { animation: preview-in 0.22s var(--ease-out); }
+
+/* composer */
+.composer-row textarea { transition: height 0.12s var(--ease-out); }
+.recorder-live, .recorder-preview { animation: mode-in 0.2s var(--ease-out); }
+.emoji-grid, .gif-grid { animation: fade 0.18s; }
+.emoji-grid button { transition: background var(--dur-fast), transform var(--dur-fast); }
+.emoji-grid button:active { transform: scale(0.85); }
+.send-btn { position: relative; overflow: hidden; }
+.send-btn::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: currentColor; opacity: 0; transform: scale(0); transition: transform 0.35s var(--ease-out), opacity 0.35s; pointer-events: none; }
+.send-btn:not(:disabled):active::after { opacity: 0.18; transform: scale(1); transition-duration: 0s; }
+
+/* focus and press feedback */
+.reactions button:hover { transform: translateY(-1px); }
+.icon-btn, .room-head-info, .avatar-edit::after { transition-property: background, color, transform, opacity; transition-duration: var(--dur-fast); }
+.call-controls button:active { transform: scale(0.92); }
+
+/* theme change: colours fade for a moment instead of snapping */
+.theme-switching, .theme-switching *, .theme-switching *::before, .theme-switching *::after {
+  transition: background-color 0.3s, color 0.3s, border-color 0.3s, box-shadow 0.3s, fill 0.3s, stroke 0.3s !important;
 }

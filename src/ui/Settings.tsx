@@ -31,8 +31,14 @@ export const isSendKey = (e: { key: string; shiftKey: boolean; ctrlKey: boolean;
 /** Answering legacy m.call.* calls: developer options only. */
 export const legacyCallsOn = () => { const p = loadPrefs(); return p.dev && p.legacyCalls; };
 
+let prefsApplied = false;
 export function applyPrefs(p = loadPrefs()) {
   const root = document.documentElement;
+  if (prefsApplied) { // colours fade between themes instead of snapping
+    root.classList.add("theme-switching");
+    setTimeout(() => root.classList.remove("theme-switching"), 350);
+  }
+  prefsApplied = true;
   if (p.theme === "system") delete root.dataset.theme; else root.dataset.theme = p.theme;
   root.dataset.wallpaper = p.wallpaper;
   root.style.setProperty("--accent", p.accent);

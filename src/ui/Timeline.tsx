@@ -217,7 +217,11 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   const toBottom = () => { stuck.current = true; list.current?.scrollToIndex({ index: "LAST", align: "end" }); };
   const unread = thread ? 0 : room.getUnreadNotificationCount();
   // Virtuoso mounted with no data stays hidden waiting for its initial "LAST" scroll, so wait for rows
-  if (!rows.length) return <div className="timeline-wrap"><span className="spinner" /></div>;
+  if (!rows.length) return (
+    <div className="timeline-wrap" aria-busy>
+      <div className="skeleton-timeline" aria-hidden>{[62, 38, 74, 50, 30, 66].map((w, i) => <i key={i} className={"skeleton " + (i % 3 === 1 ? "mine" : "")} style={{ width: w + "%" }} />)}</div>
+    </div>
+  );
   const divider = rows.findIndex((r) => r.type === "unread"); // read only on mount: open at the divider
 
   return (

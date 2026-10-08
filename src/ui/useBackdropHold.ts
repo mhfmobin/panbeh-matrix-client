@@ -5,7 +5,7 @@ const HOLD_MS = 450;
 /** Props for a menu's full-screen backdrop. A tap on it closes the menu; holding a finger (or right-clicking) on something
  *  underneath that matches `target` closes the menu and opens that item's own menu instead of just dismissing, by re-sending it
  *  a `contextmenu` event. A menu's own opening gesture is still down when it appears, so its release is ignored for 350ms. */
-export function useBackdropHold(onClose: () => void, target: string) {
+export function useBackdropHold(onClose: () => void, target: string, onTap: () => void = onClose) {
   const born = useRef(Date.now());
   const hold = useRef<{ timer: number; fired: boolean; x: number; y: number } | null>(null);
   const cancel = () => { if (hold.current) clearTimeout(hold.current.timer); };
@@ -17,7 +17,7 @@ export function useBackdropHold(onClose: () => void, target: string) {
     }, 0);
   };
   return {
-    onClick: () => { if (Date.now() - born.current > 350) onClose(); },
+    onClick: () => { if (Date.now() - born.current > 350) onTap(); },
     onPointerDown: (e: PointerEvent) => {
       if (e.pointerType !== "touch") return;
       cancel();

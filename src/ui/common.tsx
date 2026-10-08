@@ -231,6 +231,7 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
 export function Select<T extends string | number>({ value, options, onChange, disabled }:
   { value: T; options: [T, string][]; onChange: (v: T) => void; disabled?: boolean }) {
   const [at, setAt] = useState<DOMRect | null>(null);
+  const [closing, close] = useDismiss(() => setAt(null), 150);
   const menu = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number }>();
   useLayoutEffect(() => { // under the button, kept on screen
@@ -241,10 +242,10 @@ export function Select<T extends string | number>({ value, options, onChange, di
   }, [at]);
   useEffect(() => {
     if (!at) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); setAt(null); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); close(); } };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [at]);
+  }, [at, close]);
   const pick = (v: T) => { setAt(null); if (v !== value) onChange(v); };
   return (
     <>
@@ -253,7 +254,7 @@ export function Select<T extends string | number>({ value, options, onChange, di
         <span>{options.find(([v]) => v === value)?.[1] ?? String(value)}</span><Icon name="down" size={18} />
       </button>
       {at && createPortal(
-        <div className="chat-menu-backdrop msg-menu-backdrop select-backdrop" onClick={() => setAt(null)}>
+        <div className={"chat-menu-backdrop msg-menu-backdrop select-backdrop" + (closing ? " closing" : "")} onClick={close}>
           <div className="chat-menu msg-menu select-menu" role="listbox" tabIndex={-1} ref={menu} onClick={(e) => e.stopPropagation()}
             style={{ minWidth: at.width, ...(pos ?? { left: 0, top: 0, visibility: "hidden" }) }}>
             {options.map(([v, label]) => (

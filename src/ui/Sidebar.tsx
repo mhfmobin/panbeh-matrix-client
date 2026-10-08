@@ -1,5 +1,6 @@
 import { useBackdropHold } from "./useBackdropHold.ts";
-import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from "react";
+import { useDismiss } from "./useDismiss.ts";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type TouchEvent } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { NotificationCountType, UserEvent, type Room } from "matrix-js-sdk";
 import { client, dmPeer } from "../matrix.ts";
@@ -45,6 +46,19 @@ export function Sidebar({ selected, onSelect, onSettings, banner }: Props) {
   useEffect(() => () => setBadge(0), []); // signed out or switching accounts
 
   const nav = useRef<HTMLElement>(null);
+  const indicator = useRef<HTMLSpanElement>(null);
+  const tabsKey = folders.map((f) => f.id).join("\n");
+  useLayoutEffect(() => { // the underline slides to the active tab; the first placement and resizes don't animate
+    const bar = nav.current, ind = indicator.current, tab = bar?.querySelector<HTMLElement>("button.on");
+    if (!bar || !ind) return;
+    if (!tab) { ind.style.opacity = "0"; return; }
+    const place = () => { ind.style.opacity = "1"; ind.style.width = tab.offsetWidth - 16 + "px"; ind.style.transform = `translateX(${tab.offsetLeft + 8}px)`; };
+    place();
+    requestAnimationFrame(() => ind.classList.add("ready"));
+    const ro = new ResizeObserver(() => { ind.classList.remove("ready"); place(); requestAnimationFrame(() => ind.classList.add("ready")); });
+    ro.observe(tab);
+    return () => ro.disconnect();
+  }, [active, tabsKey, !q && !inArchiveView]); // eslint-disable-line react-hooks/exhaustive-deps
   const { dragging, barProps } = useSortableTabs(nav, folders.map((f) => f.id), (from, to) => setOrder(moveFolder(folders.map((f) => f.id), from, to)));
   // keep the active tab visible (e.g. a remembered space folder past the edge)
   useEffect(() => { nav.current?.querySelector(".on")?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, [active, q]);
@@ -127,6 +141,7 @@ export function Sidebar({ selected, onSelect, onSettings, banner }: Props) {
               </button>
             );
           })}
+          <span className="folder-indicator" ref={indicator} aria-hidden />
         </nav>
       )}
       {!q && !inArchiveView && activeSpace && (
@@ -198,6 +213,7 @@ function RoomItem({ row, active, onClick, onMenu }: { row: RoomRow; active: bool
   if (typing.length) preview = (row.isDM ? "" : bdi(typing[0].name.split(" ")[0]) + " ") + "در حال نوشتن";
   const muted = !!row.muted;
   const bumped = useChange(row.unread);
+  const previewChanged = useChange(preview, 350);
   const mentioned = row.unread > 0 && room.getUnreadNotificationCount(NotificationCountType.Highlight) > 0;
   const cancel = () => { if (press.current) clearTimeout(press.current.timer); };
   return (
@@ -219,7 +235,7 @@ function RoomItem({ row, active, onClick, onMenu }: { row: RoomRow; active: bool
           <span className="room-time">{listTime(row.ts)}</span>
         </div>
         <div className="room-item-bottom">
-          <span className={"room-preview" + (typing.length ? " typing" : "")}>{preview}{typing.length > 0 && <Dots />}</span>
+          <span className={"room-preview" + (typing.length ? " typing" : "") + (previewChanged ? " changed" : "")}>{preview}{typing.length > 0 && <Dots />}</span>
           {mentioned && <span className="badge">@</span>}
           {(row.unread > 0 || row.invite) ? <span className={"badge" + (muted ? " muted" : "") + (bumped ? " bump" : "")}>{row.invite ? "!" : num(row.unread)}</span>
             : row.marked ? <span className={"badge dot" + (muted ? " muted" : "")} aria-label="خوانده‌نشده" />
@@ -233,6 +249,7 @@ function RoomItem({ row, active, onClick, onMenu }: { row: RoomRow; active: bool
 function ChatMenu({ row, x, y, onClose }: Menu & { onClose: () => void }) {
   const { room } = row;
   const ref = useRef<HTMLDivElement>(null);
+  const [closing, close] = useDismiss(onClose, 160);
   const [pos, setPos] = useState({ left: x, top: y });
   useEffect(() => { // keep it on screen
     const r = ref.current!.getBoundingClientRect();
@@ -240,15 +257,15 @@ function ChatMenu({ row, x, y, onClose }: Menu & { onClose: () => void }) {
     ref.current!.querySelector("button")?.focus();
   }, [x, y]);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); close(); } };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [close]);
   const run = (fn: () => Promise<unknown>) => { onClose(); fn().catch((e) => alertDialog(errText(e))); };
   const ops = chatOps(row), unread = ops.unread;
-  const backdrop = useBackdropHold(onClose, ".room-item"); // holding another chat switches the menu to it
+  const backdrop = useBackdropHold(onClose, ".room-item", close); // holding another chat switches the menu to it
   return (
-    <div className="chat-menu-backdrop" {...backdrop}>
+    <div className={"chat-menu-backdrop" + (closing ? " closing" : "")} {...backdrop}>
       <div className="chat-menu" role="menu" ref={ref} style={pos} onClick={(e) => e.stopPropagation()}>
         <button role="menuitem" onClick={() => run(ops.pin)}>
           <Icon name="pin" /> {row.pinned ? "برداشتن سنجاق" : "سنجاق"}</button>
