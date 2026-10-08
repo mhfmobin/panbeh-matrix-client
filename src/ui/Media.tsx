@@ -11,6 +11,7 @@ import { FileRow } from "./Message.tsx";
 import { AudioPlayer, stopPlayer, trackFor } from "./Voice.tsx";
 import { requestJump } from "./Search.tsx";
 import { growFrom, takeOrigin, useDismiss } from "./useDismiss.ts";
+import { useSlider } from "./useSlider.ts";
 import { alertDialog } from "./dialog.tsx";
 
 type Content = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -271,6 +272,7 @@ async function fetchPage(room: Room, from: string | null): Promise<Page> {
 /** Photos/videos, files, links and audio of a chat, newest first. `onJump` closes whatever hosts us. */
 export function SharedMedia({ room, onClose, onJump }: { room: Room; onClose: () => void; onJump: () => void }) {
   const [tab, setTab] = useState<MediaKind>("media");
+  const pill = useSlider<HTMLDivElement>();
   const [items, setItems] = useState<Item[]>([]);
   const [token, setToken] = useState<string | null | undefined>(undefined); // undefined = first page, null = start of history
   const [busy, setBusy] = useState(false);
@@ -314,7 +316,7 @@ export function SharedMedia({ room, onClose, onJump }: { room: Room; onClose: ()
 
   return (
     <Sheet title="رسانه‌ها، فایل‌ها و پیوندها" onClose={onClose}>
-      <div className="segmented sm-tabs">
+      <div className="segmented sm-tabs" data-pill ref={pill}>
         {(Object.keys(TABS) as MediaKind[]).map((k) => (
           <button key={k} className={tab === k ? "on" : ""} onClick={() => { setTab(k); setAutoLeft(AUTO_PAGES); }}>{TABS[k]}</button>
         ))}

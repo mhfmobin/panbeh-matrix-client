@@ -18,6 +18,7 @@ import { pendingJump, SearchSheet } from "./Search.tsx";
 import { MediaViewer, timelineMedia } from "./Media.tsx";
 import { Predecessor, Upgraded } from "./Admin.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
+import { useExit } from "./useDismiss.ts";
 
 export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
   useTick(client, [RoomMemberEvent.Typing, "Room.myMembership", "Room.name"]);
@@ -92,7 +93,11 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
     ? `${typing.length > 2 ? `${typing.slice(0, 2).join("، ")} و ${num(typing.length - 2)} نفر دیگر` : typing.join(" و ")} در حال نوشتن`
     : room.getMyMembership() === KnownMembership.Invite ? "دعوت‌نامه" // invites carry no member counts
     : seen.text ?? `${num(room.getJoinedMemberCount())} عضو`;
-  const thread = threadId ? room.getThread(threadId) : null;
+  const liveThread = threadId ? room.getThread(threadId) : null;
+  const [threadShown, threadClosing] = useExit(!!liveThread, 240);
+  const lastThread = useRef(liveThread);
+  if (liveThread) lastThread.current = liveThread;
+  const thread = liveThread ?? (threadShown ? lastThread.current : null); // keeps rendering while the panel slides out
 
   async function jump(id: string, maxPages?: number) {
     const ev = await loadEvent(room, id).catch(() => null);
@@ -164,7 +169,7 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
         )}
       </div>
       {thread && (
-        <aside className="thread-panel">
+        <aside className={"thread-panel" + (threadClosing ? " closing" : "")} inert={threadClosing}>
           <header className="room-head">
             <div className="room-head-text"><b>رشته‌ی گفتگو</b><span>{num(thread.length)} پاسخ</span></div>
             <button className="icon-btn" onClick={() => setThreadId(null)} aria-label="بستن رشته"><Icon name="close" /></button>

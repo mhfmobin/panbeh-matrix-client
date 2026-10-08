@@ -5,6 +5,7 @@ import { accountManageUrl, addAccount, client, sessions, switchAccount, deleteDe
 import { useTick } from "../hooks.ts";
 import { Icon, type IconName } from "../icons.tsx";
 import { Avatar, errText, me, Select, Sheet } from "./common.tsx";
+import { useSlider } from "./useSlider.ts";
 import { num, stamp } from "../logic.ts";
 import { decryptKeyFile, encryptKeyFile } from "../keyfile.ts";
 import { showVerification } from "./Verify.tsx";
@@ -62,6 +63,7 @@ export function Settings({ onClose, onSecurityChange }: { onClose: () => void; o
   };
 
   const [view, setView] = useState<View>("main");
+  const pill = useSlider<HTMLDivElement>();
   const back = () => setView("main");
   if (view === "devices") return <Sheet title="دستگاه‌ها" onClose={back}><Devices /></Sheet>;
   if (view === "password") return <Sheet title="تغییر رمز عبور" onClose={back}>{isOAuth() ? <AccountPage action="org.matrix.profile" /> : <ChangePassword />}</Sheet>;
@@ -85,7 +87,7 @@ export function Settings({ onClose, onSecurityChange }: { onClose: () => void; o
       </button>
 
       <h3>ظاهر</h3>
-      <div className="segmented">
+      <div className="segmented" data-pill ref={pill}>
         {(Object.keys(THEMES) as Prefs["theme"][]).map((t) => (
           <button key={t} className={prefs.theme === t ? "on" : ""} onClick={() => set({ theme: t })}>{THEMES[t]}</button>
         ))}

@@ -1,5 +1,6 @@
 import { useBackdropHold } from "./useBackdropHold.ts";
 import { useDismiss } from "./useDismiss.ts";
+import { flipRow } from "./useSlider.ts";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type TouchEvent } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { NotificationCountType, UserEvent, type Room } from "matrix-js-sdk";
@@ -216,8 +217,10 @@ function RoomItem({ row, active, onClick, onMenu }: { row: RoomRow; active: bool
   const previewChanged = useChange(preview, 350);
   const mentioned = row.unread > 0 && room.getUnreadNotificationCount(NotificationCountType.Highlight) > 0;
   const cancel = () => { if (press.current) clearTimeout(press.current.timer); };
+  const el = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => { if (el.current) flipRow(el.current, row.id); }); // a chat that moved up or down slides there
   return (
-    <button className={"room-item" + (active ? " active" : "")}
+    <button ref={el} className={"room-item" + (active ? " active" : "")}
       onClick={() => { if (press.current?.fired) press.current = null; else onClick(); }}
       onContextMenu={row.invite ? undefined : (e) => { e.preventDefault(); cancel(); onMenu(e.clientX, e.clientY); }}
       // iOS Safari fires no contextmenu on long-press

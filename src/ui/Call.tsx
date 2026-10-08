@@ -7,6 +7,7 @@ import { ConnectionQuality, ConnectionState, Track, type VideoTrack } from "live
 import { allowCalls, client, isDirect } from "../matrix.ts";
 import { answer, call, decline, flipCam, getCall, handOf, hangup, loadDevices, membershipOf, minimize, myMedia, ourTransport, react, reactionOf, REACTIONS, setAudioRoute, setDevice, setNoiseSuppression, toggleCam, toggleHand, toggleMic, toggleScreen, toggleSpeaker, useCall, type Active, type Incoming } from "../call.ts";
 import { usePromise, useTick } from "../hooks.ts";
+import { useExit } from "./useDismiss.ts";
 import { fmtDuration, num } from "../logic.ts";
 import { isNative, nativeAudioRoutes, nativePip, type AudioRoute } from "../native.ts";
 import { onPickSource, type ShareSource } from "../desktop.ts";
@@ -40,6 +41,10 @@ export async function start(room: Room, video: boolean, legacy?: boolean) {
 export function CallButtons({ room }: { room: Room }) {
   const sfu = usePromise(ourTransport());
   const [menu, setMenu] = useState<{ x: number; y: number; video: boolean } | null>(null);
+  const [menuShown, menuClosing] = useExit(!!menu);
+  const lastMenu = useRef(menu);
+  if (menu) lastMenu.current = menu;
+  const m = menu ?? lastMenu.current;
   const dm = isDirect(room), dev = loadPrefs().dev;
   if (!sfu && !(dm && dev)) return null;
   // developer options, right-click / long-press in a DM: pick a legacy call by hand
@@ -48,13 +53,13 @@ export function CallButtons({ room }: { room: Room }) {
     <>
       <button className="icon-btn" onClick={() => run(start(room, false))} onContextMenu={pick(false)} title="تماس صوتی" aria-label="تماس صوتی"><Icon name="phone" /></button>
       <button className="icon-btn" onClick={() => run(start(room, true))} onContextMenu={pick(true)} title="تماس تصویری" aria-label="تماس تصویری"><Icon name="video" /></button>
-      {menu && (
-        <div className="chat-menu-backdrop msg-menu-backdrop" onClick={() => setMenu(null)}>
-          <div className="chat-menu msg-menu" role="menu" style={{ left: Math.max(8, Math.min(menu.x - 260, innerWidth - 268)), top: menu.y }}>
-            <button role="menuitem" onClick={() => run(start(room, menu.video, false))}>
-              <Icon name={menu.video ? "video" : "phone"} /> تماس</button>
-            <button role="menuitem" onClick={() => run(start(room, menu.video, true))}>
-              <Icon name={menu.video ? "video" : "phone"} /> تماس با روش قدیمی</button>
+      {menuShown && m && (
+        <div className={"chat-menu-backdrop msg-menu-backdrop" + (menuClosing ? " closing" : "")} onClick={() => setMenu(null)}>
+          <div className="chat-menu msg-menu" role="menu" style={{ left: Math.max(8, Math.min(m.x - 260, innerWidth - 268)), top: m.y }}>
+            <button role="menuitem" onClick={() => { setMenu(null); run(start(room, m.video, false)); }}>
+              <Icon name={m.video ? "video" : "phone"} /> تماس</button>
+            <button role="menuitem" onClick={() => { setMenu(null); run(start(room, m.video, true)); }}>
+              <Icon name={m.video ? "video" : "phone"} /> تماس با روش قدیمی</button>
           </div>
         </div>
       )}
@@ -87,12 +92,15 @@ export function CallBar({ room }: { room?: Room }) {
 export function CallLayer() {
   const { active, incoming } = useCall();
   const showing = !!active && !active.min;
+  const [screenShown, screenClosing] = useExit(showing, 220);
+  const lastActive = useRef(active);
+  if (active) lastActive.current = active;
   useEffect(() => { if (showing || !active) void leavePip(); }, [showing, !active]); // back on the call screen, or it ended
   const [pick, setPick] = useState<{ sources: ShareSource[]; done: (id: string | null) => void } | null>(null);
   useEffect(() => onPickSource((sources) => new Promise((done) => setPick({ sources, done }))), []);
   if (incoming && !active) return <IncomingCall room={incoming.room} video={incoming.video} />;
   return <>
-    {active && !active.min && <CallScreen a={active} />}
+    {screenShown && lastActive.current && <CallScreen a={lastActive.current} closing={screenClosing} />}
     {active && incoming && <Waiting i={incoming} />}
     {pick && <SourcePicker sources={pick.sources} onDone={(id) => { pick.done(id); setPick(null); }} />}
   </>;
@@ -151,7 +159,7 @@ function IncomingCall({ room, video }: { room: Room; video: boolean }) {
   );
 }
 
-function CallScreen({ a }: { a: Active }) {
+function CallScreen({ a, closing }: { a: Active; closing?: boolean }) {
   useEffect(() => pushBack(() => { minimize(true); }), []);
   const hide = () => { minimize(true); if (!isNative) void enterPip(a); }; // the click is the user gesture PiP needs
   const now = useClock(!!a.since);
@@ -186,7 +194,7 @@ function CallScreen({ a }: { a: Active }) {
   const tile = (t: TileData, focused = false) =>
     <Tile key={t.key} room={a.room} t={t} mirror={t.local && !t.screen && a.facing === "user"} focused={focused} onFocus={() => setFocus(focused ? null : t.key)} />;
   return (
-    <div className="call-screen" role="dialog" aria-label="تماس">
+    <div className={"call-screen" + (closing ? " closing" : "")} role="dialog" aria-label="تماس">
       <header className="call-head">
         <button className="icon-btn" onClick={hide} title="کوچک کردن" aria-label="کوچک کردن"><Icon name="down" /></button>
         <div><b>{a.room.name}</b><span>{status}</span></div>

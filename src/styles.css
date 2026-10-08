@@ -1182,3 +1182,19 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .theme-switching, .theme-switching *, .theme-switching *::before, .theme-switching *::after {
   transition: background-color 0.3s, color 0.3s, border-color 0.3s, box-shadow 0.3s, fill 0.3s, stroke 0.3s !important;
 }
+
+/* ---------- motion, round 3 ---------- */
+@keyframes thread-out { to { transform: translateX(calc(var(--fwd) * -40px)); opacity: 0; } }
+.thread-panel.closing { animation: thread-out 0.22s ease-in forwards; }
+.call-screen.closing { animation: fade-out 0.22s ease-in forwards; pointer-events: none; }
+
+/* segmented controls: one highlight slides between the buttons */
+.segmented[data-pill] { position: relative; }
+.segmented[data-pill]::before {
+  content: ""; position: absolute; top: 3px; bottom: 3px; left: 0; width: var(--pw, 0); transform: translateX(var(--px, 0));
+  border-radius: 10px; background: var(--panel); box-shadow: var(--shadow); opacity: 0; pointer-events: none;
+}
+.segmented[data-pill].ready::before { opacity: 1; transition: transform var(--dur-slow) var(--ease-out), width var(--dur-slow) var(--ease-out); }
+.segmented[data-pill]:not(.ready) button.on { background: var(--panel); box-shadow: var(--shadow); } /* before the pill is placed */
+.segmented[data-pill].ready button.on { background: transparent; box-shadow: none; }
+.segmented[data-pill] button { position: relative; }
