@@ -50,6 +50,7 @@ const P = {
   speaker: "M4 9h4l5-4v14l-5-4H4zM16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11",
   mute: "M4 9h4l5-4v14l-5-4H4zM16 9l5 6M21 9l-5 6",
   hand: "M18 11V6a2 2 0 0 0-4 0v4M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8a8 8 0 0 0 16 0v-2a2 2 0 0 0-4 0",
+  bluetooth: "M7 7l10 10-5 5V2l5 5L7 17",
   headphones: "M4 15v-3a8 8 0 0 1 16 0v3M4 15h3v5H5a1 1 0 0 1-1-1zM20 15h-3v5h2a1 1 0 0 0 1-1z",
   expand: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5",
   shrink: "M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5",

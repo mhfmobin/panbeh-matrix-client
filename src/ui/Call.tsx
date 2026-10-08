@@ -9,7 +9,7 @@ import { answer, call, decline, flipCam, getCall, handOf, hangup, loadDevices, m
 import { usePromise, useTick } from "../hooks.ts";
 import { useExit } from "./useDismiss.ts";
 import { fmtDuration, num } from "../logic.ts";
-import { isNative, nativeAudioRoutes, nativeImmersive, nativePip, type AudioRoute } from "../native.ts";
+import { isNative, nativeImmersive, nativePip, type AudioRoute } from "../native.ts";
 import { onPickSource, type ShareSource } from "../desktop.ts";
 import { pushBack } from "../back.ts";
 import { Icon, type IconName } from "../icons.tsx";
@@ -183,7 +183,7 @@ function CallScreen({ a, closing }: { a: Active; closing?: boolean }) {
     nativePip(true);
     return () => nativePip(false);
   }, [hasVideo]);
-  const [panel, setPanel] = useState<"devices" | "people" | "reactions" | "emoji" | { routes: AudioRoute[]; current: number } | null>(null);
+  const [panel, setPanel] = useState<"devices" | "people" | "reactions" | "emoji" | "routes" | null>(null);
   const toggle = (p: "devices" | "people" | "reactions") => setPanel(panel === p ? null : p);
   // a video fills the screen (spotlit, or the other side of a 1:1): edge to edge, controls float over it and hide after a while, a tap brings them back
   const immersive = !!(main ?? (pip ? tiles.find((t) => !t.local) : undefined))?.video;
@@ -214,12 +214,11 @@ function CallScreen({ a, closing }: { a: Active; closing?: boolean }) {
     else if ((e.target as Element).closest("button, .call-panel-backdrop, .react-picker")) setPoke((n) => n + 1); // using the controls keeps them up
     else setBare(true);
   };
-  // Android: with a headset around, the speaker button picks where audio goes; otherwise it just toggles the speaker
-  const speakerBtn = async () => {
-    const r = await nativeAudioRoutes();
-    if (r.routes.some((x) => x.kind === "wired" || x.kind === "bluetooth")) setPanel(r);
-    else toggleSpeaker();
-  };
+  // Android: the audio button shows where call audio goes; with a headset around it opens the list, otherwise it toggles the speaker
+  const routes = a.routes?.routes ?? [];
+  const route = routes.find((r) => r.id === a.routes?.current)?.kind ?? (a.speaker ? "speaker" : "earpiece");
+  const headset = routes.some((r) => r.kind === "wired" || r.kind === "bluetooth");
+  const speakerBtn = () => headset ? setPanel(panel === "routes" ? null : "routes") : toggleSpeaker();
   const tile = (t: TileData, focused = false) =>
     <Tile key={t.key} room={a.room} t={t} mirror={t.local && !t.screen && a.facing === "user"} focused={focused} onFocus={() => setFocus(focused ? null : t.key)} />;
   return (
@@ -245,7 +244,7 @@ function CallScreen({ a, closing }: { a: Active; closing?: boolean }) {
         <CallBtn icon={m.mic ? "mic" : "micOff"} label="میکروفون" on={!m.mic} onClick={() => run(toggleMic())} />
         <CallBtn icon={m.cam ? "video" : "videoOff"} label="دوربین" on={!m.cam} onClick={() => run(toggleCam())} />
         {isNative && m.cam && <CallBtn icon="flip" label="چرخش دوربین" onClick={() => run(flipCam())} />}
-        {isNative && <CallBtn icon="speaker" label="بلندگو" on={a.speaker} onClick={() => run(speakerBtn())} />}
+        {isNative && <CallBtn icon={ROUTE_ICONS[route]} label={headset ? "خروجی صدا: " + ROUTE_LABELS[route] : "بلندگو"} on={headset ? panel === "routes" || route !== "earpiece" : a.speaker} onClick={speakerBtn} />}
         {canShare && <CallBtn icon="screen" label="اشتراک صفحه" on={m.screen} onClick={() => run(toggleScreen())} />}
         {group && <CallBtn icon="hand" label="بالا بردن دست" on={handOf(membershipOf(a.session, a.lk.localParticipant.identity)?.eventId)} onClick={() => run(toggleHand())} />}
         {a.kind === "rtc" && <CallBtn icon="smile" label="واکنش" on={panel === "reactions"} onClick={() => toggle("reactions")} />}
@@ -264,7 +263,7 @@ function CallScreen({ a, closing }: { a: Active; closing?: boolean }) {
               : panel === "reactions" ? <div className="call-reactions">{REACTIONS.map(([emoji, name]) => (
                 <button key={name} onClick={() => { setPanel(null); run(react(emoji, name)); }} aria-label={emoji}>{emoji}</button>
               ))}<button onClick={() => setPanel("emoji")} title="همه‌ی اموجی‌ها" aria-label="همه‌ی اموجی‌ها"><Icon name="plus" /></button></div>
-              : <Routes {...panel} onPick={(r) => { setPanel(null); run(setAudioRoute(r.id, r.kind === "speaker")); }} />}
+              : <Routes routes={routes} current={a.routes?.current ?? -1} onPick={(r) => { setPanel(null); run(setAudioRoute(r.id)); }} />}
           </div>
         </div>
       )}
@@ -315,13 +314,15 @@ function Devices() {
 }
 
 const ROUTE_LABELS: Record<AudioRoute["kind"], string> = { earpiece: "گوشی", speaker: "بلندگو", wired: "هدفون", bluetooth: "بلوتوث" };
+const ROUTE_ICONS: Record<AudioRoute["kind"], IconName> = { earpiece: "phone", speaker: "speaker", wired: "headphones", bluetooth: "bluetooth" };
 
 /** Android: where call audio goes. */
 function Routes({ routes, current, onPick }: { routes: AudioRoute[]; current: number; onPick: (r: AudioRoute) => void }) {
   return <>{routes.map((r) => (
     <button key={r.id} className={r.id === current ? "on" : ""} onClick={() => onPick(r)} aria-pressed={r.id === current}>
-      <Icon name={r.kind === "speaker" ? "speaker" : r.kind === "earpiece" ? "phone" : "headphones"} />
-      {ROUTE_LABELS[r.kind]}{r.kind === "bluetooth" && r.name ? ` (${r.name})` : ""}
+      <Icon name={ROUTE_ICONS[r.kind]} />
+      {r.kind === "bluetooth" && r.name ? r.name : ROUTE_LABELS[r.kind]}
+      {r.id === current && <Icon name="check" size={18} />}
     </button>
   ))}</>;
 }

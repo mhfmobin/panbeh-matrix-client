@@ -1031,6 +1031,7 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .call-panel button { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; color: #fff; text-align: start; }
 .call-panel button:hover { background: rgba(255, 255, 255, 0.08); }
 .call-panel button.on { background: rgba(46, 158, 91, 0.35); }
+.call-panel button > svg:last-child:not(:first-child) { margin-inline-start: auto; } /* the ✓ on the route in use */
 /* a video filling the screen (spotlit, or the other side of a 1:1): edge to edge, the rest floats over it and fades out after a while */
 .call-screen.immersive { padding: 0; }
 .call-screen.immersive .call-grid { padding: 0; }

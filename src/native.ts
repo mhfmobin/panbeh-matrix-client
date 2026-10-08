@@ -26,7 +26,7 @@ interface PanbehPlugin {
   cancelCall(p: { roomId: string }): Promise<void>;
   callActive(p: { on: boolean; video: boolean }): Promise<void>;
   setSpeaker(p: { on: boolean }): Promise<void>;
-  audioRoutes(): Promise<{ routes: AudioRoute[]; current: number }>;
+  audioRoutes(): Promise<Routes>;
   setAudioRoute(p: { id: number }): Promise<void>;
   setPip(p: { on: boolean }): Promise<void>;
   setImmersive(p: { on: boolean }): Promise<void>;
@@ -38,6 +38,7 @@ interface PanbehPlugin {
   addListener(e: "openLink", f: (d: { link: string }) => void): Promise<PluginListenerHandle>;
   addListener(e: "callAction", f: (d: CallAction) => void): Promise<PluginListenerHandle>;
   addListener(e: "share", f: (d: Shared) => void): Promise<PluginListenerHandle>;
+  addListener(e: "audioRoutes", f: (d: Routes) => void): Promise<PluginListenerHandle>;
 }
 type Headless = { showNotification(json: string): void; cancel(roomId: string): void; stopService(): void; showCall(json: string): void; cancelCall(roomId: string): void; syncState(state: string): void };
 
@@ -112,7 +113,14 @@ export const nativeCallActive = (on: boolean, video: boolean) => { if (!headless
 export const nativeSpeaker = (on: boolean) => { if (!headless) plugin.setSpeaker({ on }).catch(() => {}); };
 /** Where call audio can go (Android 12+; empty before, where it's only the speaker toggle). */
 export type AudioRoute = { id: number; kind: "earpiece" | "speaker" | "wired" | "bluetooth"; name: string };
-export const nativeAudioRoutes = () => plugin.audioRoutes().catch(() => ({ routes: [] as AudioRoute[], current: -1 }));
+export type Routes = { routes: AudioRoute[]; current: number };
+/** Where call audio can go now and whenever that changes (a headset connects, audio moves). Returns an unsubscribe. */
+export function watchAudioRoutes(f: (r: Routes) => void) {
+  if (headless) return () => {};
+  plugin.audioRoutes().then(f, () => {});
+  const h = plugin.addListener("audioRoutes", f);
+  return () => { h.then((x) => x.remove()); };
+}
 export const nativeSetAudioRoute = (id: number) => plugin.setAudioRoute({ id });
 /** A video call is on screen: leaving the app shrinks it to picture-in-picture. */
 export const nativePip = (on: boolean) => { if (!headless) plugin.setPip({ on }).catch(() => {}); };

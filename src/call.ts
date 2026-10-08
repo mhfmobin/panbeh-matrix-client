@@ -12,7 +12,7 @@ import { senderName } from "./ui/common.tsx";
 import { alertDialog } from "./ui/dialog.tsx";
 import { isGroupCallAlert, isLegacyRing, isRing, isVideoOffer } from "./logic.ts";
 import { legacyCallsOn, loadPrefs } from "./ui/Settings.tsx";
-import { isHeadless, isNative, nativeCallActive, nativeCancelCall, nativeSetAudioRoute, nativeShowCall, nativeSpeaker, toDataUrl, type CallAction } from "./native.ts";
+import { isHeadless, isNative, nativeCallActive, nativeCancelCall, nativeSetAudioRoute, nativeShowCall, nativeSpeaker, toDataUrl, watchAudioRoutes, type CallAction, type Routes } from "./native.ts";
 import { isWindowVisible, showWindow } from "./desktop.ts";
 
 /**
@@ -25,6 +25,7 @@ type Common = {
   room: Room; video: boolean;
   since?: number; // first time someone else was in the call
   min: boolean; speaker: boolean; facing: "user" | "environment";
+  routes?: Routes; // Android 12+: where audio can go and where it goes now
   reconnecting?: boolean; // network dropped; LiveKit / ICE is trying to get it back
   notice?: string; // "X joined" for a few seconds (groups)
 };
@@ -207,7 +208,7 @@ export async function call(room: Room, video: boolean, ring = true, legacy = fal
     onPeople();
     scanHands();
     for (const t of media) await lk.localParticipant.publishTrack(t);
-    if (isNative) { nativeCallActive(true, video); nativeSpeaker(video); }
+    if (isNative) nativeAudioOn(video);
   } catch (e) {
     media.forEach((t) => t.stop()); // not published yet = not stopped by the disconnect
     await hangup();
@@ -297,11 +298,8 @@ export async function toggleScreen() {
   else if (a) await a.lk.localParticipant.setScreenShareEnabled(!a.lk.localParticipant.isScreenShareEnabled, { audio: true, contentHint: "detail" });
   bump();
 }
-/** Android 12+: call audio to the earpiece, speaker, a wired or a Bluetooth headset. */
-export async function setAudioRoute(id: number, speaker: boolean) {
-  await nativeSetAudioRoute(id);
-  patch({ speaker });
-}
+/** Android 12+: call audio to the earpiece, speaker, a wired or a Bluetooth headset (the routes event then updates the button). */
+export const setAudioRoute = (id: number) => nativeSetAudioRoute(id);
 export function toggleSpeaker() {
   const a = snap.active;
   if (!a) return;
@@ -469,7 +467,13 @@ function showLegacy(room: Room, mc: MatrixCall, video: boolean) {
   }, leaveOnUnload()];
   watch(mc.state);
   onFeeds();
-  if (isNative) { nativeCallActive(true, video); nativeSpeaker(video); }
+  if (isNative) nativeAudioOn(video);
+}
+
+/** Android: call audio mode, routed to a headset if there is one, else the speaker for video; then follows the routes as they change. */
+function nativeAudioOn(video: boolean) {
+  nativeCallActive(true, video);
+  cleanup.push(watchAudioRoutes((routes) => patch({ routes, speaker: routes.routes.length ? routes.routes.find((r) => r.id === routes.current)?.kind === "speaker" : !!snap.active?.speaker })));
 }
 
 async function placeLegacy(room: Room, video: boolean) {
