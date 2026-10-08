@@ -224,7 +224,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 .room.with-thread { grid-template-columns: 1fr minmax(320px, 400px); }
 .room-main, .thread-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100vh; height: 100dvh; }
 .thread-panel { background: var(--chat-bg); border-inline-start: 1px solid var(--border); animation: slide-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
-@keyframes slide-in { from { transform: translateX(-40px); opacity: 0; } }
+@keyframes slide-in { from { transform: translateX(calc(var(--fwd) * 40px)); opacity: 0; } }
 @media (max-width: 1000px) {
   .room.with-thread { grid-template-columns: 1fr; }
   .room.with-thread .room-main { display: none; }
@@ -1129,9 +1129,9 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .chat-menu-backdrop.closing, .fab-backdrop.closing { animation: fade-out 0.15s ease-in forwards; pointer-events: none; }
 .chat-menu-backdrop.closing > .chat-menu, .fab-backdrop.closing > .fab-menu { animation: pop-out 0.15s ease-in forwards; }
 .attach-menu.closing, .emoji-panel.closing { animation: pop-out 0.15s ease-in forwards; pointer-events: none; }
-.attach-menu { animation: pop 0.16s var(--ease-out); transform-origin: bottom right; }
+.attach-menu { animation: pop 0.16s var(--ease-out); transform-origin: bottom left; } /* end-aligned: the left edge in RTL */
+.attach-menu:dir(ltr), .emoji-panel:dir(ltr) { transform-origin: bottom right; }
 .emoji-panel { animation: pop 0.18s var(--ease-out); transform-origin: bottom left; }
-.fab-menu { transform-origin: bottom right; }
 @media (max-width: 700px) {
   .chat-menu-backdrop.closing > .msg-menu { animation: sheet-down 0.18s ease-in forwards; }
 }
@@ -1153,7 +1153,7 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .skeleton.avatar-sk { flex: none; width: 46px; height: 46px; border-radius: 50%; }
 .skeleton-timeline { width: min(520px, 100%); margin: auto; padding: 24px 12px; display: grid; gap: 12px; }
 .skeleton-timeline .skeleton { height: 44px; border-radius: 16px; animation: shimmer 1.2s infinite, skeleton-in 0.4s var(--ease-out) both; }
-.skeleton-timeline .skeleton.mine { justify-self: end; }
+.skeleton-timeline .skeleton.mine { justify-self: right; } /* sent bubbles are on the right in both directions */
 .login, .splash { animation: fade 0.25s; }
 .splash .login-logo { animation: logo-pulse 1.8s ease-in-out infinite; }
 
@@ -1184,7 +1184,7 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 }
 
 /* ---------- motion, round 3 ---------- */
-@keyframes thread-out { to { transform: translateX(calc(var(--fwd) * -40px)); opacity: 0; } }
+@keyframes thread-out { to { transform: translateX(calc(var(--fwd) * 40px)); opacity: 0; } }
 .thread-panel.closing { animation: thread-out 0.22s ease-in forwards; }
 .call-screen.closing { animation: fade-out 0.22s ease-in forwards; pointer-events: none; }
 
