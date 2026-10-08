@@ -261,10 +261,10 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
         <div className="composer-row">
           {/* RTL: first child sits on the right — send/mic there, attach + emoji on the left */}
           {canRecord ? (
-            <button className="send-btn" onClick={() => setRecording(true)} title="پیام صوتی" aria-label="ضبط پیام صوتی"><Icon name="mic" /></button>
+            <button className="send-btn" onClick={() => setRecording(true)} title="پیام صوتی" aria-label="ضبط پیام صوتی"><Icon key="mic" name="mic" /></button>
           ) : (
             <button className={"send-btn" + (text.trim() || mediaEdit ? " ready" : "")} onClick={send} aria-label="ارسال" disabled={!text.trim() && !mediaEdit}>
-              <Icon name={mode?.kind === "edit" ? "check" : "send"} />
+              <Icon key={mode?.kind === "edit" ? "check" : "send"} name={mode?.kind === "edit" ? "check" : "send"} />
             </button>
           )}
           <textarea ref={ta} rows={1} value={text} placeholder={mediaEdit ? "کپشن…" : "پیام"} aria-label="پیام"

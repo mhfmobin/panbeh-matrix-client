@@ -201,6 +201,19 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   const prevLast = useRef(lastKey);
   const appended = prevLast.current !== lastKey;
   useEffect(() => { prevLast.current = lastKey; });
+  // the row appended at the end plays its entrance; history pages and the first fill don't. A local echo turning into the
+  // sent event changes the key too (the row remounts), which must not play it a second time.
+  const [enterKey, setEnterKey] = useState<string | null>(null);
+  const shownLast = useRef(lastKey);
+  useEffect(() => {
+    if (shownLast.current === lastKey) return;
+    const was = shownLast.current;
+    shownLast.current = lastKey;
+    if (!was || !lastKey || (was.startsWith("~") && lastIsMine)) return;
+    setEnterKey(lastKey);
+    const t = setTimeout(() => setEnterKey(null), 600);
+    return () => clearTimeout(t);
+  }, [lastKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const toBottom = () => { stuck.current = true; list.current?.scrollToIndex({ index: "LAST", align: "end" }); };
   const unread = thread ? 0 : room.getUnreadNotificationCount();
   // Virtuoso mounted with no data stays hidden waiting for its initial "LAST" scroll, so wait for rows
@@ -210,12 +223,10 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   return (
     <div className="timeline-wrap">
     {loading && <span className="spinner" />}
-    {!atBottom && (
-      <button className="jump-bottom" onClick={toBottom} title="آخرین پیام" aria-label="رفتن به آخرین پیام">
-        <Icon name="down" />
-        {unread > 0 && <span className="badge">{num(unread)}</span>}
-      </button>
-    )}
+    <button className={"jump-bottom" + (atBottom ? " away" : "")} onClick={toBottom} title="آخرین پیام" aria-label="رفتن به آخرین پیام" inert={atBottom}>
+      <Icon name="down" />
+      {unread > 0 && <span className="badge">{num(unread)}</span>}
+    </button>
     {floating.label && <div className={"pill date-float" + (floating.show ? " show" : "")} aria-hidden>{floating.label}</div>}
     <Virtuoso
       className="timeline"
@@ -245,7 +256,7 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
         r.type === "day" ? <div className="pill day">{r.label}</div>
         : r.type === "notice" ? <div className="pill">{noticeText(byId.get(r.id)!)}</div>
         : r.type === "unread" ? <div className="unread-divider">پیام‌های خوانده‌نشده</div>
-        : <Message ev={byId.get(r.id)!} room={room} first={r.first} last={r.last} actions={actions} flash={flash === byId.get(r.id)!.getId()} />}</div>}
+        : <Message ev={byId.get(r.id)!} room={room} first={r.first} last={r.last} actions={actions} flash={flash === byId.get(r.id)!.getId()} enter={enterKey === r.key} />}</div>}
     />
     </div>
   );

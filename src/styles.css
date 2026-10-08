@@ -16,8 +16,15 @@
   --doodle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' fill='none' stroke='%23000' stroke-opacity='.07' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 30c0-6 8-8 10-2 2-6 10-4 10 2 0 7-10 12-10 12s-10-5-10-12z'/%3E%3Ccircle cx='120' cy='30' r='9'/%3E%3Cpath d='M70 70l4 9 10 1-7 7 2 10-9-5-9 5 2-10-7-7 10-1z'/%3E%3Cpath d='M20 110h24v18H20zM20 110l12 10 12-10'/%3E%3Cpath d='M110 100c10-10 26 6 16 16l-10 10'/%3E%3Cpath d='M130 70q5-10 10 0t10 0'/%3E%3Cpath d='M70 140a8 8 0 1 0 16 0'/%3E%3C/svg%3E");
   --shadow: 0 1px 2px rgba(16, 35, 47, 0.15);
   --radius: 16px;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-fast: 0.12s;
+  --dur: 0.2s;
+  --dur-slow: 0.3s;
+  --fwd: -1; /* RTL: a screen entering "forward" comes from the left */
   color-scheme: light;
 }
+:root:dir(ltr) { --fwd: 1; }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -136,9 +143,13 @@ button:disabled { opacity: 0.6; cursor: default; }
 
 @media (max-width: 700px) {
   /* minmax(0, …): a plain 1fr would grow to the tab row's full width and push the page off-screen */
-  .app { grid-template-columns: minmax(0, 1fr); }
-  .app.room-open .sidebar { display: none; }
-  .app:not(.room-open) .main { display: none; }
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  /* both panes share the cell and slide like a navigation stack; the hidden one is inert (visibility) once the slide ends */
+  .sidebar, .main { grid-area: 1 / 1; transition: transform var(--dur-slow) var(--ease-out), opacity var(--dur-slow) var(--ease-out), visibility 0s linear var(--dur-slow); }
+  .main { z-index: 1; box-shadow: calc(var(--fwd) * -6px) 0 24px rgba(0, 0, 0, 0.12); }
+  .app.room-open .sidebar { transform: translateX(calc(var(--fwd) * -28%)); opacity: 0.6; visibility: hidden; }
+  .app:not(.room-open) .main { transform: translateX(calc(var(--fwd) * 100%)); visibility: hidden; }
+  .app:not(.room-open) .sidebar, .app.room-open .main { transition-delay: 0s; visibility: visible; }
 }
 
 /* ---------- sidebar ---------- */
@@ -996,8 +1007,8 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .call-controls { display: flex; justify-content: center; flex-wrap: wrap; gap: 14px; padding: 16px 12px 28px; }
 /* group extras: hands, reactions, connection, the participant list, "+N" */
 .call-hand { position: absolute; top: 8px; inset-inline-start: 8px; font-size: 22px; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6)); }
-.call-reaction { position: absolute; inset: 0; display: grid; place-items: center; font-size: 64px; pointer-events: none; animation: rise 3s ease-out forwards; }
-@keyframes rise { 0% { transform: scale(0.4); opacity: 0; } 15% { transform: scale(1); opacity: 1; } 80% { opacity: 1; } 100% { transform: translateY(-30%); opacity: 0; } }
+.call-reaction { position: absolute; inset: 0; display: grid; place-items: center; font-size: 64px; pointer-events: none; animation: reaction-float 3s ease-out forwards; }
+@keyframes reaction-float { 0% { transform: scale(0.4); opacity: 0; } 15% { transform: scale(1); opacity: 1; } 80% { opacity: 1; } 100% { transform: translateY(-30%); opacity: 0; } }
 .call-quality { width: 8px; height: 8px; border-radius: 50%; background: #f4b400; }
 .call-quality.lost { background: #e53935; }
 .call-more { font-size: 28px; font-weight: 600; color: #fff; }
@@ -1052,3 +1063,53 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .call-btn.ok { background: #2e9e5b; }
 .call-btn.end { background: #e53935; }
 .call-btn.ok:hover, .call-btn.end:hover { filter: brightness(1.1); }
+
+/* ---------- motion ---------- */
+/* one-shot entrances; transform/opacity only, so Virtuoso's row measuring and scroll anchoring are unaffected */
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes sheet-out { to { transform: translateX(100%); } }
+@keyframes pop-out { to { opacity: 0; transform: scale(0.94); } }
+@keyframes toast-out { to { opacity: 0; transform: translateX(-50%) translateY(10px); } }
+@keyframes bubble-in { from { opacity: 0; transform: translateY(10px) scale(0.86); } }
+@keyframes chip-in { from { opacity: 0; transform: scale(0.4); } }
+@keyframes bump { 40% { transform: translateY(-5px) scale(1.25); } }
+@keyframes tick-pop { from { opacity: 0; transform: scale(0.4); } }
+@keyframes icon-swap { from { opacity: 0; transform: scale(0.4) rotate(-50deg); } }
+@keyframes mode-in { from { opacity: 0; transform: translateY(10px); } }
+@keyframes dot { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-3px); opacity: 1; } }
+
+.sheet-backdrop.closing, .modal-backdrop.closing { animation: fade-out 0.18s var(--ease-out) forwards; pointer-events: none; }
+.sheet-backdrop.closing .sheet { animation: sheet-out 0.22s var(--ease-out) forwards; }
+.modal-backdrop.closing .modal { animation: pop-out 0.15s ease-in forwards; }
+.toast.closing { animation: toast-out 0.25s ease-in forwards; }
+
+/* a message sent or received at the bottom grows out of its tail corner */
+.msg.enter .bubble { animation: bubble-in 0.32s var(--ease-spring) both; transform-origin: bottom left; }
+.msg.mine.enter .bubble { transform-origin: bottom right; }
+.tick.changed svg { animation: tick-pop 0.35s var(--ease-spring); }
+.reactions button.added { animation: chip-in 0.3s var(--ease-spring); }
+.reactions button span.bump { display: inline-block; animation: bump 0.3s var(--ease-out); }
+.reactions button:active { transform: scale(0.92); }
+
+.badge.bump { animation: bump 0.35s var(--ease-spring); }
+.jump-bottom { transition: opacity var(--dur) var(--ease-out), transform var(--dur-slow) var(--ease-spring), color var(--dur-fast); }
+.jump-bottom.away { opacity: 0; transform: scale(0.5) translateY(14px); visibility: hidden; transition: opacity var(--dur) var(--ease-out), transform var(--dur) var(--ease-out), visibility 0s linear var(--dur); }
+
+.dots { display: inline-flex; gap: 2px; margin-inline-start: 4px; vertical-align: baseline; }
+.dots i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; animation: dot 1.2s ease-in-out infinite; }
+.dots i:nth-child(2) { animation-delay: 0.15s; }
+.dots i:nth-child(3) { animation-delay: 0.3s; }
+
+.composer-mode { animation: mode-in 0.2s var(--ease-out); }
+.send-btn svg { animation: icon-swap 0.28s var(--ease-spring); }
+.send-btn:not(:disabled):active { transform: scale(0.9); }
+.send-btn.ready { box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 45%, transparent); }
+
+.room-item { transition: background 0.12s, transform var(--dur-fast); }
+.room-item:active { transform: scale(0.985); }
+
+/* ---------- reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0s !important; transition-duration: 0.01ms !important; transition-delay: 0s !important; }
+  .spinner, .rec-dot { animation-duration: 1s !important; animation-iteration-count: infinite !important; } /* progress, not decoration */
+}

@@ -9,7 +9,7 @@ import { saveFile } from "../native.ts";
 import { usePromise } from "../hooks.ts";
 import { LINK_SRC, clock, fmtDuration, isGif, linkHref, num, osmUrl, parseGeoUri, stamp, textDir, type Gif } from "../logic.ts";
 import { Icon, iconSvg, type IconName } from "../icons.tsx";
-import { Avatar, colorFor, copyText, errText, formatSize, isGroupChat, me, previewText, senderMember, senderName, stripReplyFallback, toast } from "./common.tsx";
+import { Avatar, colorFor, copyText, errText, formatSize, isGroupChat, me, previewText, senderMember, senderName, stripReplyFallback, toast, useChange } from "./common.tsx";
 import { AudioPlayer, trackFor } from "./Voice.tsx";
 import { PollBody } from "./Poll.tsx";
 import { EmojiPanel, GifView } from "./Emoji.tsx";
@@ -77,9 +77,9 @@ function openRoomPill(a: HTMLAnchorElement) {
   else window.open(a.href, "_blank", "noopener");
 }
 
-type Props = { ev: MatrixEvent; room: Room; first: boolean; last: boolean; actions: Actions; flash?: boolean };
+type Props = { ev: MatrixEvent; room: Room; first: boolean; last: boolean; actions: Actions; flash?: boolean; enter?: boolean };
 
-export function Message({ ev, room, first, last, actions, flash }: Props) {
+export function Message({ ev, room, first, last, actions, flash, enter }: Props) {
   const [picker, setPicker] = useState(false);
   const [fullPicker, setFullPicker] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null); // touch screens have no hover: a tap (or right-click) opens this
@@ -151,7 +151,7 @@ export function Message({ ev, room, first, last, actions, flash }: Props) {
   };
 
   return (
-    <div ref={row} className={`msg ${mine ? "mine" : "theirs"}${first ? " first" : ""}${last ? " last" : ""}${failed ? " failed" : ""}${flash ? " flash" : ""}${selecting ? " selecting" : ""}${selected ? " selected" : ""}`}
+    <div ref={row} className={`msg ${mine ? "mine" : "theirs"}${first ? " first" : ""}${last ? " last" : ""}${failed ? " failed" : ""}${flash ? " flash" : ""}${enter ? " enter" : ""}${selecting ? " selecting" : ""}${selected ? " selected" : ""}`}
       onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => end(true)}
       onContextMenu={(e) => { if (!live || selecting || !inside(e)) return; e.preventDefault(); setMenu((m) => m ?? { x: e.clientX, y: e.clientY }); }}
       onClickCapture={(e) => {
@@ -484,30 +484,41 @@ function ReplyQuote({ room, id, onJump }: { room: Room; id: string; onJump?: (id
 }
 
 function Ticks({ ev, room }: { ev: MatrixEvent; room: Room }) {
-  if (ev.status === EventStatus.NOT_SENT) return <span className="tick failed" title="ارسال نشد">!</span>;
-  if (ev.status) return <span className="tick"><Icon name="clock" size={13} /></span>;
-  const seen = seenBy(room, ev);
+  const failed = ev.status === EventStatus.NOT_SENT;
+  const sending = !failed && !!ev.status;
+  const seen = failed || sending ? [] : seenBy(room, ev);
+  const changed = useChange(failed ? 0 : sending ? 1 : seen.length ? 3 : 2); // clock → check → checks pop when they change
+  if (failed) return <span className="tick failed" title="ارسال نشد">!</span>;
+  if (sending) return <span className="tick"><Icon name="clock" size={13} /></span>;
   const title = !seen.length ? "ارسال شد"
     : isGroupChat(room) ? `دیده‌شده توسط ${num(seen.length)} نفر`
     : seen[0].ts ? `دیده‌شده ${stamp(seen[0].ts)}` : "دیده‌شده";
-  return <span className={"tick" + (seen.length ? " read" : "")} title={title}><Icon name={seen.length ? "checks" : "check"} size={15} /></span>;
+  return <span className={"tick" + (seen.length ? " read" : "") + (changed ? " changed" : "")} title={title}><Icon name={seen.length ? "checks" : "check"} size={15} /></span>;
 }
 
 function Reactions({ ev, room }: { ev: MatrixEvent; room: Room }) {
   const rel = room.relations.getChildEventsForEvent(ev.getId()!, RelationType.Annotation, EventType.Reaction);
   const list = rel?.getSortedAnnotationsByKey()?.filter(([, set]) => set.size > 0);
+  // chips present when the message mounted don't animate (scrolling a row back into view); ones added later pop in
+  const initial = useRef<Set<string>>(null);
+  if (!initial.current) initial.current = new Set(list?.map(([k]) => k));
   if (!list?.length) return null;
   return (
     <div className="reactions">
-      {list.map(([key, set]) => {
-        const mineToo = [...set].some((e) => e.getSender() === me());
-        return (
-          <button key={key} className={mineToo ? "on" : ""} title={[...set].map(senderName).join(", ")} onClick={() => toggleReaction(room, ev, key)}>
-            {key} <span>{num(set.size)}</span>
-          </button>
-        );
-      })}
+      {list.map(([key, set]) => (
+        <ReactionChip key={key} room={room} ev={ev} emoji={key} users={[...set]} added={!initial.current!.has(key)} />
+      ))}
     </div>
+  );
+}
+
+function ReactionChip({ room, ev, emoji, users, added }: { room: Room; ev: MatrixEvent; emoji: string; users: MatrixEvent[]; added: boolean }) {
+  const bump = useChange(users.length);
+  const mineToo = users.some((e) => e.getSender() === me());
+  return (
+    <button className={(mineToo ? "on" : "") + (added ? " added" : "")} title={users.map(senderName).join(", ")} onClick={() => toggleReaction(room, ev, emoji)}>
+      {emoji} <span className={bump ? "bump" : undefined}>{num(users.length)}</span>
+    </button>
   );
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ClientEvent, SyncState } from "matrix-js-sdk";
 import { cancelAdd, client, finishOAuth, isAdding, isOAuthCallback, logout, recoveryState, savedSession, start } from "./matrix.ts";
@@ -103,10 +103,21 @@ function Shell() {
     return () => removeEventListener("hashchange", onHash);
   }, []);
 
-  if (!synced) return <Splash text="در حال همگام‌سازی گفتگوها…" />;
   // left/declined/kicked rooms linger in the SDK; treat them as closed. Joined spaces are folders, not chats.
-  const found = roomId ? client.getRoom(roomId) : null;
+  const found = roomId && synced ? client.getRoom(roomId) : null;
   const room = found && ["join", "invite"].includes(found.getMyMembership()) && !(found.isSpaceRoom() && found.getMyMembership() === "join") ? found : null;
+  // phones slide the chat away on back: keep it mounted until the slide ends instead of flashing the placeholder
+  const lastRoom = useRef(room);
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => {
+    if (room) { lastRoom.current = room; setLeaving(false); return; }
+    if (!lastRoom.current || !matchMedia("(max-width: 700px)").matches) { lastRoom.current = null; return; }
+    setLeaving(true);
+    const t = setTimeout(() => { lastRoom.current = null; setLeaving(false); }, 350);
+    return () => clearTimeout(t);
+  }, [room]);
+  const shown = room ?? (leaving ? lastRoom.current : null);
+  if (!synced) return <Splash text="در حال همگام‌سازی گفتگوها…" />;
   const open = (id?: string) => { location.hash = id ?? ""; };
 
   return (
@@ -122,8 +133,8 @@ function Shell() {
           {!room && <NowPlaying />}
           {!room && <CallBar />}
         </>} />
-      <main className="main wallpaper">
-        {room ? <Room key={room.roomId + ":" + shareN} room={room} onBack={() => open()} /> : <div className="pill center">برای شروع پیام‌رسانی یک گفتگو را انتخاب کنید</div>}
+      <main className="main wallpaper" inert={!room && !!shown}>
+        {shown ? <Room key={shown.roomId + ":" + shareN} room={shown} onBack={() => open()} /> : <div className="pill center">برای شروع پیام‌رسانی یک گفتگو را انتخاب کنید</div>}
       </main>
       {share && <ShareSheet onClose={() => setShare(null)} onPick={(id) => { shareInto(id, share.text, share.files); setShare(null); setShareN((n) => n + 1); open(id); }} />}
       {settings && <Settings onClose={() => setSettings(false)} onSecurityChange={refreshSecurity} />}

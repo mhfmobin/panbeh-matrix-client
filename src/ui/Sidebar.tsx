@@ -11,7 +11,7 @@ import { useSortableTabs } from "./useSortableTabs.ts";
 import { pushBack } from "../back.ts";
 import { setBadge } from "../desktop.ts";
 import { Icon } from "../icons.tsx";
-import { bdi, errText, me, noticeText, previewText, RoomAvatar, senderName } from "./common.tsx";
+import { bdi, Dots, errText, useChange, me, noticeText, previewText, RoomAvatar, senderName } from "./common.tsx";
 import { NewChat } from "./NewChat.tsx";
 import { RoomInfo } from "./RoomInfo.tsx";
 import { MessageResults, requestJump } from "./Search.tsx";
@@ -195,8 +195,9 @@ function RoomItem({ row, active, onClick, onMenu }: { row: RoomRow; active: bool
     preview = (who ? who + ": " : "") + previewText(last);
   }
   const typing = row.invite ? [] : room.getMembers().filter((m) => m.typing && m.userId !== me());
-  if (typing.length) preview = (row.isDM ? "" : bdi(typing[0].name.split(" ")[0]) + " ") + "در حال نوشتن…";
+  if (typing.length) preview = (row.isDM ? "" : bdi(typing[0].name.split(" ")[0]) + " ") + "در حال نوشتن";
   const muted = !!row.muted;
+  const bumped = useChange(row.unread);
   const mentioned = row.unread > 0 && room.getUnreadNotificationCount(NotificationCountType.Highlight) > 0;
   const cancel = () => { if (press.current) clearTimeout(press.current.timer); };
   return (
@@ -218,9 +219,9 @@ function RoomItem({ row, active, onClick, onMenu }: { row: RoomRow; active: bool
           <span className="room-time">{listTime(row.ts)}</span>
         </div>
         <div className="room-item-bottom">
-          <span className={"room-preview" + (typing.length ? " typing" : "")}>{preview}</span>
+          <span className={"room-preview" + (typing.length ? " typing" : "")}>{preview}{typing.length > 0 && <Dots />}</span>
           {mentioned && <span className="badge">@</span>}
-          {(row.unread > 0 || row.invite) ? <span className={"badge" + (muted ? " muted" : "")}>{row.invite ? "!" : num(row.unread)}</span>
+          {(row.unread > 0 || row.invite) ? <span className={"badge" + (muted ? " muted" : "") + (bumped ? " bump" : "")}>{row.invite ? "!" : num(row.unread)}</span>
             : row.marked ? <span className={"badge dot" + (muted ? " muted" : "")} aria-label="خوانده‌نشده" />
             : row.pinned && <span className="room-pin" aria-label="سنجاق‌شده"><Icon name="pin" size={16} /></span>}
         </div>
