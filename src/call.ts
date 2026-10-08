@@ -26,6 +26,7 @@ type Common = {
   since?: number; // first time someone else was in the call
   min: boolean; speaker: boolean; facing: "user" | "environment";
   routes?: Routes; // Android 12+: where audio can go and where it goes now
+  held?: { mic: boolean }; // Android: a phone call put ours on hold; whether our mic was on before
   reconnecting?: boolean; // network dropped; LiveKit / ICE is trying to get it back
   notice?: string; // "X joined" for a few seconds (groups)
 };
@@ -208,7 +209,7 @@ export async function call(room: Room, video: boolean, ring = true, legacy = fal
     onPeople();
     scanHands();
     for (const t of media) await lk.localParticipant.publishTrack(t);
-    if (isNative) nativeAudioOn(video);
+    if (isNative) nativeAudioOn(room, video);
   } catch (e) {
     media.forEach((t) => t.stop()); // not published yet = not stopped by the disconnect
     await hangup();
@@ -300,6 +301,15 @@ export async function toggleScreen() {
 }
 /** Android 12+: call audio to the earpiece, speaker, a wired or a Bluetooth headset (the routes event then updates the button). */
 export const setAudioRoute = (id: number) => nativeSetAudioRoute(id);
+/** Android: a phone call put ours on hold (Telecom): mic off and their audio silenced until it gives the call back. */
+export async function hold(on: boolean) {
+  const a = snap.active;
+  if (!a || !!a.held === on) return;
+  const mic = myMedia(a).mic;
+  if (on ? mic : a.held?.mic && !mic) await toggleMic();
+  document.querySelectorAll<HTMLAudioElement>("audio.call-audio").forEach((el) => { el.muted = on; });
+  patch({ held: on ? { mic } : undefined });
+}
 export function toggleSpeaker() {
   const a = snap.active;
   if (!a) return;
@@ -467,12 +477,12 @@ function showLegacy(room: Room, mc: MatrixCall, video: boolean) {
   }, leaveOnUnload()];
   watch(mc.state);
   onFeeds();
-  if (isNative) nativeAudioOn(video);
+  if (isNative) nativeAudioOn(room, video);
 }
 
 /** Android: call audio mode, routed to a headset if there is one, else the speaker for video; then follows the routes as they change. */
-function nativeAudioOn(video: boolean) {
-  nativeCallActive(true, video);
+function nativeAudioOn(room: Room, video: boolean) {
+  nativeCallActive(true, video, room);
   cleanup.push(watchAudioRoutes((routes) => patch({ routes, speaker: routes.routes.length ? routes.routes.find((r) => r.id === routes.current)?.kind === "speaker" : !!snap.active?.speaker })));
 }
 
@@ -680,6 +690,8 @@ export function startCalls() {
 
 /** Buttons on Android's call notification. */
 export async function onNativeCall(a: CallAction) {
+  if (a.action === "hangup") return hangup();
+  if (a.action === "hold" || a.action === "unhold") return hold(a.action === "hold");
   const room = client.getRoom(a.roomId);
   if (!room) return;
   const i = snap.incoming;

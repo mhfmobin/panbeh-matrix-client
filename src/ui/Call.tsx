@@ -165,7 +165,7 @@ function CallScreen({ a, closing }: { a: Active; closing?: boolean }) {
   const now = useClock(!!a.since);
   const { tiles, others } = tilesOf(a);
   const m = myMedia(a);
-  const status = a.reconnecting ? "در حال اتصال دوباره…" : a.notice ? a.notice : a.kind === "legacy"
+  const status = a.held ? "در انتظار (تماس تلفنی)" : a.reconnecting ? "در حال اتصال دوباره…" : a.notice ? a.notice : a.kind === "legacy"
     ? (a.since ? fmtDuration(now - a.since) : a.mc.state === CallState.InviteSent ? "در حال زنگ زدن…" : "در حال اتصال…")
     : a.lk.state !== ConnectionState.Connected ? "در حال اتصال…"
     : !a.since ? (isDirect(a.room) ? "در حال زنگ زدن…" : "در انتظار دیگران…")

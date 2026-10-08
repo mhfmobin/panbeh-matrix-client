@@ -8,7 +8,8 @@ type CallPayload = { roomId: string; eventId: string; caller: string; video: boo
 /** A button on the incoming-call notification; "open" = the notification itself (full-screen on the lock screen). */
 /** "Share with Panbeh" from another app: text and/or content:// files. */
 export type Shared = { text?: string; files: { uri: string; name: string; type: string }[] };
-export type CallAction = { action: "answer" | "decline" | "open"; roomId: string; eventId: string; video: boolean };
+/** hangup / hold / unhold: from Android's Telecom (a headset or car button, a phone call coming in) for the call in progress. */
+export type CallAction = { action: "answer" | "decline" | "open" | "hangup" | "hold" | "unhold"; roomId: string; eventId: string; video: boolean };
 interface PanbehPlugin {
   showNotification(p: Payload): Promise<void>;
   cancel(p: { roomId: string }): Promise<void>;
@@ -24,7 +25,7 @@ interface PanbehPlugin {
   takeLaunchLink(): Promise<{ link?: string | null }>;
   showCall(p: CallPayload): Promise<void>;
   cancelCall(p: { roomId: string }): Promise<void>;
-  callActive(p: { on: boolean; video: boolean }): Promise<void>;
+  callActive(p: { on: boolean; video: boolean; roomId?: string; name?: string }): Promise<void>;
   setSpeaker(p: { on: boolean }): Promise<void>;
   audioRoutes(): Promise<Routes>;
   setAudioRoute(p: { id: number }): Promise<void>;
@@ -109,7 +110,9 @@ export function nativeCancelCall(roomId: string) {
   else plugin.cancelCall({ roomId }).catch(() => {});
 }
 /** In a call: keeps mic/camera alive in the background (foreground service) and the call on the lock screen. */
-export const nativeCallActive = (on: boolean, video: boolean) => { if (!headless) plugin.callActive({ on, video }).catch(() => {}); };
+export const nativeCallActive = (on: boolean, video: boolean, room?: { roomId: string; name: string }) => {
+  if (!headless) plugin.callActive({ on, video, roomId: room?.roomId, name: room?.name }).catch(() => {});
+};
 export const nativeSpeaker = (on: boolean) => { if (!headless) plugin.setSpeaker({ on }).catch(() => {}); };
 /** Where call audio can go (Android 12+; empty before, where it's only the speaker toggle). */
 export type AudioRoute = { id: number; kind: "earpiece" | "speaker" | "wired" | "bluetooth"; name: string };

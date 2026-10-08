@@ -64,6 +64,16 @@
             android:exported="false"
             android:foregroundServiceType="remoteMessaging|microphone|camera" />
 
+        <!-- our calls in Android's Telecom: headset/car/watch buttons, held by phone calls -->
+        <service
+            android:name=".CallConnectionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
         <!-- "decline" on the incoming-call notification -->
         <receiver
             android:name=".CallReceiver"
@@ -108,6 +118,8 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <!-- self-managed Telecom calls (CallConnectionService) -->
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
     <!-- proximity sensor: screen off while a voice call is held to the ear -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />

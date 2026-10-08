@@ -81,10 +81,12 @@ final class Notifier {
         } catch (SecurityException e) {
             // POST_NOTIFICATIONS revoked meanwhile
         }
+        if (Build.VERSION.SDK_INT >= 26) CallConnectionService.incoming(ctx, roomId, eventId, caller, video); // headset buttons can answer
     }
 
     static void cancelCall(Context ctx, String roomId) {
         NotificationManagerCompat.from(ctx).cancel(roomId, CALL_ID);
+        if (Build.VERSION.SDK_INT >= 26) CallConnectionService.ringEnded(roomId);
     }
 
     /** "decline" goes to CallReceiver (no UI); the others open the app. */

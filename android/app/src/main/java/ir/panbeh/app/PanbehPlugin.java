@@ -267,24 +267,32 @@ public class PanbehPlugin extends Plugin {
     @PluginMethod
     public void callActive(PluginCall call) {
         boolean on = call.getBoolean("on", false), video = call.getBoolean("video", false);
+        String roomId = call.getString("roomId");
         SyncService.setCall(getContext(), on, video);
         AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
         am.setMode(on ? AudioManager.MODE_IN_COMMUNICATION : AudioManager.MODE_NORMAL);
         if (!on && Build.VERSION.SDK_INT >= 31) am.clearCommunicationDevice();
         getActivity().runOnUiThread(() -> MainActivity.showOverLockScreen(getActivity(), on));
-        boolean starting = on && !callOn;
+        boolean starting = on && !callOn, ending = !on && callOn; // off without a call = a ring that stopped
         callOn = on;
         callVideo = video;
         if (starting) {
             startRoute(video);
             watchRoutes(true);
+            if (roomId != null && Build.VERSION.SDK_INT >= 26) CallConnectionService.started(getContext(), roomId, call.getString("name"), video);
         }
         if (!on) {
             speakerOn = false;
             watchRoutes(false);
         }
+        if (ending && Build.VERSION.SDK_INT >= 26) CallConnectionService.ended();
         updateProximity();
         call.resolve();
+    }
+
+    /** The page has a call under way. */
+    static boolean inCall() {
+        return instance != null && instance.callOn;
     }
 
     private AudioManager audio() {
@@ -366,9 +374,10 @@ public class PanbehPlugin extends Plugin {
         notifyListeners("audioRoutes", routesNow());
     }
 
+    /** Through Telecom while it has our call (it owns routing then), else straight to the audio manager. */
     private void routeTo(AudioDeviceInfo d) {
         if (Build.VERSION.SDK_INT < 31) return;
-        audio().setCommunicationDevice(d);
+        if (!CallConnectionService.route(d)) audio().setCommunicationDevice(d);
         speakerOn = d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER;
     }
 
@@ -397,8 +406,10 @@ public class PanbehPlugin extends Plugin {
     @PluginMethod
     public void setSpeaker(PluginCall call) {
         boolean on = call.getBoolean("on", false);
-        AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
-        if (Build.VERSION.SDK_INT >= 31) {
+        AudioManager am = audio();
+        if (Build.VERSION.SDK_INT >= 26 && CallConnectionService.speaker(on)) {
+            // Telecom routes it
+        } else if (Build.VERSION.SDK_INT >= 31) {
             if (!on) am.clearCommunicationDevice();
             else for (AudioDeviceInfo d : am.getAvailableCommunicationDevices()) {
                 if (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) { am.setCommunicationDevice(d); break; }
