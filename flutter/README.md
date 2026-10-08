@@ -1,17 +1,26 @@
-# panbeh
+# Panbeh (Flutter)
 
-Panbeh, a Persian Matrix client
+Panbeh is a Persian Matrix client. This folder is the native Flutter rewrite, Android first. It is self-contained so it can move to its own repository. The React app in `../src` is the reference for behaviour and wording.
 
-## Getting Started
+License: AGPL-3.0, inherited from the [Famedly Matrix SDK](https://pub.dev/packages/matrix) and vodozemac.
 
-This project is a starting point for a Flutter application.
+## Build
 
-A few resources to get you started if this is your first Flutter project:
+```sh
+flutter pub get
+flutter analyze && flutter test
+flutter build apk --release --split-per-abi   # needs the Android SDK and a Rust toolchain (vodozemac)
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+CI (`.github/workflows/flutter-android.yml`) builds every push that touches `flutter/`. The APKs are in the run's artifacts.
+- A tag `flutter-v1.2.3` attaches them to a release.
+- `main` keeps a rolling `flutter-latest` pre-release.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## App id and signing
+
+The app id is `ir.panbeh.flutter`, so this app installs next to the Capacitor app (`ir.panbeh.app`). It is signed with the same keystore secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`).
+
+To make it replace the Capacitor app instead, change these together:
+- `applicationId` in `android/app/build.gradle.kts` to `ir.panbeh.app`.
+- The OAuth redirect scheme in `AndroidManifest.xml` and in `lib/matrix.dart` (`_redirect`, `_clientUri`).
+- The app label.

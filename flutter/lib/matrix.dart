@@ -48,6 +48,8 @@ Future<Client> _make(String name) async {
     // emoji only: we can't show or scan QR codes, so don't let the other side pick them
     verificationMethods: {KeyVerificationMethod.emoji, KeyVerificationMethod.numbers},
     nativeImplementations: NativeImplementationsIsolate(compute, vodozemacInit: () => vod.init()),
+    // the chat list previews these too (polls, MatrixRTC call rings)
+    roomPreviewLastEvents: {'org.matrix.msc3381.poll.start', 'm.poll.start', 'm.rtc.notification', 'org.matrix.msc4075.rtc.notification'},
     importantStateEvents: {'m.room.pinned_events', 'm.room.join_rules', 'm.room.history_visibility', 'm.room.server_acl'},
     logLevel: kReleaseMode ? Level.warning : Level.info,
   );
