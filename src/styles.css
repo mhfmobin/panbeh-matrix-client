@@ -149,6 +149,7 @@ button:disabled { opacity: 0.6; cursor: default; }
   .main { z-index: 1; box-shadow: calc(var(--fwd) * -6px) 0 24px rgba(0, 0, 0, 0.12); }
   .app.room-open .sidebar { transform: translateX(calc(var(--fwd) * -28%)); opacity: 0.6; visibility: hidden; }
   .app:not(.room-open) .main { transform: translateX(calc(var(--fwd) * 100%)); visibility: hidden; }
+  .app.leaving .main { transform: translateX(calc(var(--fwd) * -100%)); } /* closing goes back the other way: to the right in RTL */
   .app:not(.room-open) .sidebar, .app.room-open .main { transition-delay: 0s; visibility: visible; }
 }
 

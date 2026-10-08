@@ -120,7 +120,7 @@ function Shell() {
   const open = (id?: string) => { location.hash = id ?? ""; };
 
   return (
-    <div className={"app" + (room ? " room-open" : "")}>
+    <div className={"app" + (room ? " room-open" : "") + (leaving ? " leaving" : "")}>
       <Sidebar loading={!synced} selected={roomId} onSelect={open} onSettings={() => setSettings(true)}
         banner={<>
           {(sync === SyncState.Error || sync === SyncState.Reconnecting) && <div className="banner warn">در حال اتصال…</div>}
