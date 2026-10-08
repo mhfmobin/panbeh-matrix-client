@@ -5,6 +5,9 @@ import '../logic.dart';
 import '../prefs.dart';
 import '../theme.dart';
 import 'common.dart';
+import 'voice.dart';
+import 'emoji.dart';
+import 'media.dart';
 
 
 class Mode {
@@ -22,7 +25,8 @@ class Composer extends StatefulWidget {
   final Timeline timeline;
   final Mode? mode;
   final ValueChanged<Mode?> onMode;
-  const Composer({super.key, required this.room, required this.timeline, required this.mode, required this.onMode});
+  final VoidCallback? onPoll; // the attach sheet's «نظرسنجی»
+  const Composer({super.key, required this.room, required this.timeline, required this.mode, required this.onMode, this.onPoll});
   @override
   State<Composer> createState() => _ComposerState();
 }
@@ -30,9 +34,12 @@ class Composer extends StatefulWidget {
 class _ComposerState extends State<Composer> {
   late final _c = TextEditingController(text: _drafts[widget.room.id] ?? '');
   final _f = FocusNode();
+  final _rec = VoiceRec();
   final _mentions = <_Mention>[]; // people picked from the @ list; turned into links on send
   String _stash = ''; // the draft, put aside while editing a message
   int _typingAt = 0;
+  var _panel = false; // emoji panel instead of the keyboard
+  double _kb = 0; // last keyboard height, so the panel takes its place
   static const _closedAt = -1; // ponytail: no Esc on a phone, so the @ list never needs hiding
 
   Room get room => widget.room;
@@ -42,6 +49,7 @@ class _ComposerState extends State<Composer> {
   void initState() {
     super.initState();
     _c.addListener(_onText);
+    _rec.addListener(() { if (mounted) setState(() {}); });
     if (mode != null) _enter(null);
   }
 
@@ -54,6 +62,7 @@ class _ComposerState extends State<Composer> {
   @override
   void dispose() {
     if (_typingAt != 0) room.setTyping(false).catchError((_) {});
+    _rec.dispose();
     _c.dispose();
     _f.dispose();
     super.dispose();
@@ -119,6 +128,26 @@ class _ComposerState extends State<Composer> {
     _f.requestFocus();
   }
 
+  // ---------- emoji panel ----------
+
+  void _togglePanel() {
+    setState(() => _panel = !_panel);
+    if (_panel) { FocusManager.instance.primaryFocus?.unfocus(); } else { _f.requestFocus(); }
+  }
+
+  void _insert(String e) {
+    final s = _c.selection, at = s.isValid ? s : TextSelection.collapsed(offset: _c.text.length);
+    _c.value = TextEditingValue(text: _c.text.replaceRange(at.start, at.end, e), selection: TextSelection.collapsed(offset: at.start + e.length));
+  }
+
+  void _backspace() {
+    final s = _c.selection, at = s.isValid ? s : TextSelection.collapsed(offset: _c.text.length);
+    if (!at.isCollapsed) { _insert(''); return; }
+    if (at.start == 0) return;
+    final cut = _c.text.substring(0, at.start).characters.skipLast(1).string.length; // a whole emoji, not half a surrogate pair
+    _c.value = TextEditingValue(text: _c.text.replaceRange(cut, at.start, ''), selection: TextSelection.collapsed(offset: cut));
+  }
+
   // ---------- sending ----------
 
   /// body + optional HTML with mention links, and the m.mentions that decides who gets pinged.
@@ -169,13 +198,27 @@ class _ComposerState extends State<Composer> {
     widget.onMode(null);
   }
 
+  Future<void> _sendVoice(VoiceResult r) async {
+    final m = mode, to = m != null && !m.edit ? m.ev : null;
+    widget.onMode(null);
+    await sendVoice(room, r, replyTo: to, extra: {'m.mentions': {'user_ids': [if (to != null && to.senderId != me()) to.senderId]}}).catchError((e) {
+      if (mounted) alert(context, errText(e));
+      return null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.tk;
     final sugg = _suggestions();
     final text = _c.text.trim();
     final m = mode;
-    return Material(
+    final kb = MediaQuery.viewInsetsOf(context).bottom;
+    if (kb > 0) _kb = kb;
+    return PopScope(
+      canPop: !_panel,
+      onPopInvokedWithResult: (didPop, _) { if (!didPop) setState(() => _panel = false); },
+      child: Material(
       color: t.panel,
       child: SafeArea(top: false, child: Column(mainAxisSize: MainAxisSize.min, children: [
         if (sugg.isNotEmpty) Container(
@@ -212,10 +255,10 @@ class _ComposerState extends State<Composer> {
         Padding(
           padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
           child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Expanded(child: Container(
+            Expanded(child: _rec.active ? RecorderField(rec: _rec) : Container(
               decoration: BoxDecoration(color: t.hover, borderRadius: BorderRadius.circular(22)),
               child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                IconButton(icon: Icon(Icons.emoji_emotions_outlined, color: t.muted), tooltip: 'اموجی', onPressed: () => toast(context, 'به‌زودی')),
+                IconButton(icon: Icon(_panel ? Icons.keyboard_outlined : Icons.emoji_emotions_outlined, color: t.muted), tooltip: 'اموجی', onPressed: _togglePanel),
                 Expanded(child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: TextField(
@@ -224,23 +267,25 @@ class _ComposerState extends State<Composer> {
                     textInputAction: prefs.enterSends ? TextInputAction.send : TextInputAction.newline,
                     onSubmitted: prefs.enterSends ? (_) { _send(); _f.requestFocus(); } : null,
                     onTapOutside: (_) => _typing(false),
+                    onTap: () { if (_panel) setState(() => _panel = false); },
                     style: const TextStyle(fontSize: 16),
                     decoration: InputDecoration(hintText: 'پیام', hintStyle: TextStyle(color: t.muted), border: InputBorder.none, isDense: true,
                       contentPadding: const EdgeInsets.symmetric(vertical: 10)),
                   ),
                 )),
-                const SizedBox(width: 8),
+                if (m?.edit != true) AttachButton(room: room, replyTo: m?.ev, onSent: () => widget.onMode(null), onPoll: widget.onPoll) else const SizedBox(width: 8),
               ]),
             )),
             const SizedBox(width: 6),
-            text.isEmpty
-                ? IconButton(icon: Icon(Icons.mic_none, color: t.muted, size: 28), tooltip: 'پیام صوتی', onPressed: () => toast(context, 'به‌زودی'))
+            text.isEmpty && m?.edit != true
+                ? MicButton(rec: _rec, onSend: _sendVoice)
                 : IconButton.filled(
                     style: IconButton.styleFrom(backgroundColor: t.accent, foregroundColor: Colors.white),
                     icon: Icon(m?.edit == true ? Icons.check : Icons.send, textDirection: TextDirection.ltr), tooltip: 'ارسال', onPressed: _send),
           ]),
         ),
+        if (_panel) EmojiPanel(height: _kb > 200 ? _kb : 300, room: room, onEmoji: _insert, onBackspace: _backspace),
       ])),
-    );
+    ));
   }
 }

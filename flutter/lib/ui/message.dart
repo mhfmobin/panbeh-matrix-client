@@ -11,6 +11,9 @@ import '../theme.dart';
 import '../uri.dart';
 import 'common.dart';
 import 'encryption.dart';
+import 'voice.dart';
+import 'link_preview.dart';
+import 'media.dart';
 
 enum Tick { none, sending, sent, read, failed }
 
@@ -85,6 +88,7 @@ class _ChatMessageState extends State<ChatMessage> {
     showMsgMenu(context, at, [
       MenuItem(Icons.reply, 'پاسخ', () => widget.actions.reply(ev)),
       if (text.isNotEmpty) MenuItem(Icons.copy_outlined, 'کپی', () => copyText(context, text)),
+      ...mediaMenu(context, ev, disp),
       if (mine && editable.contains(disp.content['msgtype'])) MenuItem(Icons.edit_outlined, 'ویرایش', () => widget.actions.edit(ev)),
       if (ev.canRedact) MenuItem(Icons.delete_outline, 'حذف', () async {
         if (await confirm(context, 'این پیام برای همه حذف شود؟', ok: 'حذف', danger: true) && mounted) {
@@ -195,19 +199,26 @@ class _Bubble extends StatelessWidget {
     } else {
       text = previewText(disp);
     }
+    // photos, videos, gifs, files, locations: the picture goes in the bubble, the caption is its text
+    final mc = ev.type == EventTypes.Encrypted ? null : mediaContent(context, s.widget.timeline, ev, disp, s.widget.actions);
+    if (mc != null) text = mc.caption;
+    final inset = mc?.visual == true, overlay = inset && mc!.caption.isEmpty; // overlay: no caption, so the time sits on the picture
+    Widget pad(Widget w) => inset ? Padding(padding: const EdgeInsets.fromLTRB(7, 3, 7, 3), child: w) : w;
     final dir = textDir(text) == 'rtl' ? TextDirection.rtl : TextDirection.ltr;
     // the time/ticks sit on the side the text leaves free
-    final metaLeft = dir == TextDirection.rtl;
+    final audio = ev.type == EventTypes.Message && c['msgtype'] == 'm.audio';
+    final metaLeft = dir == TextDirection.rtl && !audio;
 
+    final mcol = overlay ? Colors.white : metaColor;
     final meta = Row(mainAxisSize: MainAxisSize.min, children: [
-      if (edited) Text('ویرایش‌شده  ', style: TextStyle(fontSize: 11, color: metaColor)),
-      Text(clock(ev.originServerTs.millisecondsSinceEpoch), style: TextStyle(fontSize: 11, color: metaColor)),
-      if (mine) ...[const SizedBox(width: 3), _TickIcon(s.widget.tick, metaColor, t.readTick, s._failed)],
+      if (edited) Text('ویرایش‌شده  ', style: TextStyle(fontSize: 11, color: mcol)),
+      Text(clock(ev.originServerTs.millisecondsSinceEpoch), style: TextStyle(fontSize: 11, color: mcol)),
+      if (mine) ...[const SizedBox(width: 3), _TickIcon(s.widget.tick, mcol, t.readTick, s._failed)],
     ]);
     final metaW = (mine ? 62.0 : 40.0) + (edited ? 52 : 0);
 
     final trailing = WidgetSpan(child: SizedBox(width: metaW, height: 14));
-    final body = blocks != null
+    final body = overlay ? <Widget>[] : blocks != null
         ? [for (var i = 0; i < blocks.length; i++)
             blocks[i] is List<InlineSpan>
                 ? Text.rich(TextSpan(children: [...(blocks[i] as List<InlineSpan>), if (i == blocks.length - 1) trailing]), textDirection: dir, style: base)
@@ -222,17 +233,21 @@ class _Bubble extends StatelessWidget {
     final replyId = ev.inReplyToEventId(includingFallback: false);
     final locked = ev.type == EventTypes.Encrypted && ev.messageType == MessageTypes.BadEncrypted && recovery.value != Recovery.ok;
     final bubble = Padding(
-      padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+      padding: inset ? const EdgeInsets.all(3) : const EdgeInsets.fromLTRB(10, 6, 10, 6),
       child: Stack(children: [
-        Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        ConstrainedBox(constraints: BoxConstraints(maxWidth: inset ? mc!.width : double.infinity), child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
           if (!mine && isGroupChat(ev.room) && first)
-            Padding(padding: const EdgeInsets.only(bottom: 2), child: Text(senderName(ev), textDirection: TextDirection.ltr,
-              style: TextStyle(color: colorFor(ev.senderId), fontWeight: FontWeight.w600, fontSize: 13.5))),
-          if (replyId != null) _Quote(s.widget.timeline, replyId, mine, s.widget.actions.jump),
-          ...body,
+            pad(Padding(padding: const EdgeInsets.only(bottom: 2), child: Text(senderName(ev), textDirection: TextDirection.ltr,
+              style: TextStyle(color: colorFor(ev.senderId), fontWeight: FontWeight.w600, fontSize: 13.5)))),
+          if (replyId != null) pad(_Quote(s.widget.timeline, replyId, mine, s.widget.actions.jump)),
+          if (mc != null) mc.widget,
+          if (audio) VoiceBubble(ev: ev, timeline: s.widget.timeline, mine: mine, metaW: metaW) else ...body.map(pad),
+          if (ev.type == EventTypes.Message) LinkPreview(disp),
           if (lastIsBlock) const SizedBox(height: 16),
-        ]),
-        Positioned(bottom: 0, left: metaLeft ? 0 : null, right: metaLeft ? null : 0, child: Directionality(textDirection: TextDirection.rtl, child: meta)),
+        ])),
+        Positioned(bottom: overlay ? 6 : inset ? 3 : 0, left: overlay ? null : metaLeft ? (inset ? 7 : 0) : null, right: overlay ? 6 : metaLeft ? null : (inset ? 7 : 0),
+          child: Directionality(textDirection: TextDirection.rtl, child: overlay
+            ? Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1), decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(10)), child: meta) : meta)),
       ]),
     );
     // not decryptable yet: a tap goes to where it gets fixed

@@ -14,6 +14,7 @@ import 'chat.dart';
 import 'common.dart';
 import 'encryption.dart';
 import 'settings.dart';
+import 'voice.dart';
 
 String _folderKey() => 'panbeh.folder:${client.userID}';
 
@@ -288,7 +289,7 @@ class _ChatListState extends State<ChatList> with TickerProviderStateMixin {
           bottom: tabBar,
         ),
         floatingActionButton: selecting ? null : FloatingActionButton(onPressed: newThing, child: const Icon(Icons.edit)),
-        body: Column(children: [const _RecoveryBanner(), Expanded(child: body)]),
+        body: Column(children: [const NowPlaying(), const _RecoveryBanner(), Expanded(child: body)]),
       ),
     );
   }

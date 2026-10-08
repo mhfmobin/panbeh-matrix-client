@@ -11,6 +11,7 @@ import '../theme.dart';
 import 'common.dart';
 import 'composer.dart';
 import 'message.dart';
+import 'voice.dart';
 
 class ChatPage extends StatefulWidget {
   final Room room;
@@ -252,6 +253,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         ],
       ),
       body: invite ? _Invite(room) : Column(children: [
+        NowPlaying(room: room, onJump: _jump),
         Expanded(child: Wallpaper(child: tl == null ? const SizedBox.shrink() : _timeline(tl, t))),
         if (tl != null) _bottomBar(tl),
       ]),
