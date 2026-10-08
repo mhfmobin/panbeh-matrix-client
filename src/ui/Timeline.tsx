@@ -245,6 +245,7 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
       // panel opening / images loading change heights; stay pinned if we were at the bottom
       totalListHeightChanged={() => stuck.current && Date.now() > pagingUntil.current && list.current?.scrollToIndex({ index: "LAST", align: "end" })}
       atBottomThreshold={80}
+      skipAnimationFrameInResizeObserver // measure and compensate in the same frame; otherwise rows entering above paint one frame at the wrong spot
       startReached={() => { stuck.current = false; loadOlder(); }} // at the top we're reading history, not following the bottom
       rangeChanged={({ startIndex }) => {
         const r = rows[startIndex - firstItemIndex];
