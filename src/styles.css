@@ -146,9 +146,10 @@ button:disabled { opacity: 0.6; cursor: default; }
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
   /* both panes share the cell and slide like a navigation stack; the hidden one is inert (visibility) once the slide ends */
   .sidebar, .main { grid-area: 1 / 1; transition: transform var(--dur-slow) var(--ease-out), opacity var(--dur-slow) var(--ease-out), visibility 0s linear var(--dur-slow); }
-  .main { z-index: 1; box-shadow: calc(var(--fwd) * -6px) 0 24px rgba(0, 0, 0, 0.12); }
-  .app.room-open .sidebar { transform: translateX(calc(var(--fwd) * -28%)); opacity: 0.6; visibility: hidden; }
-  .app:not(.room-open) .main { transform: translateX(calc(var(--fwd) * 100%)); visibility: hidden; }
+  /* the chat comes in from the right and leaves to the right in RTL too, like Telegram (not mirrored) */
+  .main { z-index: 1; box-shadow: -6px 0 24px rgba(0, 0, 0, 0.12); }
+  .app.room-open .sidebar { transform: translateX(-28%); opacity: 0.6; visibility: hidden; }
+  .app:not(.room-open) .main { transform: translateX(100%); visibility: hidden; }
   .app:not(.room-open) .sidebar, .app.room-open .main { transition-delay: 0s; visibility: visible; }
 }
 

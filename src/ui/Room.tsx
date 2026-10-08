@@ -74,7 +74,7 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
     selection: sel ?? undefined,
   }), [room, sel]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const picked = sel ? room.getLiveTimeline().getEvents().filter((e) => sel.has(e.getId()!)) : []; // timeline order
+  const picked = sel ? [...sel].map((id) => room.findEventById(id)).filter((e) => !!e).sort((a, b) => a.getTs() - b.getTs()) : []; // timeline order
   const copySel = () => {
     const text = picked.map((e) => [e, copyTextOf(e)] as const).filter(([, t]) => t)
       .map(([e, t]) => (picked.length === 1 ? t : `${senderName(e)}, [${stamp(e.getTs())}]:\n${t}`)).join("\n\n");
