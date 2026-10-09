@@ -33,6 +33,7 @@ try { navigator.registerProtocolHandler?.("matrix", location.origin + location.p
 function App() {
   const [phase, setPhase] = useState<"boot" | "login" | "ready" | "error">((savedSession() && !isAdding()) || isOAuthCallback() ? "boot" : "login");
   const [loginError, setLoginError] = useState<unknown>();
+  const [bootError, setBootError] = useState<unknown>();
   useEffect(() => {
     const s = savedSession();
     // keep the session on failure: dropping it silently would orphan this device and its crypto store
@@ -42,11 +43,11 @@ function App() {
       finishOAuth().then(() => setPhase("ready"), (e) => {
       console.error(e);
       // active account changed = login worked, only startup failed
-      if (savedSession()?.userId !== before) return setPhase("error");
+      if (savedSession()?.userId !== before) { setBootError(e); return setPhase("error"); }
       setLoginError(e);
       setPhase("login");
       });
-    } else if (s && !isAdding()) start(s).then(() => setPhase("ready"), (e) => { console.error(e); setPhase("error"); });
+    } else if (s && !isAdding()) start(s).then(() => setPhase("ready"), (e) => { console.error(e); setBootError(e); setPhase("error"); });
   }, []);
   if (phase === "login") return <Login onDone={() => setPhase("ready")} initialError={loginError} onCancel={savedSession() ? cancelAdd : undefined} />;
   if (phase === "boot") return <Splash text="در حال راه‌اندازی…" />;
@@ -54,6 +55,7 @@ function App() {
     <div className="splash wallpaper">
       <div className="login-logo">✦</div>
       راه‌اندازی ممکن نشد.
+      {bootError !== undefined && <small className="muted boot-error" dir="auto">{errText(bootError)}</small>}
       <button className="primary" onClick={() => location.reload()}>تلاش دوباره</button>
       <button className="danger" onClick={() => logout()}>خروج</button>
     </div>
