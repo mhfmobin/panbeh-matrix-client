@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applyFolderOrder, moveFolder, byListOrder, endpointOf, inArchive, isUnread, parseStats, fmtStats } from "./logic.ts";
-import { aliasLocalpart, buildRows, roomName, dayLabel, downsample, fmtDuration, inFolder, isUserId, formatMessage, parseGeoUri, spaceRooms, stamp, normalizeServer, normalize, matchRange, lastSeen, tallyPoll, fitSize, type Msg } from "./logic.ts";
+import { aliasLocalpart, buildRows, roomName, dayLabel, downsample, fmtDuration, inFolder, isUserId, formatMessage, parseGeoUri, spaceRooms, stamp, normalizeServer, normalize, matchRange, toEvict, lastSeen, tallyPoll, fitSize, type Msg } from "./logic.ts";
 
 const T = new Date("2026-09-30T12:00:00").getTime();
 const m = (id: string, sender: string, min: number, kind: Msg["kind"] = "msg"): Msg => ({ id, sender, ts: T + min * 60_000, kind });
@@ -322,4 +322,12 @@ test("matchRange: normalized match mapped back to the original text", () => {
   assert.deepEqual(matchRange("Hello World", "world"), [6, 11]);
   assert.equal(matchRange("abc", "x"), null);
   assert.equal(matchRange("abc", ""), null);
+});
+
+test("toEvict drops the oldest until the rest fit", () => {
+  const e: [string, number][] = [["a", 40], ["b", 30], ["c", 20], ["d", 10]];
+  assert.deepEqual(toEvict(e, 100), []);
+  assert.deepEqual(toEvict(e, 60), ["a"]);
+  assert.deepEqual(toEvict(e, 25), ["a", "b", "c"]);
+  assert.deepEqual(toEvict(e, 0), ["a", "b", "c", "d"]);
 });

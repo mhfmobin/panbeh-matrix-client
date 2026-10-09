@@ -4,7 +4,8 @@ import { CryptoEvent, type DeviceVerificationStatus } from "matrix-js-sdk/lib/cr
 import { accountManageUrl, addAccount, client, sessions, switchAccount, deleteDevices, deviceManageUrl, isOAuth, logout, NeedsPassword, recoveryState, setBlocked, setMyAvatar, setShareLastSeen, setupRecovery, unlock, withPassword } from "../matrix.ts";
 import { useTick } from "../hooks.ts";
 import { Icon, type IconName } from "../icons.tsx";
-import { Avatar, errText, me, Select, Sheet } from "./common.tsx";
+import { Avatar, errText, formatSize, me, Select, Sheet } from "./common.tsx";
+import { CACHE_MB_DEFAULT, cacheClear, cacheSize, cacheTrim } from "../mediaCache.ts";
 import { useSlider } from "./useSlider.ts";
 import { num, stamp } from "../logic.ts";
 import { decryptKeyFile, encryptKeyFile } from "../keyfile.ts";
@@ -17,17 +18,19 @@ import { matrixToLink } from "../uri.ts";
 
 type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; previews: boolean; shareLastSeen: boolean; dev: boolean; legacyCalls: boolean; enterSends: boolean; askSave: boolean;
   camQuality: "360" | "540" | "720" | "1080"; screenQuality: "720" | "1080" | "1080hi"; audioQuality: "low" | "normal" | "high";
-  lowData: "off" | "auto" | "on" }; // calls: everyone's video at its lowest layer (auto = while our connection is poor)
+  lowData: "off" | "auto" | "on";
+  cacheMB: number }; // media kept on the device (mediaCache.ts reads it from localStorage too) // calls: everyone's video at its lowest layer (auto = while our connection is poor)
 const ACCENTS = ["#3390ec", "#8774e1", "#40a7a0", "#e5864a", "#e0578b", "#4fae4e"];
 const WALLPAPERS = { doodle: "طرح‌دار", gradient: "گرادیان", plain: "ساده" };
 const THEMES = { system: "سیستم", light: "روشن", dark: "تیره" };
 const CAM_Q: [Prefs["camQuality"], string][] = [["360", "۳۶۰p"], ["540", "۵۴۰p"], ["720", "۷۲۰p"], ["1080", "۱۰۸۰p"]];
 const SCREEN_Q: [Prefs["screenQuality"], string][] = [["720", "۷۲۰p، ۱۵ فریم"], ["1080", "۱۰۸۰p، ۱۵ فریم"], ["1080hi", "۱۰۸۰p، ۳۰ فریم"]];
 const AUDIO_Q: [Prefs["audioQuality"], string][] = [["low", "کم"], ["normal", "معمولی"], ["high", "بالا"]];
+const CACHE_MB: [number, string][] = [[250, "۲۵۰ مگابایت"], [500, "۵۰۰ مگابایت"], [1024, "۱ گیگابایت"], [2048, "۲ گیگابایت"], [5120, "۵ گیگابایت"]];
 const LOW_DATA: [Prefs["lowData"], string][] = [["off", "خاموش"], ["auto", "خودکار، با اتصال ضعیف"], ["on", "همیشه"]];
 
 // the Android app defaults to notifying: it asks for permission on first start. The desktop app needs no permission.
-export const loadPrefs = (): Prefs => ({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, previews: true, shareLastSeen: true, dev: false, legacyCalls: false, enterSends: true, askSave: false, camQuality: "720", screenQuality: "1080hi", audioQuality: "high", lowData: "off", ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
+export const loadPrefs = (): Prefs => ({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, previews: true, shareLastSeen: true, dev: false, legacyCalls: false, enterSends: true, askSave: false, camQuality: "720", screenQuality: "1080hi", audioQuality: "high", lowData: "off", cacheMB: CACHE_MB_DEFAULT, ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
 
 /** Enter (or Ctrl/⌘+Enter when Enter is set to a new line) sends. */
 export const isSendKey = (e: { key: string; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; nativeEvent: { isComposing: boolean } }) =>
@@ -135,6 +138,9 @@ export function Settings({ onClose, onSecurityChange }: { onClose: () => void; o
       <label className="select-row">تصویر کم‌مصرف در تماس
         <Select value={prefs.lowData} options={LOW_DATA} onChange={(v) => set({ lowData: v })} /></label>
       <p className="muted">کیفیت بالاتر اینترنت بیشتری مصرف می‌کند. تغییر از تماس یا ضبط بعدی اعمال می‌شود. تصویر کم‌مصرف، ویدیوی همه را با کمترین کیفیت می‌گیرد و می‌فرستد.</p>
+
+      <h3>حافظه</h3>
+      <Storage prefs={prefs} set={set} />
 
       {isDesktop && <DesktopApp />}
 
@@ -250,6 +256,25 @@ function WebNotifications({ prefs, set }: { prefs: Prefs; set: (p: Partial<Prefs
       {/* local only: turning the server's message rules off would also zero the unread badges */}
       {on && <KindSwitches prefs={prefs} set={set} />}
       {perm === "denied" && <p className="muted">اجازه‌ی اعلان در مرورگر رد شده است؛ از تنظیمات سایت در مرورگر آن را باز کنید.</p>}
+    </>
+  );
+}
+
+/** Downloaded media kept on the device: how much, how much is used, and emptying it. */
+function Storage({ prefs, set }: { prefs: Prefs; set: (p: Partial<Prefs>) => void }) {
+  const [used, setUsed] = useState<number>();
+  const refresh = () => { cacheSize().then(setUsed, () => {}); };
+  useEffect(refresh, []);
+  return (
+    <>
+      <label className="select-row">حافظه‌ی رسانه‌ها
+        <Select value={prefs.cacheMB} options={CACHE_MB} onChange={(v) => { set({ cacheMB: v }); void cacheTrim().then(refresh); }} />
+      </label>
+      <button className="user-row" disabled={!used} onClick={() => confirmDialog("رسانه‌های ذخیره‌شده پاک شوند؟ دوباره از سرور دریافت می‌شوند.").then((y) => { if (y) void cacheClear().then(refresh); })}>
+        <span className="device-box"><Icon name="trash" /></span>
+        <span><b>پاک کردن حافظه</b><small>{used === undefined ? "…" : `${formatSize(used)} استفاده شده`}</small></span>
+      </button>
+      <p className="muted">عکس‌ها، ویدیوها و فایل‌هایی که باز کرده‌اید روی دستگاه می‌مانند تا دوباره دانلود نشوند. وقتی پر شود، قدیمی‌ترین‌ها پاک می‌شوند.</p>
     </>
   );
 }

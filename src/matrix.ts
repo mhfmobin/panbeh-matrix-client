@@ -5,6 +5,7 @@ import { endpointOf, fitSize, hasGif, isGif, normalizeServer, roomName, withGif,
 import { isHeadless, isNative, nativeCancelAll, nativeLog, nativeSyncState, onKick, setBackgroundService } from "./native.ts";
 import { isDesktop, isWindowVisible, onWindowVisibility, openExternal } from "./desktop.ts";
 import { confirmDialog } from "./ui/dialog.tsx";
+import { cacheClear, cacheGet, cachePut } from "./mediaCache.ts";
 
 type Session = { baseUrl: string; userId: string; deviceId: string; accessToken: string; refreshToken?: string; oauthClientId?: string; legacy?: boolean };
 // several accounts, one running client at a time; switching reloads the page so every cache starts clean
@@ -248,6 +249,7 @@ export async function logout() {
   // clearStores can leave the rust crypto DBs behind; best effort, a blocked delete just stays pending
   if (current) for (const n of ["matrix-sdk-crypto", "matrix-sdk-crypto-meta"]) indexedDB.deleteDatabase(`${dbNames(current).crypto}::${n}`);
   mediaCache.forEach((p) => p.then(URL.revokeObjectURL, () => {}));
+  await cacheClear();
   location.reload();
 }
 
@@ -347,7 +349,9 @@ export function mediaUrl(c: FileContent, thumb?: { w: number; h: number }, onPro
     // through the SDK, not fetch: OAuth access tokens expire every few minutes and it refreshes them
     const viaSdk = () => client.http.authedRequest<Blob>(Method.Get, http.pathname, Object.fromEntries(http.searchParams), undefined,
       { baseUrl: http.origin, prefix: "", rawResponseBody: true }).then((b) => b.arrayBuffer());
-    p = (onProgress ? fetchProgress(http, onProgress, (c.info as { size?: number } | undefined)?.size, signal).then((b) => b ?? viaSdk()) : viaSdk())
+    const download = () => (onProgress ? fetchProgress(http, onProgress, (c.info as { size?: number } | undefined)?.size, signal).then((b) => b ?? viaSdk()) : viaSdk())
+      .then((buf) => { cachePut(cacheKey, buf); return buf; });
+    p = cacheGet(cacheKey).then((hit) => hit ?? download())
       // typed so <audio>/<video> don't have to sniff; thumbnails may be another image type, so leave those untyped
       .then(async (buf) => URL.createObjectURL(new Blob([c.file ? await decryptAttachment(buf, c.file) : buf],
         { type: thumb ? "" : c.info?.mimetype ?? c.file?.mimetype ?? "" })));

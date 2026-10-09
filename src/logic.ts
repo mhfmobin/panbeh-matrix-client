@@ -420,3 +420,15 @@ export const fmtStats = (s: Stats) => [s.w && s.h ? `${s.w}×${s.h}` : "", s.fps
 
 /** Endpoint name for the net log: /_matrix/client/v3/rooms/!x/send/… → rooms. */
 export const endpointOf = (url: string) => new URL(url).pathname.split("/").slice(2).find((x) => !/^(client|media|v\d+|r0|unstable)$/.test(x)) ?? "?";
+
+/** Oldest-first [key, size] entries: the keys to drop, oldest first, so the rest fit in `cap` bytes. */
+export function toEvict(entries: [string, number][], cap: number): string[] {
+  let total = entries.reduce((n, [, size]) => n + size, 0);
+  const out: string[] = [];
+  for (const [key, size] of entries) {
+    if (total <= cap) break;
+    out.push(key);
+    total -= size;
+  }
+  return out;
+}
