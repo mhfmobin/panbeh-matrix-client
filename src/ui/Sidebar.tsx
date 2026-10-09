@@ -5,7 +5,7 @@ import { Virtuoso } from "react-virtuoso";
 import { NotificationCountType, UserEvent, type Room } from "matrix-js-sdk";
 import { client, dmPeer } from "../matrix.ts";
 import { setMuted } from "../notify.ts";
-import { isCallStart, useFolderOrder, useRooms, useTick, type RoomRow } from "../hooks.ts";
+import { isCallStart, useFolderOrder, useRooms, useTick, useTyping, type RoomRow } from "../hooks.ts";
 import { ARCHIVED, leaveAndForget, markRead, PINNED, setMarkedUnread, setTag } from "../chats.ts";
 import { applyFolderOrder, BASE_FOLDERS, inFolder, isUnread, listTime, moveFolder, normalize, num } from "../logic.ts";
 import { useSortableTabs } from "./useSortableTabs.ts";
@@ -218,7 +218,8 @@ function RoomItem({ row, active, onClick, onMenu }: { row: RoomRow; active: bool
     const who = last.getSender() === me() ? "شما" : row.isDM ? "" : bdi(senderName(last).split(" ")[0]);
     preview = (who ? who + ": " : "") + previewText(last);
   }
-  const typing = row.invite ? [] : room.getMembers().filter((m) => m.typing && m.userId !== me());
+  const typers = useTyping(room);
+  const typing = row.invite ? [] : typers;
   if (typing.length) preview = (row.isDM ? "" : bdi(typing[0].name.split(" ")[0]) + " ") + "در حال نوشتن";
   const muted = !!row.muted;
   const bumped = useChange(row.unread);

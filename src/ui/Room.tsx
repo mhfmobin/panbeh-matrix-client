@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { KnownMembership, RoomMemberEvent, type MatrixEvent, type Room as SdkRoom } from "matrix-js-sdk";
+import { KnownMembership, type MatrixEvent, type Room as SdkRoom } from "matrix-js-sdk";
 import { addDirect, client, dmPeer, isDirect, loadEvent } from "../matrix.ts";
-import { usePresence, useTick } from "../hooks.ts";
+import { usePresence, useTick, useTyping } from "../hooks.ts";
 import { Icon } from "../icons.tsx";
 import { num, stamp } from "../logic.ts";
 import { bdi, Dots, errText, me, RoomAvatar, senderName } from "./common.tsx";
@@ -21,7 +21,7 @@ import { alertDialog, confirmDialog } from "./dialog.tsx";
 import { useExit } from "./useDismiss.ts";
 
 export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
-  useTick(client, [RoomMemberEvent.Typing, "Room.myMembership", "Room.name"]);
+  useTick(client, ["Room.myMembership", "Room.name"]);
   const seen = usePresence(isDirect(room) && room.getMyMembership() === KnownMembership.Join ? dmPeer(room) : undefined);
   // lazy-loaded sync only has members who spoke recently; thread replies (/relations) bring none, so senders showed as IDs
   // ponytail: whole member list per opened room; fetch single profiles instead if huge rooms get slow
@@ -88,7 +88,7 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
     setSel(null);
   };
 
-  const typing = room.getMembers().filter((m) => m.typing && m.userId !== me()).map((m) => bdi(m.name.split(" ")[0]));
+  const typing = useTyping(room).map((m) => bdi(m.name.split(" ")[0]));
   const subtitle = typing.length
     ? `${typing.length > 2 ? `${typing.slice(0, 2).join("، ")} و ${num(typing.length - 2)} نفر دیگر` : typing.join(" و ")} در حال نوشتن`
     : room.getMyMembership() === KnownMembership.Invite ? "دعوت‌نامه" // invites carry no member counts
