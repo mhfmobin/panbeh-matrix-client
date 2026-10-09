@@ -36,9 +36,7 @@ export type Actions = {
 
 const QUICK = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 
-const SWIPE_AT = 60, SWIPE_MAX = 80;
-// a tap on these does its own thing; a tap anywhere else on the message opens its menu
-const INTERACTIVE = "a, button, input, textarea, label, video, audio, [role=button], .poll, .voice, .reply-quote";
+const LONG_PRESS = 450, SWIPE_AT = 60, SWIPE_MAX = 80;
 
 /** Text a copy should give: body without the reply fallback; media only their caption. */
 export function copyTextOf(ev: MatrixEvent): string {
@@ -83,9 +81,9 @@ type Props = { ev: MatrixEvent; room: Room; first: boolean; last: boolean; actio
 export function Message({ ev, room, first, last, actions, flash, enter }: Props) {
   const [picker, setPicker] = useState(false);
   const [fullPicker, setFullPicker] = useState(false);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null); // touch screens have no hover: a tap (or right-click) opens this
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null); // touch screens have no hover: long-press (or right-click) opens this
   const row = useRef<HTMLDivElement>(null);
-  const g = useRef<{ id: number; x: number; y: number; tap: boolean; lock: boolean; px: number; crossed: boolean } | null>(null);
+  const g = useRef<{ id: number; x: number; y: number; timer: number; lock: boolean; px: number; crossed: boolean } | null>(null);
   const swallow = useRef(false); // the click that follows a swipe / long-press
   const mine = ev.getSender() === me();
   const [deleting, setDeleting] = useState(false);
@@ -118,6 +116,7 @@ export function Message({ ev, room, first, last, actions, flash, enter }: Props)
     const s = g.current;
     g.current = null;
     if (!s) return;
+    clearTimeout(s.timer);
     if (s.lock) {
       setTimeout(() => { swallow.current = false; }, 350);
       row.current!.classList.add("snap"); // animate back
@@ -130,13 +129,14 @@ export function Message({ ev, room, first, last, actions, flash, enter }: Props)
   const inside = (e: { target: EventTarget }) => row.current!.contains(e.target as Node); // portals (menu, picker) bubble through React
   const down = (e: PointerEvent) => {
     if (!inside(e) || e.pointerType !== "touch" || !live || selecting || (e.target as HTMLElement).closest("input,video,audio")) return;
-    g.current = { id: e.pointerId, x: e.clientX, y: e.clientY, tap: !(e.target as HTMLElement).closest(INTERACTIVE), lock: false, px: 0, crossed: false };
-  };
-  const up = (e: PointerEvent) => {
-    const s = g.current;
-    const tap = !!s && s.tap && !s.lock && Math.hypot(e.clientX - s.x, e.clientY - s.y) < 10 && inside(e);
-    end(false);
-    if (tap) { navigator.vibrate?.(10); setMenu({ x: e.clientX, y: e.clientY }); }
+    const { clientX: x, clientY: y } = e;
+    clearTimeout(g.current?.timer);
+    g.current = { id: e.pointerId, x, y, lock: false, px: 0, crossed: false, timer: window.setTimeout(() => {
+      swallow.current = true;
+      setTimeout(() => { swallow.current = false; }, 1500); // the click normally follows at finger-up; don't eat a later tap if it doesn't
+      navigator.vibrate?.(15);
+      setMenu({ x, y });
+    }, LONG_PRESS) };
   };
   const move = (e: PointerEvent) => {
     const s = g.current;
@@ -144,6 +144,7 @@ export function Message({ ev, room, first, last, actions, flash, enter }: Props)
     const dx = e.clientX - s.x, dy = e.clientY - s.y;
     if (!s.lock) {
       if (Math.max(Math.abs(dx), Math.abs(dy)) < 10) return;
+      clearTimeout(s.timer);
       if (dx < 0 && -dx > Math.abs(dy)) {
         s.lock = true;
         swallow.current = true;
@@ -159,7 +160,7 @@ export function Message({ ev, room, first, last, actions, flash, enter }: Props)
 
   return (
     <div ref={row} className={`msg ${mine ? "mine" : "theirs"}${first ? " first" : ""}${last ? " last" : ""}${failed ? " failed" : ""}${flash ? " flash" : ""}${enter ? " enter" : ""}${deleting ? " deleting" : ""}${selecting ? " selecting" : ""}${selected ? " selected" : ""}`}
-      onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => end(true)}
+      onPointerDown={down} onPointerMove={move} onPointerUp={() => end(false)} onPointerCancel={() => end(true)}
       onContextMenu={(e) => { if (!live || selecting || !inside(e)) return; e.preventDefault(); setMenu((m) => m ?? { x: e.clientX, y: e.clientY }); }}
       onClickCapture={(e) => {
         if (!inside(e)) return;
