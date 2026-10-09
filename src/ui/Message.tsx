@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 
 import { createPortal } from "react-dom";
 import DOMPurify from "dompurify";
 import { handleIncomingLink } from "../openTarget.ts";
-import { parseMatrixLink } from "../uri.ts";
+import { matrixToLink, parseMatrixLink, viaServers } from "../uri.ts";
 import { EventStatus, EventType, M_POLL_START, RelationType, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { avatarUrl, client, isSavedGif, mediaUrl, pinnedIds, seenBy, toggleGif, togglePin } from "../matrix.ts";
 import { abortSave, openSave, writeSave, type SaveTarget } from "../native.ts";
@@ -107,6 +107,7 @@ export function Message({ ev, room, first, last, actions, flash, enter }: Props)
   const live = !failed && !ev.isDecryptionFailure() && ev.status == null && !!ev.getId(); // same bar as the action bar
   const swipeOk = live && !selecting;
   const text = copyTextOf(ev);
+  const copyLink = () => void copyMessages(matrixToLink(room.roomId, ev.getId()!, viaServers(room.getJoinedMembers().map((m) => m.userId))));
   const mentioned = !mine && !!client.getPushActionsForEvent(ev)?.tweaks?.highlight;
   const reacted = !!ev.getId() && !!room.relations.getChildEventsForEvent(ev.getId()!, RelationType.Annotation, EventType.Reaction)
     ?.getSortedAnnotationsByKey()?.some(([, set]) => set.size > 0);
@@ -215,6 +216,7 @@ export function Message({ ev, room, first, last, actions, flash, enter }: Props)
           <button title="واکنش" aria-label="واکنش" onClick={() => setPicker((p) => !p)}><Icon name="smile" size={17} /></button>
           <button title="پاسخ" aria-label="پاسخ" onClick={() => actions.reply(ev)}><Icon name="reply" size={17} /></button>
           {ev.getId() && !M_POLL_START.matches(ev.getType()) && <button title="هدایت" aria-label="هدایت" onClick={() => actions.forward(ev)}><Icon name="forward" size={17} /></button>}
+          {ev.getId() && <button title="کپی پیوند" aria-label="کپی پیوند" onClick={copyLink}><Icon name="link" size={17} /></button>}
           {actions.thread && <button title="پاسخ در رشته" aria-label="پاسخ در رشته" onClick={() => actions.thread!(ev)}><Icon name="thread" size={17} /></button>}
           {mine && <button title="دیده‌شده توسط" aria-label="دیده‌شده توسط" onClick={() => actions.info(ev)}><Icon name="info" size={17} /></button>}
           {canPin && <button title={pinned ? "برداشتن سنجاق" : "سنجاق"} aria-label={pinned ? "برداشتن سنجاق" : "سنجاق"}
@@ -233,6 +235,7 @@ export function Message({ ev, room, first, last, actions, flash, enter }: Props)
         <MsgMenu {...menu} onClose={() => setMenu(null)} onReact={(k) => toggleReaction(room, ev, k)} onMore={() => setFullPicker(true)} items={[
           { icon: "reply", label: "پاسخ", run: () => actions.reply(ev) },
           text && { icon: "copy", label: "کپی", run: () => void copyMessages(text) },
+          ev.getId() && { icon: "link", label: "کپی پیوند", run: copyLink },
           !M_POLL_START.matches(ev.getType()) && { icon: "forward", label: "هدایت", run: () => actions.forward(ev) },
           actions.thread && { icon: "thread", label: "پاسخ در رشته", run: () => actions.thread!(ev) },
           isGif(content) && (isSavedGif(content)

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseMatrixHash, parseMatrixLink } from "./uri.ts";
+import { matrixToLink, parseMatrixHash, parseMatrixLink, viaServers } from "./uri.ts";
 
 test("matrix.to user, room, alias, event and via", () => {
   assert.deepEqual(parseMatrixLink("https://matrix.to/#/@a:x.org"), { kind: "user", id: "@a:x.org", via: [] });
@@ -29,4 +29,11 @@ test("rejects malformed and foreign links", () => {
 test("page hash form", () => {
   assert.equal(parseMatrixHash("#/!id:x.org/$ev")?.eventId, "$ev");
   assert.equal(parseMatrixHash("#!id:x.org"), null);
+});
+
+test("matrixToLink round-trips through the parser; via picks the biggest servers", () => {
+  assert.deepEqual(parseMatrixLink(matrixToLink("!id:x.org", "$ev/+=", ["a.org", "b.org"])),
+    { kind: "room", id: "!id:x.org", eventId: "$ev/+=", via: ["a.org", "b.org"] });
+  assert.deepEqual(parseMatrixLink(matrixToLink("@a:x.org")), { kind: "user", id: "@a:x.org", via: [] });
+  assert.deepEqual(viaServers(["@a:x.org", "@b:y.org", "@c:y.org"]), ["y.org", "x.org"]);
 });

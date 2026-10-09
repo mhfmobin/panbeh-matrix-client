@@ -9,6 +9,8 @@ import { showVerification, useUserTrust } from "./Verify.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 import { start as startCall } from "./Call.tsx";
 import { PhotoViewer } from "./Media.tsx";
+import { matrixToLink } from "../uri.ts";
+import { copyMessages } from "./Message.tsx";
 
 /** Someone's profile with a shortcut to message them. */
 export function UserProfile({ userId, room, onClose, onOpened }: { userId: string; room?: Room; onClose: () => void; onOpened?: () => void }) {
@@ -67,6 +69,7 @@ export function UserProfile({ userId, room, onClose, onOpened }: { userId: strin
           <button className="secondary" disabled={busy} onClick={() => callIn(true)}><Icon name="video" size={18} /> تماس تصویری</button>
         </div>
       )}
+      <button className="secondary" onClick={() => void copyMessages(matrixToLink(userId))}>کپی پیوند کاربر</button>
       {other && trust?.known && !trust.isCrossSigningVerified() && (
         <button className="secondary" disabled={busy} onClick={verify}>تأیید هویت با شکلک‌ها</button>
       )}
