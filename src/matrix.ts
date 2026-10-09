@@ -315,8 +315,8 @@ type FileContent = { url?: string; file?: IEncryptedFile & { url: string; mimety
 const mediaCache = new Map<string, Promise<string>>();
 
 /** Downloads with byte progress. Plain fetch (the SDK's request can't report progress); null if the token was refused. */
-async function fetchProgress(url: URL, onProgress: (loaded: number, total: number) => void, size?: number): Promise<ArrayBuffer | null> {
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${client.getAccessToken()}` } });
+async function fetchProgress(url: URL, onProgress: (loaded: number, total: number) => void, size?: number, signal?: AbortSignal): Promise<ArrayBuffer | null> {
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${client.getAccessToken()}` }, signal });
   if (res.status === 401) return null; // expired OAuth token: the SDK path refreshes it
   if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
   const total = +(res.headers.get("content-length") ?? 0) || size || 0;
@@ -333,8 +333,8 @@ async function fetchProgress(url: URL, onProgress: (loaded: number, total: numbe
 }
 
 /** Blob URL for an mxc (authenticated media, decrypting if needed). Cached for the session.
- *  `onProgress` reports bytes for the download this call starts (not for one already cached or running). */
-export function mediaUrl(c: FileContent, thumb?: { w: number; h: number }, onProgress?: (loaded: number, total: number) => void): Promise<string> | null {
+ *  `onProgress` reports bytes for the download this call starts (not for one already cached or running); `signal` cancels it. */
+export function mediaUrl(c: FileContent, thumb?: { w: number; h: number }, onProgress?: (loaded: number, total: number) => void, signal?: AbortSignal): Promise<string> | null {
   const mxc = c.file?.url ?? c.url;
   if (!mxc) return null;
   const cacheKey = mxc + (thumb && !c.file ? `@${thumb.w}` : "");
@@ -346,7 +346,7 @@ export function mediaUrl(c: FileContent, thumb?: { w: number; h: number }, onPro
     // through the SDK, not fetch: OAuth access tokens expire every few minutes and it refreshes them
     const viaSdk = () => client.http.authedRequest<Blob>(Method.Get, http.pathname, Object.fromEntries(http.searchParams), undefined,
       { baseUrl: http.origin, prefix: "", rawResponseBody: true }).then((b) => b.arrayBuffer());
-    p = (onProgress ? fetchProgress(http, onProgress, (c.info as { size?: number } | undefined)?.size).then((b) => b ?? viaSdk()) : viaSdk())
+    p = (onProgress ? fetchProgress(http, onProgress, (c.info as { size?: number } | undefined)?.size, signal).then((b) => b ?? viaSdk()) : viaSdk())
       // typed so <audio>/<video> don't have to sniff; thumbnails may be another image type, so leave those untyped
       .then(async (buf) => URL.createObjectURL(new Blob([c.file ? await decryptAttachment(buf, c.file) : buf],
         { type: thumb ? "" : c.info?.mimetype ?? c.file?.mimetype ?? "" })));

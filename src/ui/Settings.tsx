@@ -13,7 +13,7 @@ import { desktopVersion, getAutostart, isDesktop, setAutostart } from "../deskto
 import { isNative, nativeCancelAll, nativeStatus, requestBatteryExemption, requestFullScreen, requestNotifyPermission, saveFile, setBackgroundInterval, setBackgroundService } from "../native.ts";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 
-type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; previews: boolean; shareLastSeen: boolean; dev: boolean; legacyCalls: boolean; enterSends: boolean;
+type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; previews: boolean; shareLastSeen: boolean; dev: boolean; legacyCalls: boolean; enterSends: boolean; askSave: boolean;
   camQuality: "360" | "540" | "720" | "1080"; screenQuality: "720" | "1080" | "1080hi"; audioQuality: "low" | "normal" | "high";
   lowData: "off" | "auto" | "on" }; // calls: everyone's video at its lowest layer (auto = while our connection is poor)
 const ACCENTS = ["#3390ec", "#8774e1", "#40a7a0", "#e5864a", "#e0578b", "#4fae4e"];
@@ -25,7 +25,7 @@ const AUDIO_Q: [Prefs["audioQuality"], string][] = [["low", "کم"], ["normal", 
 const LOW_DATA: [Prefs["lowData"], string][] = [["off", "خاموش"], ["auto", "خودکار، با اتصال ضعیف"], ["on", "همیشه"]];
 
 // the Android app defaults to notifying: it asks for permission on first start. The desktop app needs no permission.
-export const loadPrefs = (): Prefs => ({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, previews: true, shareLastSeen: true, dev: false, legacyCalls: false, enterSends: true, camQuality: "720", screenQuality: "1080hi", audioQuality: "high", lowData: "off", ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
+export const loadPrefs = (): Prefs => ({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, previews: true, shareLastSeen: true, dev: false, legacyCalls: false, enterSends: true, askSave: false, camQuality: "720", screenQuality: "1080hi", audioQuality: "high", lowData: "off", ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
 
 /** Enter (or Ctrl/⌘+Enter when Enter is set to a new line) sends. */
 export const isSendKey = (e: { key: string; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; nativeEvent: { isComposing: boolean } }) =>
@@ -110,6 +110,8 @@ export function Settings({ onClose, onSecurityChange }: { onClose: () => void; o
         <input type="checkbox" role="switch" checked={prefs.previews} onChange={(e) => set({ previews: e.target.checked })} /></label>
       <label className="switch-row"><span>ارسال با Enter<small>خاموش: Enter خط جدید می‌زند و Ctrl+Enter ارسال می‌کند</small></span>
         <input type="checkbox" role="switch" checked={prefs.enterSends} onChange={(e) => set({ enterSends: e.target.checked })} /></label>
+      {isNative && <label className="switch-row"><span>پرسیدن محل ذخیره<small>خاموش: فایل‌ها در پوشه‌ی دانلودها ذخیره می‌شوند</small></span>
+        <input type="checkbox" role="switch" checked={prefs.askSave} onChange={(e) => set({ askSave: e.target.checked })} /></label>}
 
       <h3>حریم خصوصی</h3>
       <label className="switch-row"><span>نمایش آخرین بازدید<small>فقط وضعیت خودتان پنهان می‌شود؛ وضعیت دیگران را همچنان می‌بینید</small></span>
@@ -573,9 +575,10 @@ function Keys() {
       if (pass !== again) throw new Error("تکرار عبارت عبور یکی نیست");
       const text = await encryptKeyFile(await client.getCrypto()!.exportRoomKeysAsJson(), pass);
       const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
-      const downloads = await saveFile(url, "element-keys.txt").finally(() => setTimeout(() => URL.revokeObjectURL(url), 1000));
+      const t = await saveFile(url, "element-keys.txt").finally(() => setTimeout(() => URL.revokeObjectURL(url), 1000));
+      if (!t) return;
       setPass(""); setAgain("");
-      return downloads ? "فایل کلیدها در پوشه‌ی دانلودها ذخیره شد." : "فایل کلیدها ذخیره شد.";
+      return t.where === "downloads" ? "فایل کلیدها در پوشه‌ی دانلودها ذخیره شد." : "فایل کلیدها ذخیره شد.";
     });
   };
   const importKeys = (e: FormEvent) => {

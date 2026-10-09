@@ -1,6 +1,7 @@
 package ir.panbeh.app;
 
 import android.Manifest;
+import android.app.Activity;
 import android.app.NotificationManager;
 import android.content.ContentResolver;
 import android.content.ContentValues;
@@ -14,6 +15,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.os.PowerManager;
+import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
@@ -26,6 +28,9 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import androidx.activity.result.ActivityResult;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -36,6 +41,7 @@ import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
@@ -197,31 +203,118 @@ public class PanbehPlugin extends Plugin {
         call.resolve(r);
     }
 
-    /** A downloaded file into Downloads (Android 10+: MediaStore, no permission). */
+    /** A file being written: opened by saveOpen, filled by saveChunk, ended by saveClose or saveAbort. */
+    private static class Save { OutputStream out; Uri uri; File file; boolean picked, pending; }
+    private final ConcurrentHashMap<String, Save> saves = new ConcurrentHashMap<>(); // savePicked runs on the main thread, the rest on the plugin thread
+
+    /** Opens a downloaded file for writing: Android's "Save as" screen when `ask`, else Downloads (Android 10+: MediaStore, no permission).
+     *  Resolves { id, picked }, or { id: null } when the user backs out of "Save as". */
     @PluginMethod
-    public void saveFile(PluginCall call) {
-        String name = call.getString("name", "file"), mime = call.getString("mime", "application/octet-stream"), data = call.getString("data");
-        if (data == null) { call.reject("data required"); return; }
-        byte[] bytes = Base64.decode(data, Base64.DEFAULT);
+    public void saveOpen(PluginCall call) {
+        String name = call.getString("name", "file"), mime = call.getString("mime", "application/octet-stream");
+        if (call.getBoolean("ask", false)) {
+            Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(mime).putExtra(Intent.EXTRA_TITLE, name);
+            startActivityForResult(call, i, "savePicked");
+            return;
+        }
+        Save sv = new Save();
         try {
             if (Build.VERSION.SDK_INT >= 29) {
-                ContentResolver cr = getContext().getContentResolver();
                 ContentValues v = new ContentValues();
                 v.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
                 v.put(MediaStore.MediaColumns.MIME_TYPE, mime);
                 v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
-                Uri uri = cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
-                if (uri == null) throw new IOException("can't create the file");
-                try (OutputStream out = cr.openOutputStream(uri)) { out.write(bytes); }
+                v.put(MediaStore.MediaColumns.IS_PENDING, 1); // hidden from other apps until it's complete
+                sv.uri = getContext().getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                if (sv.uri == null) throw new IOException("can't create the file");
+                sv.pending = true;
+                sv.out = getContext().getContentResolver().openOutputStream(sv.uri);
             } else {
-                // ponytail: Android 7-9 save in the app's own Downloads (Android/data/...), no storage permission; ask for WRITE_EXTERNAL_STORAGE if users want the shared folder
-                File f = new File(getContext().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), name);
-                try (OutputStream out = new FileOutputStream(f)) { out.write(bytes); }
+                // ponytail: Android 7-9 save in the app's own Downloads (Android/data/...), no storage permission; "ask where to save" reaches shared folders
+                sv.file = new File(getContext().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), name);
+                sv.out = new FileOutputStream(sv.file);
+            }
+            if (sv.out == null) throw new IOException("can't open the file");
+        } catch (IOException | RuntimeException e) {
+            drop(sv);
+            call.reject(e.getMessage());
+            return;
+        }
+        call.resolve(opened(sv));
+    }
+
+    @ActivityCallback
+    private void savePicked(PluginCall call, ActivityResult result) {
+        Uri uri = result.getData() != null ? result.getData().getData() : null;
+        if (result.getResultCode() != Activity.RESULT_OK || uri == null) { call.resolve(new JSObject().put("id", JSObject.NULL)); return; }
+        Save sv = new Save();
+        sv.uri = uri;
+        sv.picked = true;
+        try {
+            sv.out = getContext().getContentResolver().openOutputStream(uri, "wt");
+            if (sv.out == null) throw new IOException("can't open the file");
+        } catch (IOException | RuntimeException e) {
+            drop(sv);
+            call.reject(e.getMessage());
+            return;
+        }
+        call.resolve(opened(sv));
+    }
+
+    private JSObject opened(Save sv) {
+        String id = UUID.randomUUID().toString();
+        saves.put(id, sv);
+        return new JSObject().put("id", id).put("picked", sv.picked);
+    }
+
+    @PluginMethod
+    public void saveChunk(PluginCall call) {
+        Save sv = saves.get(call.getString("id", ""));
+        String data = call.getString("data");
+        if (sv == null || data == null) { call.reject("no such file"); return; }
+        try {
+            sv.out.write(Base64.decode(data, Base64.DEFAULT));
+            call.resolve();
+        } catch (IOException | RuntimeException e) {
+            saves.values().remove(sv);
+            drop(sv);
+            call.reject(e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void saveClose(PluginCall call) {
+        Save sv = saves.remove(call.getString("id", ""));
+        if (sv == null) { call.reject("no such file"); return; }
+        try {
+            sv.out.close();
+            if (sv.pending) {
+                ContentValues v = new ContentValues();
+                v.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                getContext().getContentResolver().update(sv.uri, v, null, null);
             }
             call.resolve();
         } catch (IOException | RuntimeException e) {
+            drop(sv);
             call.reject(e.getMessage());
         }
+    }
+
+    /** Cancelled: close and delete the partial file. */
+    @PluginMethod
+    public void saveAbort(PluginCall call) {
+        Save sv = saves.remove(call.getString("id", ""));
+        if (sv != null) drop(sv);
+        call.resolve();
+    }
+
+    private void drop(Save sv) {
+        try { if (sv.out != null) sv.out.close(); } catch (IOException ignored) { }
+        try {
+            if (sv.file != null) sv.file.delete();
+            else if (sv.picked) DocumentsContract.deleteDocument(getContext().getContentResolver(), sv.uri);
+            else if (sv.uri != null) getContext().getContentResolver().delete(sv.uri, null, null);
+        } catch (Exception ignored) { } // some providers can't delete; an empty/partial file stays
     }
 
     @PluginMethod
