@@ -29,7 +29,7 @@ function PinPad({ title, sub, len, disabled, shake, extra, onDone }:
   pressRef.current = press;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).closest("input, textarea")) return;
+      if (e.target instanceof Element && e.target.closest("input, textarea")) return;
       const d = "۰۱۲۳۴۵۶۷۸۹".indexOf(e.key); // Persian keyboard digits too
       if (/^[0-9]$/.test(e.key) || d >= 0) pressRef.current(String(d >= 0 ? d : e.key));
       else if (e.key === "Backspace") pressRef.current("⌫");

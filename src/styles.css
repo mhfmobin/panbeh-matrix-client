@@ -1245,7 +1245,7 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .qr-link { display: block; text-align: center; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; user-select: text; }
 
 /* app lock */
-.lock-screen { position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 16px; color: var(--text); animation: fade 0.18s; }
+.lock-screen { position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 16px; color: var(--text); } /* no fade-in: the app mustn't show through */
 .pinpad { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
 .pin-dots { display: flex; gap: 12px; min-height: 14px; margin: 6px 0 10px; }
 .pin-dots i { width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--muted); transition: background 0.12s, border-color 0.12s; }
@@ -1259,3 +1259,4 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .pin-keys .pin-ok { background: var(--accent); color: #fff; }
 .lock-forgot { color: var(--muted); font-size: 14px; }
 .sheet .pinpad { margin: 12px auto; }
+.sheet .pin-keys button:not(.pin-ok) { background: var(--hover); }
