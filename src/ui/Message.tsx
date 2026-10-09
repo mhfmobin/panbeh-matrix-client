@@ -5,7 +5,7 @@ import { handleIncomingLink } from "../openTarget.ts";
 import { parseMatrixLink } from "../uri.ts";
 import { EventStatus, EventType, M_POLL_START, RelationType, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { avatarUrl, client, isSavedGif, mediaUrl, pinnedIds, seenBy, toggleGif, togglePin } from "../matrix.ts";
-import { saveFile } from "../native.ts";
+import { abortSave, openSave, writeSave, type SaveTarget } from "../native.ts";
 import { usePromise } from "../hooks.ts";
 import { LINK_SRC, clock, fmtDuration, isGif, linkHref, num, osmUrl, parseGeoUri, stamp, textDir, type Gif } from "../logic.ts";
 import { Icon, iconSvg, type IconName } from "../icons.tsx";
@@ -436,17 +436,31 @@ export function ProgressRing({ f, label, onClick, icon = "close" }: { f: number;
   );
 }
 
+/** The toast after a save; the browser shows its own download. */
+export function savedToast(t: SaveTarget | null) {
+  if (t?.where === "downloads") toast("در پوشه‌ی دانلودها ذخیره شد");
+  else if (t?.where === "picked") toast("ذخیره شد");
+}
+
 export function FileRow({ c }: { c: Content }) {
   const [prog, setProg] = useState<{ loaded: number; total: number } | null>(null);
+  const busy = useRef<AbortController | null>(null); // also stops a second tap from starting another download
   const download = async () => {
-    if (prog) return;
-    setProg({ loaded: 0, total: c.info?.size ?? 0 });
+    if (busy.current) { busy.current.abort(); return; } // tapping the ring cancels
+    const ac = busy.current = new AbortController();
+    let t: SaveTarget | null = null;
     try {
-      const url = await mediaUrl(c, undefined, (loaded, total) => setProg({ loaded, total }))!;
-      if (await saveFile(url, c.filename ?? c.body ?? "file")) toast("در پوشه‌ی دانلودها ذخیره شد");
+      t = await openSave(c.filename ?? c.body ?? "file", c.info?.mimetype ?? "");
+      if (!t || ac.signal.aborted) return;
+      setProg({ loaded: 0, total: c.info?.size ?? 0 });
+      const url = await mediaUrl(c, undefined, (loaded, total) => setProg({ loaded, total }), ac.signal)!;
+      await writeSave(t, url, ac.signal);
+      savedToast(t);
     } catch (e) {
-      alertDialog(errText(e));
+      abortSave(t);
+      if (!ac.signal.aborted) alertDialog(errText(e));
     } finally {
+      busy.current = null;
       setProg(null);
     }
   };
@@ -455,7 +469,7 @@ export function FileRow({ c }: { c: Content }) {
     : prog.total ? `${num(Math.floor(f * 100))}٪ · ${formatSize(prog.loaded)} / ${formatSize(prog.total)}` : "در حال دانلود…";
   return (
     <button className="file-row" onClick={download}>
-      {prog ? <ProgressRing f={f || 0.04} label="در حال دانلود" icon="download" /> : <span className="file-icon"><Icon name="file" /></span>}
+      {prog ? <ProgressRing f={f || 0.04} label="لغو دانلود" /> : <span className="file-icon"><Icon name="file" /></span>}
       <span><b>{c.filename ?? c.body}</b><small dir="auto">{state}</small></span>
     </button>
   );

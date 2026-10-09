@@ -1,4 +1,5 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
+import { loadPrefs } from "./ui/Settings.tsx";
 
 /** The Android app: our own WebView (Capacitor plugin) or the background service's headless one (JS interface). */
 type Payload = { roomId: string; title: string; body: string; icon?: string; sound: boolean; openRoom?: string };
@@ -33,7 +34,10 @@ interface PanbehPlugin {
   setImmersive(p: { on: boolean }): Promise<void>;
   requestFullScreen(): Promise<void>;
   takeLaunchCall(): Promise<Partial<CallAction>>;
-  saveFile(p: { name: string; mime: string; data: string }): Promise<void>;
+  saveOpen(p: { name: string; mime: string; ask: boolean }): Promise<{ id: string | null; picked?: boolean }>;
+  saveChunk(p: { id: string; data: string }): Promise<void>;
+  saveClose(p: { id: string }): Promise<void>;
+  saveAbort(p: { id: string }): Promise<void>;
   takeLaunchShare(): Promise<Partial<Shared>>;
   addListener(e: "openRoom", f: (d: { roomId: string }) => void): Promise<PluginListenerHandle>;
   addListener(e: "openLink", f: (d: { link: string }) => void): Promise<PluginListenerHandle>;
@@ -144,28 +148,57 @@ export function onCallAction(f: (a: CallAction) => void) {
   return () => { h.then((x) => x.remove()); };
 }
 
+const blobToDataUrl = (b: Blob) => new Promise<string>((res, rej) => {
+  const r = new FileReader();
+  r.onload = () => res(r.result as string);
+  r.onerror = () => rej(r.error);
+  r.readAsDataURL(b);
+});
+
 /** Blob/object URL → data URL, for handing images to native code. */
-export async function toDataUrl(url: string) {
-  const b = await (await fetch(url)).blob();
-  return new Promise<string>((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(r.result as string);
-    r.onerror = () => rej(r.error);
-    r.readAsDataURL(b);
-  });
+export const toDataUrl = async (url: string) => blobToDataUrl(await (await fetch(url)).blob());
+
+/** Where a file is being saved: the browser's download, the phone's Downloads folder, or a place picked in Android's "Save as". */
+export type SaveTarget = { name: string; id?: string; where: "browser" | "downloads" | "picked" };
+const CHUNK = 512 * 1024; // per bridge call, so a big file never crosses as one giant base64 string
+
+/** Opens a file to save into, before downloading, so "Save as" (if the user wants it asked) comes first. null = they backed out. */
+export async function openSave(name: string, mime: string): Promise<SaveTarget | null> {
+  if (!isNative) return { name, where: "browser" };
+  const r = await plugin.saveOpen({ name, mime: mime || "application/octet-stream", ask: loadPrefs().askSave });
+  return r.id ? { name, id: r.id, where: r.picked ? "picked" : "downloads" } : null;
 }
 
-/** Saves a blob/object URL as a file: the browser's download, or the phone's Downloads folder (WebViews ignore <a download>).
- *  Returns true when it went to Downloads on Android. */
-export async function saveFile(url: string, name: string): Promise<boolean> {
-  if (!isNative) {
-    Object.assign(document.createElement("a"), { href: url, download: name }).click();
-    return false;
+/** Writes a blob/object URL into an opened target (WebViews ignore <a download>, so Android gets it in chunks). */
+export async function writeSave(t: SaveTarget, url: string, signal?: AbortSignal) {
+  if (!t.id) {
+    Object.assign(document.createElement("a"), { href: url, download: t.name }).click();
+    return;
   }
-  // ponytail: base64 over the bridge holds the file ~3x in memory; stream through a temp file if big files crash
-  const data = await toDataUrl(url);
-  await plugin.saveFile({ name, mime: data.slice(5, data.indexOf(";")) || "application/octet-stream", data: data.slice(data.indexOf(",") + 1) });
-  return true;
+  try {
+    const b = await (await fetch(url)).blob();
+    for (let i = 0; i < b.size; i += CHUNK) {
+      signal?.throwIfAborted();
+      const d = await blobToDataUrl(b.slice(i, i + CHUNK));
+      await plugin.saveChunk({ id: t.id, data: d.slice(d.indexOf(",") + 1) });
+    }
+    await plugin.saveClose({ id: t.id });
+  } catch (e) {
+    abortSave(t);
+    throw e;
+  }
+}
+
+/** Drops a half-written file (cancelled or failed). Safe to call twice. */
+export function abortSave(t: SaveTarget | null) {
+  if (t?.id) plugin.saveAbort({ id: t.id }).catch(() => {});
+}
+
+/** Saves something already downloaded (a blob/object URL). null = "Save as" was backed out of. */
+export async function saveFile(url: string, name: string): Promise<SaveTarget | null> {
+  const t = await openSave(name, isNative ? (await (await fetch(url)).blob()).type : "");
+  if (t) await writeSave(t, url);
+  return t;
 }
 
 /** Things shared to the app (SEND intents): now (cold start) and later. Files are read through Capacitor's content:// bridge. */
