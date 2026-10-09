@@ -1238,3 +1238,8 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .segmented[data-pill]:not(.ready) button.on { background: var(--panel); box-shadow: var(--shadow); } /* before the pill is placed */
 .segmented[data-pill].ready button.on { background: transparent; box-shadow: none; }
 .segmented[data-pill] button { position: relative; }
+
+/* link + QR sheet */
+.qr { width: min(240px, 70vw); margin: 8px auto 0; padding: 8px; border-radius: 12px; background: #fff; line-height: 0; }
+.qr svg { width: 100%; height: auto; }
+.qr-link { display: block; text-align: center; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; user-select: text; }

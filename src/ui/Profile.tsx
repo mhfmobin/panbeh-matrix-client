@@ -10,7 +10,7 @@ import { alertDialog, confirmDialog } from "./dialog.tsx";
 import { start as startCall } from "./Call.tsx";
 import { PhotoViewer } from "./Media.tsx";
 import { matrixToLink } from "../uri.ts";
-import { copyMessages } from "./Message.tsx";
+import { LinkSheet } from "./LinkSheet.tsx";
 
 /** Someone's profile with a shortcut to message them. */
 export function UserProfile({ userId, room, onClose, onOpened }: { userId: string; room?: Room; onClose: () => void; onOpened?: () => void }) {
@@ -23,6 +23,7 @@ export function UserProfile({ userId, room, onClose, onOpened }: { userId: strin
   const name = p?.displayname ?? m?.name ?? userId;
   const photo = p?.avatar_url ?? m?.getMxcAvatarUrl();
   const [viewing, setViewing] = useState(false);
+  const [qr, setQr] = useState(false);
   const closeViewer = useCallback(() => setViewing(false), []);
   const dm = findDM(userId);
   const blocked = client.isUserIgnored(userId);
@@ -69,7 +70,8 @@ export function UserProfile({ userId, room, onClose, onOpened }: { userId: strin
           <button className="secondary" disabled={busy} onClick={() => callIn(true)}><Icon name="video" size={18} /> تماس تصویری</button>
         </div>
       )}
-      <button className="secondary" onClick={() => void copyMessages(matrixToLink(userId))}>کپی پیوند کاربر</button>
+      <button className="secondary" onClick={() => setQr(true)}><Icon name="link" size={18} /> پیوند و کد QR</button>
+      {qr && <LinkSheet title="پیوند کاربر" link={matrixToLink(userId)} onClose={() => setQr(false)} />}
       {other && trust?.known && !trust.isCrossSigningVerified() && (
         <button className="secondary" disabled={busy} onClick={verify}>تأیید هویت با شکلک‌ها</button>
       )}

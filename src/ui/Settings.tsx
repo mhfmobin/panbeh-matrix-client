@@ -12,6 +12,8 @@ import { showVerification } from "./Verify.tsx";
 import { desktopVersion, getAutostart, isDesktop, setAutostart } from "../desktop.ts";
 import { isNative, nativeCancelAll, nativeStatus, requestBatteryExemption, requestFullScreen, requestNotifyPermission, saveFile, setBackgroundInterval, setBackgroundService } from "../native.ts";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
+import { LinkSheet } from "./LinkSheet.tsx";
+import { matrixToLink } from "../uri.ts";
 
 type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; previews: boolean; shareLastSeen: boolean; dev: boolean; legacyCalls: boolean; enterSends: boolean; askSave: boolean;
   camQuality: "360" | "540" | "720" | "1080"; screenQuality: "720" | "1080" | "1080hi"; audioQuality: "low" | "normal" | "high";
@@ -47,8 +49,9 @@ export function applyPrefs(p = loadPrefs()) {
   root.style.setProperty("--accent", p.accent);
 }
 
-type View = "main" | "devices" | "password" | "keys" | "blocked" | "deactivate";
+type View = "main" | "devices" | "password" | "keys" | "blocked" | "deactivate" | "link";
 const ACCOUNT: [View, IconName, string, string][] = [
+  ["link", "link", "پیوند و کد QR من", "تا دیگران با یک اسکن به شما پیام بدهند"],
   ["password", "lock", "تغییر رمز عبور", ""],
   ["keys", "file", "کلیدهای رمزنگاری", "ذخیره در فایل یا وارد کردن از فایل"],
   ["blocked", "user", "کاربران مسدود", ""],
@@ -67,6 +70,7 @@ export function Settings({ onClose, onSecurityChange }: { onClose: () => void; o
   const [view, setView] = useState<View>("main");
   const pill = useSlider<HTMLDivElement>();
   const back = () => setView("main");
+  if (view === "link") return <LinkSheet title="پیوند من" link={matrixToLink(me())} onClose={back} />;
   if (view === "devices") return <Sheet title="دستگاه‌ها" onClose={back}><Devices /></Sheet>;
   if (view === "password") return <Sheet title="تغییر رمز عبور" onClose={back}>{isOAuth() ? <AccountPage action="org.matrix.profile" /> : <ChangePassword />}</Sheet>;
   if (view === "keys") return <Sheet title="کلیدهای رمزنگاری" onClose={back}><Keys /></Sheet>;
