@@ -42,6 +42,8 @@ interface PanbehPlugin {
   saveClose(p: { id: string }): Promise<void>;
   saveAbort(p: { id: string }): Promise<void>;
   takeLaunchShare(): Promise<Partial<Shared>>;
+  biometricAvailable(): Promise<{ available: boolean }>;
+  biometricUnlock(p: { title: string; cancel: string }): Promise<{ ok: boolean }>;
   addListener(e: "openRoom", f: (d: { roomId: string }) => void): Promise<PluginListenerHandle>;
   addListener(e: "openLink", f: (d: { link: string }) => void): Promise<PluginListenerHandle>;
   addListener(e: "callAction", f: (d: CallAction) => void): Promise<PluginListenerHandle>;
@@ -151,6 +153,10 @@ export function onCallAction(f: (a: CallAction) => void) {
   const h = plugin.addListener("callAction", f);
   return () => { h.then((x) => x.remove()); };
 }
+
+/** The app lock's fingerprint/face unlock: whether the phone has one set up, and asking for it. */
+export const biometricAvailable = () => (isNative && !headless ? plugin.biometricAvailable().then((r) => r.available, () => false) : Promise.resolve(false));
+export const biometricUnlock = () => plugin.biometricUnlock({ title: "باز کردن پنبه", cancel: "ورود رمز" }).then((r) => r.ok, () => false);
 
 /** Message notification buttons, in the app's page or (via window.panbehNotifyAction) the headless one. Returns an unsubscribe. */
 export function onNotifyAction(f: (a: NotifyAction) => void) {

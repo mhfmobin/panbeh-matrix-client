@@ -432,3 +432,13 @@ export function toEvict(entries: [string, number][], cap: number): string[] {
   }
   return out;
 }
+
+/** The app lock's PIN check value: PBKDF2-SHA-256 over the PIN with a per-device salt, base64. Slow on purpose. */
+export async function hashPin(pin: string, salt: string, iterations: number) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(pin), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: new TextEncoder().encode(salt), iterations }, key, 256);
+  return btoa(String.fromCharCode(...new Uint8Array(bits)));
+}
+
+/** Wait before the next PIN try after `fails` wrong ones: none for the first 5, then 30s doubling, at most an hour. */
+export const lockDelay = (fails: number) => (fails < 5 ? 0 : Math.min(3_600_000, 30_000 * 2 ** (fails - 5)));

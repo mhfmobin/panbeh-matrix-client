@@ -31,6 +31,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import androidx.activity.result.ActivityResult;
+import androidx.biometric.BiometricManager;
+import androidx.biometric.BiometricPrompt;
+import androidx.core.content.ContextCompat;
+import androidx.fragment.app.FragmentActivity;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -183,6 +187,36 @@ public class PanbehPlugin extends Plugin {
         }
         // don't replay the tap or the single-use code if the activity is recreated
         getActivity().setIntent(new Intent(getContext(), MainActivity.class));
+    }
+
+    // ---------- app lock: fingerprint / face ----------
+
+    /** BIOMETRIC_WEAK: face unlock on most phones counts too; this only lifts a UI lock (no key is released). */
+    private static final int BIO = BiometricManager.Authenticators.BIOMETRIC_WEAK;
+
+    @PluginMethod
+    public void biometricAvailable(PluginCall call) {
+        call.resolve(new JSObject().put("available", BiometricManager.from(getContext()).canAuthenticate(BIO) == BiometricManager.BIOMETRIC_SUCCESS));
+    }
+
+    /** Shows the system prompt; resolves { ok } — false when cancelled, failed out, or "use PIN" was pressed. */
+    @PluginMethod
+    public void biometricUnlock(PluginCall call) {
+        FragmentActivity a = getActivity();
+        a.runOnUiThread(() -> {
+            BiometricPrompt p = new BiometricPrompt(a, ContextCompat.getMainExecutor(a), new BiometricPrompt.AuthenticationCallback() {
+                @Override
+                public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult r) { call.resolve(new JSObject().put("ok", true)); }
+                @Override
+                public void onAuthenticationError(int code, CharSequence msg) { call.resolve(new JSObject().put("ok", false)); }
+                // onAuthenticationFailed: one wrong finger; the prompt stays up for another try
+            });
+            p.authenticate(new BiometricPrompt.PromptInfo.Builder()
+                .setTitle(call.getString("title", ""))
+                .setNegativeButtonText(call.getString("cancel", ""))
+                .setAllowedAuthenticators(BIO)
+                .build());
+        });
     }
 
     @PluginMethod

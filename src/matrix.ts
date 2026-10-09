@@ -254,6 +254,21 @@ export async function logout() {
   location.reload();
 }
 
+/** Every account off this device (the app lock's PIN was forgotten): the others first, then this one, which reloads. */
+export async function logoutAll() {
+  const others = sessions().filter((x) => x.userId !== current?.userId);
+  setSessions(sessions().filter((x) => x.userId === current?.userId));
+  await Promise.race([Promise.all(others.map((s) => createClient({ baseUrl: s.baseUrl, accessToken: s.accessToken }).logout(true).catch(() => {}))),
+    new Promise((r) => setTimeout(r, 3000))]);
+  for (const s of others) {
+    const db = dbNames(s);
+    // best effort, as in logout(): a blocked delete stays pending
+    for (const n of [`matrix-js-sdk:${db.sync}`, `${db.crypto}::matrix-sdk-crypto`, `${db.crypto}::matrix-sdk-crypto-meta`, `panbeh-search:${s.userId}`]) indexedDB.deleteDatabase(n);
+    localStorage.removeItem(`panbeh.drafts:${s.userId}`);
+  }
+  await logout();
+}
+
 // ---------- E2EE: recovery ----------
 
 /** "unlock" = account has secret storage we can load; "setup" = nothing yet; "ok" = done. */

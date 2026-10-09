@@ -1243,3 +1243,19 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .qr { width: min(240px, 70vw); margin: 8px auto 0; padding: 8px; border-radius: 12px; background: #fff; line-height: 0; }
 .qr svg { width: 100%; height: auto; }
 .qr-link { display: block; text-align: center; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; user-select: text; }
+
+/* app lock */
+.lock-screen { position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 16px; color: var(--text); animation: fade 0.18s; }
+.pinpad { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.pin-dots { display: flex; gap: 12px; min-height: 14px; margin: 6px 0 10px; }
+.pin-dots i { width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--muted); transition: background 0.12s, border-color 0.12s; }
+.pin-dots i.on { background: var(--accent); border-color: var(--accent); }
+.pin-dots.shake { animation: pin-shake 0.35s; }
+@keyframes pin-shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+.pin-keys { display: grid; grid-template-columns: repeat(3, 68px); gap: 12px; }
+.pin-keys button { height: 68px; border-radius: 50%; border: 0; background: var(--panel); color: var(--text); font-size: 26px; display: grid; place-items: center; cursor: pointer; }
+.pin-keys button:active:not(:disabled) { background: var(--hover); }
+.pin-keys button:disabled { opacity: 0.4; cursor: default; }
+.pin-keys .pin-ok { background: var(--accent); color: #fff; }
+.lock-forgot { color: var(--muted); font-size: 14px; }
+.sheet .pinpad { margin: 12px auto; }

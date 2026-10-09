@@ -7,6 +7,8 @@ import { Icon, type IconName } from "../icons.tsx";
 import { Avatar, errText, formatSize, me, Select, Sheet } from "./common.tsx";
 import { CACHE_MB_DEFAULT, cacheClear, cacheSize, cacheTrim } from "../mediaCache.ts";
 import { dropIndex, indexLoaded } from "../searchIndex.ts";
+import { LockSettings } from "./Lock.tsx";
+import { lockConf } from "../lock.ts";
 import { useSlider } from "./useSlider.ts";
 import { num, stamp } from "../logic.ts";
 import { decryptKeyFile, encryptKeyFile } from "../keyfile.ts";
@@ -53,7 +55,7 @@ export function applyPrefs(p = loadPrefs()) {
   root.style.setProperty("--accent", p.accent);
 }
 
-type View = "main" | "devices" | "password" | "keys" | "blocked" | "deactivate" | "link";
+type View = "main" | "devices" | "password" | "keys" | "blocked" | "deactivate" | "link" | "lock";
 const ACCOUNT: [View, IconName, string, string][] = [
   ["link", "link", "پیوند و کد QR من", "تا دیگران با یک اسکن به شما پیام بدهند"],
   ["password", "lock", "تغییر رمز عبور", ""],
@@ -74,6 +76,7 @@ export function Settings({ onClose, onSecurityChange }: { onClose: () => void; o
   const [view, setView] = useState<View>("main");
   const pill = useSlider<HTMLDivElement>();
   const back = () => setView("main");
+  if (view === "lock") return <LockSettings onClose={back} />;
   if (view === "link") return <LinkSheet title="پیوند من" link={matrixToLink(me())} onClose={back} />;
   if (view === "devices") return <Sheet title="دستگاه‌ها" onClose={back}><Devices /></Sheet>;
   if (view === "password") return <Sheet title="تغییر رمز عبور" onClose={back}>{isOAuth() ? <AccountPage action="org.matrix.profile" /> : <ChangePassword />}</Sheet>;
@@ -122,6 +125,9 @@ export function Settings({ onClose, onSecurityChange }: { onClose: () => void; o
         <input type="checkbox" role="switch" checked={prefs.askSave} onChange={(e) => set({ askSave: e.target.checked })} /></label>}
 
       <h3>حریم خصوصی</h3>
+      <button className="user-row" onClick={() => setView("lock")}>
+        <span className="device-box"><Icon name="lock" /></span><span><b>قفل برنامه</b><small>{lockConf() ? "روشن" : "خاموش؛ با رمز عددی و اثر انگشت"}</small></span>
+      </button>
       <label className="switch-row"><span>نمایش آخرین بازدید<small>فقط وضعیت خودتان پنهان می‌شود؛ وضعیت دیگران را همچنان می‌بینید</small></span>
         <input type="checkbox" role="switch" checked={prefs.shareLastSeen} onChange={(e) => { set({ shareLastSeen: e.target.checked }); void setShareLastSeen(e.target.checked); }} /></label>
       <label className="switch-row"><span>جستجوی کامل در گفتگوهای رمزنگاری‌شده<small>متن پیام‌های رمزگشایی‌شده روی همین دستگاه نگه داشته می‌شود تا جستجو شوند؛ خاموش کردن آن را پاک می‌کند</small></span>

@@ -24,6 +24,8 @@ import { CallBar, CallLayer } from "./ui/Call.tsx";
 import { alertDialog } from "./ui/dialog.tsx";
 import { errText } from "./ui/common.tsx";
 import { Icon } from "./icons.tsx";
+import { LockScreen } from "./ui/Lock.tsx";
+import { useLocked } from "./lock.ts";
 import "@fontsource-variable/vazirmatn";
 import "./styles.css";
 
@@ -122,10 +124,12 @@ function Shell() {
     return () => clearTimeout(t);
   }, [room]);
   const shown = room ?? (leaving ? lastRoom.current : null);
+  const locked = useLocked();
   const open = (id?: string) => { location.hash = id ?? ""; };
 
   return (
-    <div className={"app" + (room ? " room-open" : "")}>
+    <>
+    <div className={"app" + (room ? " room-open" : "")} inert={locked}>
       <Sidebar loading={!synced} selected={roomId} onSelect={open} onSettings={() => setSettings(true)}
         banner={<>
           {(sync === SyncState.Error || sync === SyncState.Reconnecting) && <div className="banner warn">در حال اتصال…</div>}
@@ -145,6 +149,8 @@ function Shell() {
       <VerificationListener onTrustChange={refreshSecurity} />
       <CallLayer />
     </div>
+    {locked && <LockScreen />}
+    </>
   );
 }
 
