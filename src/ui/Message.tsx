@@ -4,7 +4,7 @@ import DOMPurify from "dompurify";
 import { handleIncomingLink } from "../openTarget.ts";
 import { matrixToLink, parseMatrixLink, viaServers } from "../uri.ts";
 import { EventStatus, EventType, M_POLL_START, RelationType, type MatrixEvent, type Room } from "matrix-js-sdk";
-import { avatarUrl, client, isSavedGif, mediaUrl, pinnedIds, seenBy, toggleGif, togglePin } from "../matrix.ts";
+import { avatarUrl, client, isSavedGif, loadEvent, mediaUrl, pinnedIds, seenBy, toggleGif, togglePin } from "../matrix.ts";
 import { abortSave, openSave, writeSave, type SaveTarget } from "../native.ts";
 import { usePromise } from "../hooks.ts";
 import { LINK_SRC, clock, fmtDuration, isGif, linkHref, num, osmUrl, parseGeoUri, stamp, textDir, type Gif } from "../logic.ts";
@@ -498,7 +498,9 @@ function LocationCard({ c }: { c: Content }) {
 }
 
 function ReplyQuote({ room, id, onJump }: { room: Room; id: string; onJump?: (id: string) => void }) {
-  const ev = room.findEventById(id);
+  const local = room.findEventById(id);
+  // not loaded (older than the timeline): fetch it; loadEvent caches the promise, so this stays one request
+  const ev = usePromise(local ? null : loadEvent(room, id)) ?? local;
   const go = onJump && ((e: { stopPropagation(): void }) => { e.stopPropagation(); onJump(id); });
   return (
     <div className="reply-quote" dir="auto" style={{ borderColor: ev ? colorFor(ev.getSender()!) : undefined }}
