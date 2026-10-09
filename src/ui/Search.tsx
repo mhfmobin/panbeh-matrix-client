@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { EventTimeline, KnownMembership, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { client, isEncrypted, searchOlder, searchServer } from "../matrix.ts";
 import { isMessage } from "../hooks.ts";
+import { backfill, backfillDone, indexOn, searchIndex } from "../searchIndex.ts";
 import { matchRange, normalize, stamp } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 import { Avatar, previewText, senderMember, senderName, Sheet } from "./common.tsx";
@@ -67,14 +68,22 @@ const ServerFailed = () => <p className="muted">جستجو روی سرور ان�
 export function SearchSheet({ room, onJump, onClose }: { room: Room; onJump: (eventId: string, fromServer: boolean) => void; onClose: () => void }) {
   const [q, setQ] = useState("");
   const enc = isEncrypted(room);
-  const [more, setMore] = useState(() => !!room.getLiveTimeline().getPaginationToken(EventTimeline.BACKWARDS));
+  const indexed = enc && indexOn(); // search the local index, and "older" indexes further back instead of loading the timeline
+  const [more, setMore] = useState(() => indexed || !!room.getLiveTimeline().getPaginationToken(EventTimeline.BACKWARDS));
+  useEffect(() => { if (indexed) backfillDone(room.roomId).then((d) => setMore(!d), () => {}); }, [room, indexed]);
   const [paging, setPaging] = useState(false);
   const [round, setRound] = useState(0); // bumped after paging back: rescan
-  const found = useResults(q, (t, failed) => (enc ? scanLoaded(room, t)
+  const found = useResults(q, (t, failed) => (indexed ? searchIndex(t, room.roomId).then((ix) => merge([...ix, ...scanLoaded(room, t)]), () => scanLoaded(room, t))
+    : enc ? scanLoaded(room, t)
     // the server doesn't fold ي/ك or ZWNJ; the local scan catches loaded messages it misses
     : serverOr(searchServer(t, room.roomId), failed).then((s) => merge([...s, ...scanLoaded(room, t)]))), [round]);
   const res = found?.evs;
-  const older = async () => { setPaging(true); setMore(await searchOlder(room)); setPaging(false); setRound((r) => r + 1); };
+  const older = async () => {
+    setPaging(true);
+    setMore(await (indexed ? backfill(room) : searchOlder(room)).catch(() => true));
+    setPaging(false);
+    setRound((r) => r + 1);
+  };
   const ready = q.trim().length >= MIN;
   return (
     <Sheet title="جستجو در گفتگو" onClose={onClose}>
@@ -83,7 +92,7 @@ export function SearchSheet({ room, onJump, onClose }: { room: Room; onJump: (ev
           <Icon name="search" size={16} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="جستجو" aria-label="جستجو در گفتگو" autoFocus />
         </label>
-        {enc && <p className="muted">در گفتگوهای رمزنگاری‌شده فقط پیام‌های بارگذاری‌شده جستجو می‌شوند</p>}
+        {enc && <p className="muted">{indexed ? "پیام‌های رمزنگاری‌شده در نمایه‌ی همین دستگاه جستجو می‌شوند" : "در گفتگوهای رمزنگاری‌شده فقط پیام‌های بارگذاری‌شده جستجو می‌شوند"}</p>}
         {ready && !res && <p className="muted">در حال جستجو…</p>}
         {found?.failed && <ServerFailed />}
         {res?.length === 0 && <p className="muted">پیامی پیدا نشد</p>}
@@ -95,12 +104,13 @@ export function SearchSheet({ room, onJump, onClose }: { room: Room; onJump: (ev
 }
 
 /** Sidebar: messages matching across all joined chats. */
-// ponytail: global search only scans what's loaded in encrypted rooms; per-chat search can page back.
+// ponytail: without the search index, global search only scans what's loaded in encrypted rooms; per-chat search can page back.
 export function MessageResults({ term, onPick }: { term: string; onPick: (roomId: string, eventId: string) => void }) {
   const found = useResults(term, async (t, failed) => {
     const joined = client.getRooms().filter((r) => r.getMyMembership() === KnownMembership.Join);
     const server = (await serverOr(searchServer(t), failed)).filter((e) => joined.some((r) => r.roomId === e.getRoomId()));
     const local = joined.filter((r) => !r.isSpaceRoom() && isEncrypted(r)).flatMap((r) => scanLoaded(r, t));
+    if (indexOn()) local.push(...(await searchIndex(t).catch(() => [])).filter((e) => joined.some((r) => r.roomId === e.getRoomId())));
     return merge([...server, ...local]).slice(0, 50);
   });
   if (term.trim().length < MIN) return null;

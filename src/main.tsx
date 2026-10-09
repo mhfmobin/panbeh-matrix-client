@@ -4,6 +4,7 @@ import { ClientEvent, SyncState } from "matrix-js-sdk";
 import { cancelAdd, client, finishOAuth, isAdding, isOAuthCallback, logout, recoveryState, savedSession, start } from "./matrix.ts";
 import { useTick } from "./hooks.ts";
 import { startNotifications } from "./notify.ts";
+import { startSearchIndex } from "./searchIndex.ts";
 import { isHeadless, isNative, onCallAction, onOpenLink, onOpenRoom, onShare, requestNotifyPermission, setBackgroundService } from "./native.ts";
 import { onNativeCall, startCalls } from "./call.ts";
 import { startBackButton } from "./back.ts";
@@ -76,6 +77,7 @@ function Shell() {
   const synced = client.isInitialSyncComplete();
   useEffect(() => { if (synced) refreshSecurity(); }, [synced]);
   useEffect(startNotifications, []);
+  useEffect(startSearchIndex, []);
   useEffect(startCalls, []);
   // Android call notification buttons: answering may have cold-started the app, so wait for the rooms
   useEffect(() => (synced ? onCallAction((a) => void onNativeCall(a).catch((e) => alertDialog(errText(e)))) : undefined), [synced]);
@@ -155,7 +157,7 @@ const Splash = ({ text }: { text: string }) => (
 function headless() {
   const s = savedSession();
   if (!s || !loadPrefs().notify) return setBackgroundService(false);
-  start(s).then(() => { startNotifications(); startCalls(); onCallAction((a) => void onNativeCall(a)); }, (e) => console.error("headless start failed", e));
+  start(s).then(() => { startNotifications(); startSearchIndex(); startCalls(); onCallAction((a) => void onNativeCall(a)); }, (e) => console.error("headless start failed", e));
 }
 
 if (isHeadless) headless();

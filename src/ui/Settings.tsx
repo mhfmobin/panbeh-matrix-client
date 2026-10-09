@@ -6,6 +6,7 @@ import { useTick } from "../hooks.ts";
 import { Icon, type IconName } from "../icons.tsx";
 import { Avatar, errText, formatSize, me, Select, Sheet } from "./common.tsx";
 import { CACHE_MB_DEFAULT, cacheClear, cacheSize, cacheTrim } from "../mediaCache.ts";
+import { dropIndex, indexLoaded } from "../searchIndex.ts";
 import { useSlider } from "./useSlider.ts";
 import { num, stamp } from "../logic.ts";
 import { decryptKeyFile, encryptKeyFile } from "../keyfile.ts";
@@ -16,7 +17,7 @@ import { alertDialog, confirmDialog } from "./dialog.tsx";
 import { LinkSheet } from "./LinkSheet.tsx";
 import { matrixToLink } from "../uri.ts";
 
-type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; previews: boolean; shareLastSeen: boolean; dev: boolean; legacyCalls: boolean; enterSends: boolean; askSave: boolean;
+type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; previews: boolean; shareLastSeen: boolean; searchIndex: boolean; dev: boolean; legacyCalls: boolean; enterSends: boolean; askSave: boolean;
   camQuality: "360" | "540" | "720" | "1080"; screenQuality: "720" | "1080" | "1080hi"; audioQuality: "low" | "normal" | "high";
   lowData: "off" | "auto" | "on";
   cacheMB: number }; // media kept on the device (mediaCache.ts reads it from localStorage too) // calls: everyone's video at its lowest layer (auto = while our connection is poor)
@@ -30,7 +31,7 @@ const CACHE_MB: [number, string][] = [[250, "۲۵۰ مگابایت"], [500, "۵�
 const LOW_DATA: [Prefs["lowData"], string][] = [["off", "خاموش"], ["auto", "خودکار، با اتصال ضعیف"], ["on", "همیشه"]];
 
 // the Android app defaults to notifying: it asks for permission on first start. The desktop app needs no permission.
-export const loadPrefs = (): Prefs => ({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, previews: true, shareLastSeen: true, dev: false, legacyCalls: false, enterSends: true, askSave: false, camQuality: "720", screenQuality: "1080hi", audioQuality: "high", lowData: "off", cacheMB: CACHE_MB_DEFAULT, ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
+export const loadPrefs = (): Prefs => ({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, previews: true, shareLastSeen: true, searchIndex: false, dev: false, legacyCalls: false, enterSends: true, askSave: false, camQuality: "720", screenQuality: "1080hi", audioQuality: "high", lowData: "off", cacheMB: CACHE_MB_DEFAULT, ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
 
 /** Enter (or Ctrl/⌘+Enter when Enter is set to a new line) sends. */
 export const isSendKey = (e: { key: string; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; nativeEvent: { isComposing: boolean } }) =>
@@ -123,6 +124,8 @@ export function Settings({ onClose, onSecurityChange }: { onClose: () => void; o
       <h3>حریم خصوصی</h3>
       <label className="switch-row"><span>نمایش آخرین بازدید<small>فقط وضعیت خودتان پنهان می‌شود؛ وضعیت دیگران را همچنان می‌بینید</small></span>
         <input type="checkbox" role="switch" checked={prefs.shareLastSeen} onChange={(e) => { set({ shareLastSeen: e.target.checked }); void setShareLastSeen(e.target.checked); }} /></label>
+      <label className="switch-row"><span>جستجوی کامل در گفتگوهای رمزنگاری‌شده<small>متن پیام‌های رمزگشایی‌شده روی همین دستگاه نگه داشته می‌شود تا جستجو شوند؛ خاموش کردن آن را پاک می‌کند</small></span>
+        <input type="checkbox" role="switch" checked={prefs.searchIndex} onChange={(e) => { set({ searchIndex: e.target.checked }); if (e.target.checked) indexLoaded(); else void dropIndex(); }} /></label>
 
       <h3>اعلان‌ها</h3>
       <Notifications prefs={prefs} set={set} />

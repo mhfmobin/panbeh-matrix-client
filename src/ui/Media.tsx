@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
 import { createPortal } from "react-dom";
-import { Direction, Filter, type MatrixEvent, type Room } from "matrix-js-sdk";
-import { avatarUrl, client, mediaUrl } from "../matrix.ts";
+import { type MatrixEvent, type Room } from "matrix-js-sdk";
+import { avatarUrl, historyPage, mediaUrl } from "../matrix.ts";
 import { eventsAround, usePromise } from "../hooks.ts";
 import { contentLinks, fmtDuration, mediaKind, num, stamp, type MediaKind } from "../logic.ts";
 import { Icon } from "../icons.tsx";
@@ -265,26 +265,13 @@ const AUTO_PAGES = 10; // pages fetched on their own per tab before asking for "
 type Item = { ev: MatrixEvent; kind: MediaKind };
 type Page = { items: Item[]; end: string | null };
 
-let useFilter = true; // Conduit rejected some /messages filters; drop it after the first refusal
-
-/** One page (newest first) of the room's history, independent of the live timeline. */
+/** One page (newest first) of the room's media, files, links and audio. */
 async function fetchPage(room: Room, from: string | null): Promise<Page> {
-  let r;
-  try {
-    const f = new Filter(client.getUserId());
-    f.setDefinition({ room: { timeline: { types: ["m.room.message", "m.room.encrypted"] } } });
-    r = await client.createMessagesRequest(room.roomId, from, 100, Direction.Backward, useFilter ? f : undefined);
-  } catch (e) {
-    if (!useFilter) throw e;
-    useFilter = false;
-    return fetchPage(room, from);
-  }
-  const evs = r.chunk.map(client.getEventMapper({ decrypt: false }));
-  await Promise.all(evs.map((e) => client.decryptEventIfNeeded(e).catch(() => {})));
-  const items = evs.filter((e) => !e.isRedacted() && !e.isRelation("m.replace"))
+  const { events, end } = await historyPage(room, from);
+  const items = events.filter((e) => !e.isRedacted() && !e.isRelation("m.replace"))
     .map((ev) => ({ ev, kind: mediaKind(ev.getType(), ev.getContent()) }))
     .filter((x): x is Item => !!x.kind);
-  return { items, end: r.chunk.length && r.end ? r.end : null };
+  return { items, end };
 }
 
 /** Photos/videos, files, links and audio of a chat, newest first. `onJump` closes whatever hosts us. */
