@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent, type WheelEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
 import { createPortal } from "react-dom";
 import { Direction, Filter, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { avatarUrl, client, mediaUrl } from "../matrix.ts";
@@ -37,6 +37,55 @@ type Zoom = { s: number; x: number; y: number };
 const NO_ZOOM: Zoom = { s: 1, x: 0, y: 0 };
 const clampScale = (s: number) => Math.min(6, Math.max(1, s));
 
+/** Zoom and pan for an image stage: wheel, pinch, drag when zoomed, double-click/tap toggles.
+ *  Not zoomed, a one-finger sideways drag over 60px calls `onSwipe(dx)`. Off (`enabled` false) for videos. */
+function useZoom(enabled: boolean, onSwipe?: (dx: number) => void) {
+  const stage = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState(NO_ZOOM);
+  // zoom keeps the point under the cursor/fingers still: t' = p - c - (s'/s)(p - c - t), c = stage center
+  const zoomAt = (z: Zoom, s2: number, px: number, py: number, mx = px, my = py): Zoom => {
+    const r = stage.current!.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    s2 = clampScale(s2);
+    if (s2 === 1) return NO_ZOOM;
+    return { s: s2, x: mx - cx - (s2 / z.s) * (px - cx - z.x), y: my - cy - (s2 / z.s) * (py - cy - z.y) };
+  };
+  // one pointer pans (when zoomed) or swipes; two pinch. Same formula: old midpoint → new midpoint, scaled by the distance ratio.
+  const ptrs = useRef(new Map<number, { x: number; y: number }>());
+  const down = useRef({ x: 0, y: 0, moved: false });
+  const onPointerUp = (e: PointerEvent) => {
+    const wasOne = ptrs.current.size === 1;
+    if (!ptrs.current.delete(e.pointerId)) return;
+    const dx = e.clientX - down.current.x;
+    if (onSwipe && wasOne && zoom.s === 1 && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(e.clientY - down.current.y)) onSwipe(dx);
+  };
+  const handlers = {
+    onWheel: (e: WheelEvent) => { if (enabled) setZoom((z) => zoomAt(z, z.s * Math.exp(-e.deltaY * 0.002), e.clientX, e.clientY)); },
+    onPointerDown: (e: PointerEvent) => {
+      if (!enabled) return;
+      ptrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      down.current = { x: e.clientX, y: e.clientY, moved: false };
+    },
+    onPointerMove: (e: PointerEvent) => {
+      const p = ptrs.current;
+      if (!p.has(e.pointerId)) return;
+      const before = [...p.values()];
+      p.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const after = [...p.values()];
+      if (Math.hypot(e.clientX - down.current.x, e.clientY - down.current.y) > 6) down.current.moved = true;
+      const mid = (a: typeof after) => ({ x: (a[0].x + (a[1] ?? a[0]).x) / 2, y: (a[0].y + (a[1] ?? a[0]).y) / 2 });
+      const dist = (a: typeof after) => (a[1] ? Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) : 1);
+      setZoom((z) => {
+        if (after.length < 2 && z.s === 1) return z; // not zoomed: a drag is a swipe, handled on release
+        const m0 = mid(before), m1 = mid(after);
+        return zoomAt(z, z.s * (dist(after) / (dist(before) || 1)), m0.x, m0.y, m1.x, m1.y);
+      });
+    },
+    onPointerUp, onPointerCancel: onPointerUp, onPointerLeave: onPointerUp,
+    onDoubleClick: (e: MouseEvent) => { if (enabled) setZoom((z) => (z.s > 1 ? NO_ZOOM : zoomAt(z, 2.5, e.clientX, e.clientY))); },
+  };
+  return { stage, zoom, reset: () => setZoom(NO_ZOOM), moved: () => down.current.moved, handlers };
+}
+
 /** Full-screen gallery. `items` oldest first; in RTL "next" (newer) sits on the left. */
 export function MediaViewer({ items, start, onClose, onJump }: { items: MatrixEvent[]; start: MatrixEvent; onClose: () => void; onJump?: (ev: MatrixEvent) => void }) {
   const [id, setId] = useState(start.getId());
@@ -47,11 +96,12 @@ export function MediaViewer({ items, start, onClose, onJump }: { items: MatrixEv
   const full = usePromise(mediaUrl(c)); // mediaUrl hands back the same cached promise per file
   const thumb = usePromise(thumbFor(c));
 
-  const [zoom, setZoom] = useState(NO_ZOOM);
   const [closing, close] = useDismiss(onClose, 200);
   const dir = useRef(0); // which way the last prev/next went: the new item slides in from there
-  const go = (d: number) => { const n = items[i + d]; if (n) { dir.current = d; setId(n.getId()); setZoom(NO_ZOOM); } };
-  const goRef = useRef(go);
+  const goRef = useRef((_d: number) => {});
+  // not zoomed, a sideways drag swipes. RTL: dragging right brings in the newer one from the left
+  const { stage, zoom, reset, moved, handlers } = useZoom(!video, (dx) => goRef.current(dx > 0 ? 1 : -1));
+  const go = (d: number) => { const n = items[i + d]; if (n) { dir.current = d; setId(n.getId()); reset(); } };
   goRef.current = go;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -66,47 +116,8 @@ export function MediaViewer({ items, start, onClose, onJump }: { items: MatrixEv
     return () => removeEventListener("keydown", onKey, true);
   }, [close]);
 
-  // zoom keeps the point under the cursor/fingers still: t' = p - c - (s'/s)(p - c - t), c = stage center
-  const stage = useRef<HTMLDivElement>(null);
   const [from] = useState(takeOrigin);
   useLayoutEffect(() => { if (from && stage.current) growFrom(stage.current, from); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const zoomAt = (z: Zoom, s2: number, px: number, py: number, mx = px, my = py): Zoom => {
-    const r = stage.current!.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    s2 = clampScale(s2);
-    if (s2 === 1) return NO_ZOOM;
-    return { s: s2, x: mx - cx - (s2 / z.s) * (px - cx - z.x), y: my - cy - (s2 / z.s) * (py - cy - z.y) };
-  };
-  const onWheel = (e: WheelEvent) => { if (!video) setZoom((z) => zoomAt(z, z.s * Math.exp(-e.deltaY * 0.002), e.clientX, e.clientY)); };
-
-  // one pointer pans (when zoomed) or swipes; two pinch. Same formula: old midpoint → new midpoint, scaled by the distance ratio.
-  const ptrs = useRef(new Map<number, { x: number; y: number }>());
-  const down = useRef({ x: 0, y: 0, moved: false });
-  const onPointerDown = (e: PointerEvent) => {
-    if (video) return;
-    ptrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    down.current = { x: e.clientX, y: e.clientY, moved: false };
-  };
-  const onPointerMove = (e: PointerEvent) => {
-    const p = ptrs.current;
-    if (!p.has(e.pointerId)) return;
-    const before = [...p.values()];
-    p.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    const after = [...p.values()];
-    if (Math.hypot(e.clientX - down.current.x, e.clientY - down.current.y) > 6) down.current.moved = true;
-    const mid = (a: typeof after) => ({ x: (a[0].x + (a[1] ?? a[0]).x) / 2, y: (a[0].y + (a[1] ?? a[0]).y) / 2 });
-    const dist = (a: typeof after) => (a[1] ? Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) : 1);
-    setZoom((z) => {
-      if (after.length < 2 && z.s === 1) return z; // not zoomed: a drag is a swipe, handled on release
-      const m0 = mid(before), m1 = mid(after);
-      return zoomAt(z, z.s * (dist(after) / (dist(before) || 1)), m0.x, m0.y, m1.x, m1.y);
-    });
-  };
-  const onPointerUp = (e: PointerEvent) => {
-    const wasOne = ptrs.current.size === 1;
-    ptrs.current.delete(e.pointerId);
-    const dx = e.clientX - down.current.x;
-    if (wasOne && zoom.s === 1 && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(e.clientY - down.current.y)) go(dx > 0 ? 1 : -1); // RTL: dragging right brings in the newer one from the left
-  };
 
   const download = async () => {
     try {
@@ -129,10 +140,7 @@ export function MediaViewer({ items, start, onClose, onJump }: { items: MatrixEv
         {onJump && <button className="icon-btn" onClick={() => { onClose(); onJump(ev); }} title="نمایش در گفتگو" aria-label="نمایش در گفتگو"><Icon name="thread" /></button>}
         <button className="icon-btn" onClick={download} title="دانلود" aria-label="دانلود"><Icon name="download" /></button>
       </header>
-      <div className="mv-stage" ref={stage} onWheel={onWheel} onPointerDown={onPointerDown} onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onPointerLeave={onPointerUp}
-        onClick={(e) => { if (e.target === e.currentTarget && !down.current.moved) close(); }}
-        onDoubleClick={(e) => !video && setZoom((z) => (z.s > 1 ? NO_ZOOM : zoomAt(z, 2.5, e.clientX, e.clientY)))}>
+      <div className="mv-stage" ref={stage} {...handlers} onClick={(e) => { if (e.target === e.currentTarget && !moved()) close(); }}>
         {video ? (
           full ? <VideoPlayer key={ev.getId()} src={full} duration={(c.info?.duration ?? 0) / 1000} /> : <span className="spinner" />
         ) : src ? (
@@ -204,14 +212,24 @@ function VideoPlayer({ src, duration }: { src: string; duration: number }) {
   );
 }
 
-/** A room's or person's photo, full size. ponytail: no zoom/download; borrow MediaViewer's if wanted. */
+/** A room's or person's photo, full size: zoom like the gallery, and save. */
 export function PhotoViewer({ mxc, name, onClose }: { mxc: string; name: string; onClose: () => void }) {
   const full = usePromise(mediaUrl({ url: mxc }));
   const thumb = usePromise(avatarUrl(mxc, 96 * 2)); // the avatar's own cached size, shown until the original loads
   const [closing, close] = useDismiss(onClose, 200);
-  const stage = useRef<HTMLDivElement>(null);
+  const { stage, zoom, moved, handlers } = useZoom(true);
   const [from] = useState(takeOrigin);
   useLayoutEffect(() => { if (from && stage.current) growFrom(stage.current, from); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const download = async () => {
+    try {
+      const url = await mediaUrl({ url: mxc });
+      if (!url) return;
+      const type = (await (await fetch(url)).blob()).type; // avatars carry no file name: name it after the person/chat
+      savedToast(await saveFile(url, `${name.replace(/[\\/:*?"<>|]/g, "_")}.${type.split("/")[1]?.replace("jpeg", "jpg").replace(/\+.*/, "") || "jpg"}`));
+    } catch (e) {
+      alertDialog(errText(e));
+    }
+  };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -228,9 +246,11 @@ export function PhotoViewer({ mxc, name, onClose }: { mxc: string; name: string;
       <header className="mv-bar">
         <button className="icon-btn" onClick={close} aria-label="بستن"><Icon name="close" /></button>
         <span className="mv-who"><b dir="auto">{name}</b></span>
+        <button className="icon-btn" onClick={download} title="ذخیره" aria-label="ذخیره"><Icon name="download" /></button>
       </header>
-      <div className="mv-stage" ref={stage} onClick={(e) => e.target === e.currentTarget && close()}>
-        {src ? <img src={src} alt={name} draggable={false} style={{ cursor: "default" }} /> : <span className="spinner" />}
+      <div className="mv-stage" ref={stage} {...handlers} onClick={(e) => { if (e.target === e.currentTarget && !moved()) close(); }}>
+        {src ? <img src={src} alt={name} draggable={false} className={zoom.s > 1 ? "zoomed" : ""}
+          style={{ transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.s})` }} /> : <span className="spinner" />}
       </div>
     </div>,
     document.body,
