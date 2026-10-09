@@ -129,7 +129,7 @@ button:disabled { opacity: 0.6; cursor: default; }
   border-radius: 50%; background: var(--accent); color: #fff; font-size: 34px;
 }
 .login-card label, .card { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
-.login-card input, .card input, .form input {
+.login-card input, .card input, .form input, .modal input:not([role]) {
   height: 48px; padding: 0 14px; border-radius: 12px; font-size: 16px; color: var(--text);
   background: var(--bg); border: 1.5px solid var(--border); transition: border-color 0.15s;
 }
@@ -451,7 +451,7 @@ div.msg-text blockquote { margin: 4px 0; padding-inline-start: 10px; border-inli
 /* user-supplied one-line labels: direction from their own text (so "Alice!" isn't "!Alice"), but always right-aligned */
 .room-name, .room-preview, .room-head-text b, .profile b, .invite h2, .composer-mode span, .user-row b, .chip, .info-text h2 { unicode-bidi: plaintext; text-align: right; }
 /* typed text picks its direction per line; empty fields (placeholder) stay RTL — dir=auto would make them LTR */
-.search input, .composer textarea, .send-caption, .card input, .form input { unicode-bidi: plaintext; }
+.search input, .composer textarea, .send-caption, .card input, .form input, .modal input:not([role]) { unicode-bidi: plaintext; }
 
 /* ---------- new chat ---------- */
 .fab {
