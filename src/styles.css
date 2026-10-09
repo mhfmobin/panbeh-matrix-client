@@ -59,6 +59,7 @@ body {
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
 * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 40%, transparent) transparent; }
 ::-webkit-scrollbar { width: 6px; height: 6px; }
