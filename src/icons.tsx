@@ -8,6 +8,7 @@ const P = {
   trash: "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6",
   thread: "M4 5h16v11H9l-5 4V5zM8 9h8M8 12h5",
   close: "M6 6l12 12M18 6 6 18",
+  flag: "M5 21V4M5 4h12l-2.5 4.5L17 13H5",
   settings: "M4 6h16M4 12h16M4 18h16",
   search: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4",
   check: "M5 12.5 10 17 19 7",

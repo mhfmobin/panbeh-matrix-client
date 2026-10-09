@@ -18,7 +18,7 @@ import { captionOf, EDITABLE } from "./Composer.tsx";
 import { useBackdropHold } from "./useBackdropHold.ts";
 import { reducedMotion, useDismiss } from "./useDismiss.ts";
 import { thumbFor } from "./Media.tsx";
-import { alertDialog, confirmDialog } from "./dialog.tsx";
+import { alertDialog, confirmDialog, promptDialog } from "./dialog.tsx";
 
 export type Actions = {
   reply: (ev: MatrixEvent) => void;
@@ -246,6 +246,7 @@ export function Message({ ev, room, first, last, actions, flash, enter }: Props)
           mine && { icon: "info", label: "دیده‌شده توسط", run: () => actions.info(ev) },
           reacted && { icon: "smile", label: "واکنش‌ها", run: () => actions.reactions(ev) },
           actions.select && { icon: "select", label: "انتخاب", run: () => actions.select!(ev) },
+          !mine && ev.getId() && { icon: "flag", label: "گزارش", run: () => void report(room, ev) },
           canDelete && { icon: "trash", label: "حذف", danger: true, run: remove },
         ]} />
       )}
@@ -548,6 +549,13 @@ function ReactionChip({ room, ev, emoji, users, added }: { room: Room; ev: Matri
       {emoji} <span className={bump ? "bump" : undefined}>{num(users.length)}</span>
     </button>
   );
+}
+
+/** To the homeserver's admins, not the room's moderators. Score -100 = most offensive (the spec's scale). */
+async function report(room: Room, ev: MatrixEvent) {
+  const reason = await promptDialog("این پیام به مدیران سرور گزارش شود؟", { ok: "گزارش", danger: true, placeholder: "دلیل (اختیاری)" });
+  if (reason === null) return;
+  client.reportEvent(room.roomId, ev.getId()!, -100, reason).then(() => toast("گزارش برای مدیران سرور فرستاده شد"), (e) => alertDialog(errText(e)));
 }
 
 export function toggleReaction(room: Room, ev: MatrixEvent, key: string) {
