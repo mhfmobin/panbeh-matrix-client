@@ -5,14 +5,14 @@ import { CallEventHandlerEvent } from "matrix-js-sdk/lib/webrtc/callEventHandler
 import type { CallFeed } from "matrix-js-sdk/lib/webrtc/callFeed.js";
 import type { MCallInviteNegotiate } from "matrix-js-sdk/lib/webrtc/callEventTypes.js";
 import { getCallNotificationExpiry, isLivekitTransportConfig, MatrixRTCSessionEvent, type IRTCNotificationContent, type LivekitTransportConfig, type MatrixRTCSession } from "matrix-js-sdk/lib/matrixrtc/index.js";
-import { BaseKeyProvider, createKeyMaterialFromBuffer, AudioPresets, createLocalTracks, Room as LkRoom, ScreenSharePresets, VideoPresets, RoomEvent as LkEvent, Track, type LocalAudioTrack, type Participant, type RemoteTrack } from "livekit-client";
+import { BaseKeyProvider, ConnectionQuality, createKeyMaterialFromBuffer, AudioPresets, createLocalTracks, Room as LkRoom, ScreenSharePresets, VideoPresets, VideoQuality, RoomEvent as LkEvent, Track, type LocalAudioTrack, type LocalVideoTrack, type Participant, type RemoteTrack } from "livekit-client";
 import { avatarUrl, client, isDirect, isEncrypted, loadEvent, pastFirstSync } from "./matrix.ts";
 import { callNotice, isMuted, ringtone, waitingTone } from "./notify.ts";
 import { senderName } from "./ui/common.tsx";
 import { alertDialog } from "./ui/dialog.tsx";
 import { isGroupCallAlert, isLegacyRing, isRing, isVideoOffer } from "./logic.ts";
 import { legacyCallsOn, loadPrefs } from "./ui/Settings.tsx";
-import { isHeadless, isNative, nativeCallActive, nativeCancelCall, nativeSetAudioRoute, nativeShowCall, nativeSpeaker, toDataUrl, type CallAction } from "./native.ts";
+import { isHeadless, isNative, nativeCallActive, nativeCancelCall, nativeSetAudioRoute, nativeShowCall, nativeSpeaker, toDataUrl, watchAudioRoutes, type CallAction, type Routes } from "./native.ts";
 import { isWindowVisible, showWindow } from "./desktop.ts";
 
 /**
@@ -25,6 +25,9 @@ type Common = {
   room: Room; video: boolean;
   since?: number; // first time someone else was in the call
   min: boolean; speaker: boolean; facing: "user" | "environment";
+  routes?: Routes; // Android 12+: where audio can go and where it goes now
+  held?: { mic: boolean }; // Android: a phone call put ours on hold; whether our mic was on before
+  lowData?: boolean; lowDataOff?: boolean; // low-data mode on now; turned off by hand for this call (auto stays out)
   reconnecting?: boolean; // network dropped; LiveKit / ICE is trying to get it back
   notice?: string; // "X joined" for a few seconds (groups)
 };
@@ -183,11 +186,21 @@ export async function call(room: Room, video: boolean, ring = true, legacy = fal
     .on(LkEvent.LocalTrackPublished, bump).on(LkEvent.LocalTrackUnpublished, bump)
     .on(LkEvent.ConnectionStateChanged, bump).on(LkEvent.Disconnected, () => void hangup())
     .on(LkEvent.AudioPlaybackStatusChanged, () => { if (!lk.canPlaybackAudio) void lk.startAudio(); });
+  // low-data mode: tracks that show up later get it too; "auto" follows our own connection (on after 5s poor, off after 15s fine)
+  let lowTimer: ReturnType<typeof setTimeout> | undefined;
+  const onQuality = (q: ConnectionQuality, p: Participant) => {
+    if (!p.isLocal || loadPrefs().lowData !== "auto" || snap.active?.lowDataOff) return;
+    const poor = q === ConnectionQuality.Poor || q === ConnectionQuality.Lost;
+    clearTimeout(lowTimer);
+    if (poor !== !!snap.active?.lowData) lowTimer = setTimeout(() => void setLowData(poor), poor ? 5000 : 15000);
+  };
+  const reapply = () => { if (snap.active?.lowData) void setLowData(true); };
+  lk.on(LkEvent.ConnectionQualityChanged, onQuality).on(LkEvent.TrackSubscribed, reapply).on(LkEvent.LocalTrackPublished, reapply);
   // 1:1 nobody picks up: give up when our ring would have expired anyway
   const noAnswer = ring && isDirect(room) ? setTimeout(() => { if (!snap.active?.since) void hangup(); }, 90_000) : undefined;
   cleanup = [
     () => { session.off(MatrixRTCSessionEvent.EncryptionKeyChanged, onKey); session.off(MatrixRTCSessionEvent.MembershipsChanged, onMembers); session.off(MatrixRTCSessionEvent.MembershipsChanged, scanHands); },
-    () => clearTimeout(noAnswer),
+    () => { clearTimeout(noAnswer); clearTimeout(lowTimer); },
     leaveOnUnload(),
   ];
 
@@ -207,7 +220,8 @@ export async function call(room: Room, video: boolean, ring = true, legacy = fal
     onPeople();
     scanHands();
     for (const t of media) await lk.localParticipant.publishTrack(t);
-    if (isNative) { nativeCallActive(true, video); nativeSpeaker(video); }
+    if (p.lowData === "on") await setLowData(true);
+    if (isNative) nativeAudioOn(room, video);
   } catch (e) {
     media.forEach((t) => t.stop()); // not published yet = not stopped by the disconnect
     await hangup();
@@ -297,10 +311,27 @@ export async function toggleScreen() {
   else if (a) await a.lk.localParticipant.setScreenShareEnabled(!a.lk.localParticipant.isScreenShareEnabled, { audio: true, contentHint: "detail" });
   bump();
 }
-/** Android 12+: call audio to the earpiece, speaker, a wired or a Bluetooth headset. */
-export async function setAudioRoute(id: number, speaker: boolean) {
-  await nativeSetAudioRoute(id);
-  patch({ speaker });
+/** Android 12+: call audio to the earpiece, speaker, a wired or a Bluetooth headset (the routes event then updates the button). */
+export const setAudioRoute = (id: number) => nativeSetAudioRoute(id);
+/** Low-data mode (MatrixRTC): everyone's video at the lowest simulcast layer, and ours sent at its lowest. byUser: off by hand, auto stays out. */
+// ponytail: dynacast may re-enable our higher layers when someone asks for them; legacy calls have no layers and aren't covered
+export async function setLowData(on: boolean, byUser = false) {
+  const a = snap.active;
+  if (a?.kind !== "rtc") return;
+  const q = on ? VideoQuality.LOW : VideoQuality.HIGH;
+  for (const p of a.lk.remoteParticipants.values()) for (const pub of p.videoTrackPublications.values()) pub.setVideoQuality(q);
+  for (const pub of a.lk.localParticipant.videoTrackPublications.values()) (pub.videoTrack as LocalVideoTrack | undefined)?.setPublishingQuality(q);
+  patch({ lowData: on, ...(byUser ? { lowDataOff: !on } : {}) });
+}
+
+/** Android: a phone call put ours on hold (Telecom): mic off and their audio silenced until it gives the call back. */
+export async function hold(on: boolean) {
+  const a = snap.active;
+  if (!a || !!a.held === on) return;
+  const mic = myMedia(a).mic;
+  if (on ? mic : a.held?.mic && !mic) await toggleMic();
+  document.querySelectorAll<HTMLAudioElement>("audio.call-audio").forEach((el) => { el.muted = on; });
+  patch({ held: on ? { mic } : undefined });
 }
 export function toggleSpeaker() {
   const a = snap.active;
@@ -469,7 +500,13 @@ function showLegacy(room: Room, mc: MatrixCall, video: boolean) {
   }, leaveOnUnload()];
   watch(mc.state);
   onFeeds();
-  if (isNative) { nativeCallActive(true, video); nativeSpeaker(video); }
+  if (isNative) nativeAudioOn(room, video);
+}
+
+/** Android: call audio mode, routed to a headset if there is one, else the speaker for video; then follows the routes as they change. */
+function nativeAudioOn(room: Room, video: boolean) {
+  nativeCallActive(true, video, room);
+  cleanup.push(watchAudioRoutes((routes) => patch({ routes, speaker: routes.routes.length ? routes.routes.find((r) => r.id === routes.current)?.kind === "speaker" : !!snap.active?.speaker })));
 }
 
 async function placeLegacy(room: Room, video: boolean) {
@@ -676,6 +713,8 @@ export function startCalls() {
 
 /** Buttons on Android's call notification. */
 export async function onNativeCall(a: CallAction) {
+  if (a.action === "hangup") return hangup();
+  if (a.action === "hold" || a.action === "unhold") return hold(a.action === "hold");
   const room = client.getRoom(a.roomId);
   if (!room) return;
   const i = snap.incoming;

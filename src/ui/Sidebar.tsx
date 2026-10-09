@@ -17,6 +17,7 @@ import { NewChat } from "./NewChat.tsx";
 import { RoomInfo } from "./RoomInfo.tsx";
 import { MessageResults, requestJump } from "./Search.tsx";
 import { QuickSwitch } from "./QuickSwitch.tsx";
+import { CallsList } from "./Calls.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 
 type Props = { loading?: boolean; selected?: string; onSelect: (id: string) => void; onSettings: () => void; banner?: ReactNode };
@@ -29,6 +30,7 @@ export function Sidebar({ loading, selected, onSelect, onSettings, banner }: Pro
   const [query, setQuery] = useState("");
   const [spaceInfo, setSpaceInfo] = useState(false);
   const [archive, setArchive] = useState(false);
+  const [calls, setCalls] = useState(false);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [quick, setQuick] = useState(false);
 
@@ -38,6 +40,7 @@ export function Sidebar({ loading, selected, onSelect, onSettings, banner }: Pro
   const q = query.trim().toLowerCase();
   const archived = rows.filter((r) => inFolder(r, "archive"));
   const inArchiveView = archive && !q && archived.length > 0;
+  const inCalls = calls && !q;
   useEffect(() => { if (!archived.length) setArchive(false); }, [archived.length]); // last one unarchived
   const shown = rows.filter((r) => (q ? r.room.name.toLowerCase().includes(q) : inFolder(r, inArchiveView ? "archive" : active)));
   const unreadIn = (id: string) => rows.filter((r) => isUnread(r) && inFolder(r, id)).length;
@@ -58,7 +61,7 @@ export function Sidebar({ loading, selected, onSelect, onSettings, banner }: Pro
     const ro = new ResizeObserver(() => { ind.classList.remove("ready"); place(); requestAnimationFrame(() => ind.classList.add("ready")); });
     ro.observe(tab);
     return () => ro.disconnect();
-  }, [active, tabsKey, !q && !inArchiveView]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [active, tabsKey, !q && !inArchiveView && !inCalls]); // eslint-disable-line react-hooks/exhaustive-deps
   const { dragging, barProps } = useSortableTabs(nav, folders.map((f) => f.id), (from, to) => setOrder(moveFolder(folders.map((f) => f.id), from, to)));
   // keep the active tab visible (e.g. a remembered space folder past the edge)
   useEffect(() => { nav.current?.querySelector(".on")?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, [active, q]);
@@ -103,10 +106,11 @@ export function Sidebar({ loading, selected, onSelect, onSettings, banner }: Pro
     },
   };
   // Android back, last resort: leave the archive, then return to the first folder
-  const backState = useRef({ archive, active, pick });
-  backState.current = { archive, active, pick };
+  const backState = useRef({ archive, calls, active, pick });
+  backState.current = { archive, calls, active, pick };
   useEffect(() => pushBack(() => {
     const b = backState.current;
+    if (b.calls) { setCalls(false); return true; }
     if (b.archive) { setArchive(false); return true; }
     if (b.active !== BASE_FOLDERS[0].id) { b.pick(BASE_FOLDERS[0].id); return true; }
     return false;
@@ -118,17 +122,20 @@ export function Sidebar({ loading, selected, onSelect, onSettings, banner }: Pro
   return (
     <aside className="sidebar">
       <header className="sidebar-head">
-        {inArchiveView
-          ? <button className="icon-btn" onClick={() => setArchive(false)} title="بازگشت" aria-label="بازگشت"><Icon name="back" /></button>
+        {inArchiveView || inCalls
+          ? <button className="icon-btn" onClick={() => inCalls ? setCalls(false) : setArchive(false)} title="بازگشت" aria-label="بازگشت"><Icon name="back" /></button>
           : <button className="icon-btn" onClick={onSettings} title="تنظیمات" aria-label="تنظیمات"><Icon name="settings" /></button>}
         <label className="search">
           <Icon name="search" size={16} />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={inArchiveView ? "جستجو در همه" : "جستجو"} aria-label="جستجوی گفتگوها"
             onKeyDown={(e) => { if (e.key === "Enter" && shown[0]) { onSelect(shown[0].id); setQuery(""); } if (e.key === "Escape") setQuery(""); }} />
         </label>
+        {!inCalls && !inArchiveView && <button className="icon-btn" onClick={() => setCalls(true)} title="تماس‌ها" aria-label="تماس‌ها"><Icon name="phone" /></button>}
       </header>
       {banner}
       {inArchiveView && <h2 className="archive-title">بایگانی</h2>}
+      {inCalls && <h2 className="archive-title">تماس‌ها</h2>}
+      {inCalls ? <CallsList rooms={rows.filter((r) => !r.invite).map((r) => r.room)} onSelect={onSelect} /> : <>
       {!q && !inArchiveView && (
         <nav className={"folders" + (dragging ? " sorting" : "")} role="tablist" ref={nav} {...barProps}
           // mouse wheel scrolls the tabs sideways; RTL, so "down" moves toward the left end
@@ -166,6 +173,7 @@ export function Sidebar({ loading, selected, onSelect, onSettings, banner }: Pro
             : <Virtuoso className="room-list" data={shown} computeItemKey={(_, r) => r.id} itemContent={(_, r) => item(r)} />}
         </div>
       )}
+      </>}
       <NewChat activeSpace={activeSpace?.roomId} onOpen={(id, space) => (space ? pick(id) : onSelect(id))} />
       {spaceInfo && activeSpace && <RoomInfo room={activeSpace} onClose={() => setSpaceInfo(false)} />}
       {menu && <ChatMenu {...menu} onClose={() => setMenu(null)} />}

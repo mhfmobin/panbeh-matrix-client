@@ -8,7 +8,8 @@ type CallPayload = { roomId: string; eventId: string; caller: string; video: boo
 /** A button on the incoming-call notification; "open" = the notification itself (full-screen on the lock screen). */
 /** "Share with Panbeh" from another app: text and/or content:// files. */
 export type Shared = { text?: string; files: { uri: string; name: string; type: string }[] };
-export type CallAction = { action: "answer" | "decline" | "open"; roomId: string; eventId: string; video: boolean };
+/** hangup / hold / unhold: from Android's Telecom (a headset or car button, a phone call coming in) for the call in progress. */
+export type CallAction = { action: "answer" | "decline" | "open" | "hangup" | "hold" | "unhold"; roomId: string; eventId: string; video: boolean };
 interface PanbehPlugin {
   showNotification(p: Payload): Promise<void>;
   cancel(p: { roomId: string }): Promise<void>;
@@ -24,11 +25,12 @@ interface PanbehPlugin {
   takeLaunchLink(): Promise<{ link?: string | null }>;
   showCall(p: CallPayload): Promise<void>;
   cancelCall(p: { roomId: string }): Promise<void>;
-  callActive(p: { on: boolean; video: boolean }): Promise<void>;
+  callActive(p: { on: boolean; video: boolean; roomId?: string; name?: string }): Promise<void>;
   setSpeaker(p: { on: boolean }): Promise<void>;
-  audioRoutes(): Promise<{ routes: AudioRoute[]; current: number }>;
+  audioRoutes(): Promise<Routes>;
   setAudioRoute(p: { id: number }): Promise<void>;
   setPip(p: { on: boolean }): Promise<void>;
+  setImmersive(p: { on: boolean }): Promise<void>;
   requestFullScreen(): Promise<void>;
   takeLaunchCall(): Promise<Partial<CallAction>>;
   saveFile(p: { name: string; mime: string; data: string }): Promise<void>;
@@ -37,6 +39,7 @@ interface PanbehPlugin {
   addListener(e: "openLink", f: (d: { link: string }) => void): Promise<PluginListenerHandle>;
   addListener(e: "callAction", f: (d: CallAction) => void): Promise<PluginListenerHandle>;
   addListener(e: "share", f: (d: Shared) => void): Promise<PluginListenerHandle>;
+  addListener(e: "audioRoutes", f: (d: Routes) => void): Promise<PluginListenerHandle>;
 }
 type Headless = { showNotification(json: string): void; cancel(roomId: string): void; stopService(): void; showCall(json: string): void; cancelCall(roomId: string): void; syncState(state: string): void };
 
@@ -107,14 +110,25 @@ export function nativeCancelCall(roomId: string) {
   else plugin.cancelCall({ roomId }).catch(() => {});
 }
 /** In a call: keeps mic/camera alive in the background (foreground service) and the call on the lock screen. */
-export const nativeCallActive = (on: boolean, video: boolean) => { if (!headless) plugin.callActive({ on, video }).catch(() => {}); };
+export const nativeCallActive = (on: boolean, video: boolean, room?: { roomId: string; name: string }) => {
+  if (!headless) plugin.callActive({ on, video, roomId: room?.roomId, name: room?.name }).catch(() => {});
+};
 export const nativeSpeaker = (on: boolean) => { if (!headless) plugin.setSpeaker({ on }).catch(() => {}); };
 /** Where call audio can go (Android 12+; empty before, where it's only the speaker toggle). */
 export type AudioRoute = { id: number; kind: "earpiece" | "speaker" | "wired" | "bluetooth"; name: string };
-export const nativeAudioRoutes = () => plugin.audioRoutes().catch(() => ({ routes: [] as AudioRoute[], current: -1 }));
+export type Routes = { routes: AudioRoute[]; current: number };
+/** Where call audio can go now and whenever that changes (a headset connects, audio moves). Returns an unsubscribe. */
+export function watchAudioRoutes(f: (r: Routes) => void) {
+  if (headless) return () => {};
+  plugin.audioRoutes().then(f, () => {});
+  const h = plugin.addListener("audioRoutes", f);
+  return () => { h.then((x) => x.remove()); };
+}
 export const nativeSetAudioRoute = (id: number) => plugin.setAudioRoute({ id });
 /** A video call is on screen: leaving the app shrinks it to picture-in-picture. */
 export const nativePip = (on: boolean) => { if (!headless) plugin.setPip({ on }).catch(() => {}); };
+/** A call's video fills the screen: the system bars hide. */
+export const nativeImmersive = (on: boolean) => { if (!headless) plugin.setImmersive({ on }).catch(() => {}); };
 /** Android 14+: lets the user allow ringing over the lock screen. */
 export const requestFullScreen = () => plugin.requestFullScreen();
 

@@ -5,11 +5,11 @@ import { CallState } from "matrix-js-sdk/lib/webrtc/call.js";
 import type { CallFeed } from "matrix-js-sdk/lib/webrtc/callFeed.js";
 import { ConnectionQuality, ConnectionState, Track, type VideoTrack } from "livekit-client";
 import { allowCalls, client, isDirect } from "../matrix.ts";
-import { answer, call, decline, flipCam, getCall, handOf, hangup, loadDevices, membershipOf, minimize, myMedia, ourTransport, react, reactionOf, REACTIONS, setAudioRoute, setDevice, setNoiseSuppression, toggleCam, toggleHand, toggleMic, toggleScreen, toggleSpeaker, useCall, type Active, type Incoming } from "../call.ts";
+import { answer, call, decline, flipCam, getCall, handOf, hangup, loadDevices, membershipOf, minimize, myMedia, ourTransport, react, reactionOf, REACTIONS, setAudioRoute, setDevice, setLowData, setNoiseSuppression, toggleCam, toggleHand, toggleMic, toggleScreen, toggleSpeaker, useCall, type Active, type Incoming } from "../call.ts";
 import { usePromise, useTick } from "../hooks.ts";
 import { useExit } from "./useDismiss.ts";
-import { fmtDuration, num } from "../logic.ts";
-import { isNative, nativeAudioRoutes, nativePip, type AudioRoute } from "../native.ts";
+import { fmtDuration, fmtStats, num, parseStats, type Stats } from "../logic.ts";
+import { isNative, nativeImmersive, nativePip, type AudioRoute } from "../native.ts";
 import { onPickSource, type ShareSource } from "../desktop.ts";
 import { pushBack } from "../back.ts";
 import { Icon, type IconName } from "../icons.tsx";
@@ -165,11 +165,12 @@ function CallScreen({ a, closing }: { a: Active; closing?: boolean }) {
   const now = useClock(!!a.since);
   const { tiles, others } = tilesOf(a);
   const m = myMedia(a);
-  const status = a.reconnecting ? "در حال اتصال دوباره…" : a.notice ? a.notice : a.kind === "legacy"
+  const status = a.held ? "در انتظار (تماس تلفنی)" : a.reconnecting ? "در حال اتصال دوباره…" : a.notice ? a.notice : a.kind === "legacy"
     ? (a.since ? fmtDuration(now - a.since) : a.mc.state === CallState.InviteSent ? "در حال زنگ زدن…" : "در حال اتصال…")
     : a.lk.state !== ConnectionState.Connected ? "در حال اتصال…"
     : !a.since ? (isDirect(a.room) ? "در حال زنگ زدن…" : "در انتظار دیگران…")
     : !others ? "تنها هستید" : fmtDuration(now - a.since);
+  const [stats, setStats] = useState(false); // tap the status line: numbers on every feed
   const [focus, setFocus] = useState<string | null>(null); // a feed blown up to most of the screen
   const main = tiles.find((t) => t.key === focus); // gone (left, stopped sharing) = back to the grid
   const pip = !main && tiles.length === 2 && others === 1; // 1:1: the other side fills the screen, we're in the corner
@@ -183,21 +184,52 @@ function CallScreen({ a, closing }: { a: Active; closing?: boolean }) {
     nativePip(true);
     return () => nativePip(false);
   }, [hasVideo]);
-  const [panel, setPanel] = useState<"devices" | "people" | "reactions" | "emoji" | { routes: AudioRoute[]; current: number } | null>(null);
+  const [panel, setPanel] = useState<"devices" | "people" | "reactions" | "emoji" | "routes" | null>(null);
   const toggle = (p: "devices" | "people" | "reactions") => setPanel(panel === p ? null : p);
-  // Android: with a headset around, the speaker button picks where audio goes; otherwise it just toggles the speaker
-  const speakerBtn = async () => {
-    const r = await nativeAudioRoutes();
-    if (r.routes.some((x) => x.kind === "wired" || x.kind === "bluetooth")) setPanel(r);
-    else toggleSpeaker();
+  // a video fills the screen (spotlit, or the other side of a 1:1): edge to edge, controls float over it and hide after a while, a tap brings them back
+  const immersive = !!(main ?? (pip ? tiles.find((t) => !t.local) : undefined))?.video;
+  const [bare, setBare] = useState(false);
+  const [poke, setPoke] = useState(0);
+  useEffect(() => {
+    if (!immersive || bare || panel) return;
+    const t = setTimeout(() => setBare(true), 4000);
+    return () => clearTimeout(t);
+  }, [immersive, bare, panel, poke]);
+  useEffect(() => { if (!immersive) setBare(false); }, [immersive]);
+  useEffect(() => {
+    if (!isNative || !immersive) return;
+    nativeImmersive(true);
+    return () => nativeImmersive(false);
+  }, [immersive]);
+  const screen = useRef<HTMLDivElement>(null);
+  useEffect(() => { // how tall the floating controls are, for what sits just above them
+    const el = screen.current, bar = el?.querySelector<HTMLElement>(".call-controls");
+    if (!immersive || !el || !bar) return;
+    const ro = new ResizeObserver(() => el.style.setProperty("--controls-h", bar.offsetHeight + "px"));
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, [immersive]);
+  const onTap = (e: React.MouseEvent) => {
+    if (!immersive) return;
+    if (bare) setBare(false);
+    else if ((e.target as Element).closest("button, [role=button], .call-panel-backdrop, .react-picker")) setPoke((n) => n + 1); // using the controls keeps them up
+    else setBare(true);
   };
+  // Android: the audio button shows where call audio goes; with a headset around it opens the list, otherwise it toggles the speaker
+  const routes = a.routes?.routes ?? [];
+  const route = routes.find((r) => r.id === a.routes?.current)?.kind ?? (a.speaker ? "speaker" : "earpiece");
+  const headset = routes.some((r) => r.kind === "wired" || r.kind === "bluetooth");
+  const speakerBtn = () => headset ? setPanel(panel === "routes" ? null : "routes") : toggleSpeaker();
   const tile = (t: TileData, focused = false) =>
-    <Tile key={t.key} room={a.room} t={t} mirror={t.local && !t.screen && a.facing === "user"} focused={focused} onFocus={() => setFocus(focused ? null : t.key)} />;
+    <Tile key={t.key} room={a.room} t={t} mirror={t.local && !t.screen && a.facing === "user"} focused={focused} stats={stats} onFocus={() => setFocus(focused ? null : t.key)} />;
   return (
-    <div className={"call-screen" + (closing ? " closing" : "")} role="dialog" aria-label="تماس">
+    <div className={"call-screen" + (closing ? " closing" : "") + (immersive ? " immersive" : "") + (bare ? " bare" : "")} role="dialog" aria-label="تماس" onClick={onTap} ref={screen}
+      onPointerMove={(e) => { if (bare && e.pointerType === "mouse") setBare(false); }}>
       <header className="call-head">
         <button className="icon-btn" onClick={hide} title="کوچک کردن" aria-label="کوچک کردن"><Icon name="down" /></button>
-        <div><b>{a.room.name}</b><span>{status}</span></div>
+        <div role="button" tabIndex={0} aria-pressed={stats} title="آمار اتصال" onClick={() => setStats(!stats)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setStats(!stats); }}>
+          <b>{a.room.name}</b><span>{status}</span></div>
+        {a.lowData && <button className="call-chip" onClick={() => run(setLowData(false, true))} title="خاموش کردن تصویر کم‌مصرف برای این تماس">کم‌مصرف ✕</button>}
       </header>
       {main ? (
         <div className="call-grid focus">
@@ -216,7 +248,7 @@ function CallScreen({ a, closing }: { a: Active; closing?: boolean }) {
         <CallBtn icon={m.mic ? "mic" : "micOff"} label="میکروفون" on={!m.mic} onClick={() => run(toggleMic())} />
         <CallBtn icon={m.cam ? "video" : "videoOff"} label="دوربین" on={!m.cam} onClick={() => run(toggleCam())} />
         {isNative && m.cam && <CallBtn icon="flip" label="چرخش دوربین" onClick={() => run(flipCam())} />}
-        {isNative && <CallBtn icon="speaker" label="بلندگو" on={a.speaker} onClick={() => run(speakerBtn())} />}
+        {isNative && <CallBtn icon={ROUTE_ICONS[route]} label={headset ? "خروجی صدا: " + ROUTE_LABELS[route] : "بلندگو"} on={headset ? panel === "routes" || route !== "earpiece" : a.speaker} onClick={speakerBtn} />}
         {canShare && <CallBtn icon="screen" label="اشتراک صفحه" on={m.screen} onClick={() => run(toggleScreen())} />}
         {group && <CallBtn icon="hand" label="بالا بردن دست" on={handOf(membershipOf(a.session, a.lk.localParticipant.identity)?.eventId)} onClick={() => run(toggleHand())} />}
         {a.kind === "rtc" && <CallBtn icon="smile" label="واکنش" on={panel === "reactions"} onClick={() => toggle("reactions")} />}
@@ -235,7 +267,7 @@ function CallScreen({ a, closing }: { a: Active; closing?: boolean }) {
               : panel === "reactions" ? <div className="call-reactions">{REACTIONS.map(([emoji, name]) => (
                 <button key={name} onClick={() => { setPanel(null); run(react(emoji, name)); }} aria-label={emoji}>{emoji}</button>
               ))}<button onClick={() => setPanel("emoji")} title="همه‌ی اموجی‌ها" aria-label="همه‌ی اموجی‌ها"><Icon name="plus" /></button></div>
-              : <Routes {...panel} onPick={(r) => { setPanel(null); run(setAudioRoute(r.id, r.kind === "speaker")); }} />}
+              : <Routes routes={routes} current={a.routes?.current ?? -1} onPick={(r) => { setPanel(null); run(setAudioRoute(r.id)); }} />}
           </div>
         </div>
       )}
@@ -286,13 +318,15 @@ function Devices() {
 }
 
 const ROUTE_LABELS: Record<AudioRoute["kind"], string> = { earpiece: "گوشی", speaker: "بلندگو", wired: "هدفون", bluetooth: "بلوتوث" };
+const ROUTE_ICONS: Record<AudioRoute["kind"], IconName> = { earpiece: "phone", speaker: "speaker", wired: "headphones", bluetooth: "bluetooth" };
 
 /** Android: where call audio goes. */
 function Routes({ routes, current, onPick }: { routes: AudioRoute[]; current: number; onPick: (r: AudioRoute) => void }) {
   return <>{routes.map((r) => (
     <button key={r.id} className={r.id === current ? "on" : ""} onClick={() => onPick(r)} aria-pressed={r.id === current}>
-      <Icon name={r.kind === "speaker" ? "speaker" : r.kind === "earpiece" ? "phone" : "headphones"} />
-      {ROUTE_LABELS[r.kind]}{r.kind === "bluetooth" && r.name ? ` (${r.name})` : ""}
+      <Icon name={ROUTE_ICONS[r.kind]} />
+      {r.kind === "bluetooth" && r.name ? r.name : ROUTE_LABELS[r.kind]}
+      {r.id === current && <Icon name="check" size={18} />}
     </button>
   ))}</>;
 }
@@ -315,6 +349,7 @@ const leavePip = () => document.pictureInPictureElement ? document.exitPictureIn
 type TileData = {
   key: string; userId: string; local: boolean; screen: boolean; video?: VideoTrack | MediaStream; micOff: boolean; speaking: boolean;
   hand?: boolean; reaction?: string; quality?: ConnectionQuality; // group calls
+  stats?: () => Promise<RTCStatsReport | undefined>; // for the stats overlay: this feed's video, else its audio
 };
 
 /** Everyone's camera (or avatar), plus any screen being shared; others = how many other people are in the call. */
@@ -324,6 +359,7 @@ function tilesOf(a: Active): { tiles: TileData[]; others: number } {
     const feed = (f: CallFeed | undefined, local: boolean, screen: boolean): TileData[] => !f ? [] : [{
       key: (local ? "me" : "them") + (screen ? ":screen" : ""), userId: local ? me() : them, local, screen,
       video: !f.isVideoMuted() && f.stream.getVideoTracks().length ? f.stream : undefined, micOff: f.isAudioMuted(), speaking: false,
+      stats: async () => mc.peerConn?.getStats(),
     }];
     const remote = feed(mc.remoteUsermediaFeed, false, false);
     return { others: 1, tiles: [ // while it rings, the other side is their avatar
@@ -336,13 +372,14 @@ function tilesOf(a: Active): { tiles: TileData[]; others: number } {
     const userId = m?.userId ?? p.identity.slice(0, p.identity.lastIndexOf(":"));
     const video = (src: Track.Source) => { const pub = p.getTrackPublication(src); return pub && !pub.isMuted ? pub.videoTrack : undefined; };
     const t = { userId, local: p.isLocal, micOff: !p.isMicrophoneEnabled, speaking: p.isSpeaking, hand: handOf(m?.eventId), reaction: reactionOf(m?.eventId), quality: p.connectionQuality };
-    return [{ ...t, key: p.identity + Track.Source.Camera, screen: false, video: video(Track.Source.Camera) }]
-      .concat(p.isScreenShareEnabled ? [{ ...t, key: p.identity + Track.Source.ScreenShare, screen: true, video: video(Track.Source.ScreenShare) }] : []);
+    const cam = video(Track.Source.Camera), mic = p.getTrackPublication(Track.Source.Microphone)?.audioTrack, screen = video(Track.Source.ScreenShare);
+    return [{ ...t, key: p.identity + Track.Source.Camera, screen: false, video: cam, stats: async () => (cam ?? mic)?.getRTCStatsReport() }]
+      .concat(p.isScreenShareEnabled ? [{ ...t, key: p.identity + Track.Source.ScreenShare, screen: true, video: screen, stats: async () => screen?.getRTCStatsReport() }] : []);
   });
   return { tiles, others: others.length };
 }
 
-function Tile({ room, t, mirror, focused, onFocus }: { room: Room; t: TileData; mirror: boolean; focused: boolean; onFocus: () => void }) {
+function Tile({ room, t, mirror, focused, stats, onFocus }: { room: Room; t: TileData; mirror: boolean; focused: boolean; stats: boolean; onFocus: () => void }) {
   const ref = useRef<HTMLVideoElement>(null);
   const { video } = t;
   useEffect(() => {
@@ -364,6 +401,7 @@ function Tile({ room, t, mirror, focused, onFocus }: { room: Room; t: TileData; 
         {(t.quality === ConnectionQuality.Poor || t.quality === ConnectionQuality.Lost) && <i className={"call-quality " + t.quality} title={QUALITY[t.quality]} />}
         {t.local ? "شما" : m?.name ?? t.userId}{t.micOff && <Icon name="micOff" size={14} />}
       </span>
+      {stats && t.stats && <StatsBox get={t.stats} local={t.local} />}
       {t.hand && !t.screen && <span className="call-hand" aria-label="دست بالا">🖐️</span>}
       {t.reaction && !t.screen && <span key={t.reaction} className="call-reaction" aria-hidden>{t.reaction}</span>}
       <button className="call-focus" onClick={onFocus} title={focused ? "بازگشت به همه" : "بزرگ‌نمایی"} aria-label={focused ? "بازگشت به همه" : "بزرگ‌نمایی"}>
@@ -371,6 +409,25 @@ function Tile({ room, t, mirror, focused, onFocus }: { room: Room; t: TileData; 
       </button>
     </div>
   );
+}
+
+/** A feed's numbers, sampled every second while the overlay is on. */
+function StatsBox({ get, local }: { get: () => Promise<RTCStatsReport | undefined>; local: boolean }) {
+  const getter = useRef(get);
+  getter.current = get; // a new closure every render; the polling keeps going
+  const [s, setS] = useState<Stats>();
+  useEffect(() => {
+    let prev: Stats | undefined, live = true;
+    const sample = async () => {
+      const r = await getter.current().catch(() => undefined);
+      if (live && r) setS(prev = parseStats(r.values(), local ? "out" : "in", prev));
+    };
+    void sample();
+    const t = setInterval(sample, 1000);
+    return () => { live = false; clearInterval(t); };
+  }, [local]);
+  const text = s && fmtStats(s);
+  return text ? <span className="call-stats" dir="ltr">{text}</span> : null;
 }
 
 function CallBtn({ icon, label, on, ok, danger, onClick }: { icon: IconName; label: string; on?: boolean; ok?: boolean; danger?: boolean; onClick: () => void }) {

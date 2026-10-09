@@ -12,7 +12,11 @@ public class CallReceiver extends BroadcastReceiver {
         String roomId = i.getStringExtra(Notifier.EXTRA_ROOM);
         if (roomId == null) return;
         Notifier.cancelCall(ctx, roomId);
-        JSObject a = PanbehPlugin.callAction(i);
+        deliver(PanbehPlugin.callAction(i));
+    }
+
+    /** To whichever page is running: the app's, else the background service's. */
+    static void deliver(JSObject a) {
         // ponytail: with no page running (service off) we only stop ringing; the caller's ring times out
         if (!PanbehPlugin.deliverCall(a) && SyncService.instance != null) SyncService.instance.deliverCall(a);
     }

@@ -14,16 +14,18 @@ import { isNative, nativeCancelAll, nativeStatus, requestBatteryExemption, reque
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 
 type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; previews: boolean; shareLastSeen: boolean; dev: boolean; legacyCalls: boolean; enterSends: boolean;
-  camQuality: "360" | "540" | "720" | "1080"; screenQuality: "720" | "1080" | "1080hi"; audioQuality: "low" | "normal" | "high" };
+  camQuality: "360" | "540" | "720" | "1080"; screenQuality: "720" | "1080" | "1080hi"; audioQuality: "low" | "normal" | "high";
+  lowData: "off" | "auto" | "on" }; // calls: everyone's video at its lowest layer (auto = while our connection is poor)
 const ACCENTS = ["#3390ec", "#8774e1", "#40a7a0", "#e5864a", "#e0578b", "#4fae4e"];
 const WALLPAPERS = { doodle: "طرح‌دار", gradient: "گرادیان", plain: "ساده" };
 const THEMES = { system: "سیستم", light: "روشن", dark: "تیره" };
 const CAM_Q: [Prefs["camQuality"], string][] = [["360", "۳۶۰p"], ["540", "۵۴۰p"], ["720", "۷۲۰p"], ["1080", "۱۰۸۰p"]];
 const SCREEN_Q: [Prefs["screenQuality"], string][] = [["720", "۷۲۰p، ۱۵ فریم"], ["1080", "۱۰۸۰p، ۱۵ فریم"], ["1080hi", "۱۰۸۰p، ۳۰ فریم"]];
 const AUDIO_Q: [Prefs["audioQuality"], string][] = [["low", "کم"], ["normal", "معمولی"], ["high", "بالا"]];
+const LOW_DATA: [Prefs["lowData"], string][] = [["off", "خاموش"], ["auto", "خودکار، با اتصال ضعیف"], ["on", "همیشه"]];
 
 // the Android app defaults to notifying: it asks for permission on first start. The desktop app needs no permission.
-export const loadPrefs = (): Prefs => ({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, previews: true, shareLastSeen: true, dev: false, legacyCalls: false, enterSends: true, camQuality: "720", screenQuality: "1080hi", audioQuality: "high", ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
+export const loadPrefs = (): Prefs => ({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, previews: true, shareLastSeen: true, dev: false, legacyCalls: false, enterSends: true, camQuality: "720", screenQuality: "1080hi", audioQuality: "high", lowData: "off", ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
 
 /** Enter (or Ctrl/⌘+Enter when Enter is set to a new line) sends. */
 export const isSendKey = (e: { key: string; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; nativeEvent: { isComposing: boolean } }) =>
@@ -124,7 +126,9 @@ export function Settings({ onClose, onSecurityChange }: { onClose: () => void; o
         <Select value={prefs.screenQuality} options={SCREEN_Q} onChange={(v) => set({ screenQuality: v })} /></label>}
       <label className="select-row">صدا (تماس و پیام صوتی)
         <Select value={prefs.audioQuality} options={AUDIO_Q} onChange={(v) => set({ audioQuality: v })} /></label>
-      <p className="muted">کیفیت بالاتر اینترنت بیشتری مصرف می‌کند. تغییر از تماس یا ضبط بعدی اعمال می‌شود.</p>
+      <label className="select-row">تصویر کم‌مصرف در تماس
+        <Select value={prefs.lowData} options={LOW_DATA} onChange={(v) => set({ lowData: v })} /></label>
+      <p className="muted">کیفیت بالاتر اینترنت بیشتری مصرف می‌کند. تغییر از تماس یا ضبط بعدی اعمال می‌شود. تصویر کم‌مصرف، ویدیوی همه را با کمترین کیفیت می‌گیرد و می‌فرستد.</p>
 
       {isDesktop && <DesktopApp />}
 

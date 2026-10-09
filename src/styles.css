@@ -794,6 +794,12 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .archive-row small { color: var(--muted); font-weight: 400; }
 .archive-row .badge { margin-inline-start: auto; }
 .archive-title { margin: 4px 20px 6px; font-size: 17px; }
+/* calls list (sidebar): a chat row plus a call-back button */
+.calls-tabs { flex: none; }
+.call-row { display: flex; align-items: center; padding-inline-end: 8px; }
+.call-row .room-item { flex: 1; min-width: 0; width: auto; margin-inline-end: 0; }
+.call-missed { color: #e53935; }
+.call-dir { font-size: 13px; }
 .chat-menu-backdrop { position: fixed; inset: 0; z-index: 45; touch-action: none; }
 .chat-menu-backdrop, .chat-menu-backdrop * { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .chat-menu {
@@ -1007,6 +1013,10 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .call-strip .call-focus { inset: 0; width: auto; height: auto; border-radius: 0; background: none; opacity: 0; } /* the whole thumbnail swaps */
 .call-controls { display: flex; justify-content: center; flex-wrap: wrap; gap: 14px; padding: 16px 12px 28px; }
 /* group extras: hands, reactions, connection, the participant list, "+N" */
+.call-stats { position: absolute; top: 46px; left: 8px; max-width: calc(100% - 16px); padding: 3px 7px; border-radius: 8px; background: rgba(0, 0, 0, 0.6); font: 11px/1.4 ui-monospace, monospace; pointer-events: none; }
+.call-strip .call-stats { top: 4px; left: 4px; font-size: 9px; }
+.call-head > div[role="button"] { cursor: pointer; }
+.call-chip { margin-inline-start: auto; flex: none; padding: 4px 10px; border-radius: 12px; background: rgba(244, 180, 0, 0.25); color: #ffd666; font-size: 12px; }
 .call-hand { position: absolute; top: 8px; inset-inline-start: 8px; font-size: 22px; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6)); }
 .call-reaction { position: absolute; inset: 0; display: grid; place-items: center; font-size: 64px; pointer-events: none; animation: reaction-float 3s ease-out forwards; }
 @keyframes reaction-float { 0% { transform: scale(0.4); opacity: 0; } 15% { transform: scale(1); opacity: 1; } 80% { opacity: 1; } 100% { transform: translateY(-30%); opacity: 0; } }
@@ -1031,6 +1041,33 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .call-panel button { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; color: #fff; text-align: start; }
 .call-panel button:hover { background: rgba(255, 255, 255, 0.08); }
 .call-panel button.on { background: rgba(46, 158, 91, 0.35); }
+.call-panel button > svg:last-child:not(:first-child) { margin-inline-start: auto; } /* the ✓ on the route in use */
+/* a video filling the screen (spotlit, or the other side of a 1:1): edge to edge, the rest floats over it and fades out after a while */
+.call-screen.immersive { padding: 0; }
+.call-screen.immersive .call-grid { padding: 0; }
+.call-screen.immersive .call-grid > .call-tile, .call-screen.immersive .call-tile.main { border-radius: 0; outline: none; }
+.call-screen.immersive :is(.call-head, .call-controls, .call-strip, .call-focus, .call-name) { transition: opacity 0.25s; }
+.call-screen.immersive :is(.call-head, .call-controls) { position: absolute; z-index: 2; left: 0; right: 0; } /* 2: over .call-tile.main, which phones' .main pane rule lifts to 1 */
+.call-screen.immersive .call-head { top: 0; padding: calc(10px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 28px calc(12px + env(safe-area-inset-left)); background: linear-gradient(rgba(0, 0, 0, 0.55), transparent); }
+.call-screen.immersive .call-controls { bottom: 0; padding: 36px calc(12px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left)); background: linear-gradient(transparent, rgba(0, 0, 0, 0.55)); }
+.call-screen.immersive .call-strip { position: absolute; z-index: 2; bottom: calc(var(--controls-h, 120px) + 4px); inset-inline: 8px; } /* --controls-h: set by CallScreen, the controls wrap on narrow phones */
+.call-screen.immersive .call-strip .call-tile { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5); }
+.call-screen.immersive .call-grid.pip .call-tile.local { bottom: calc(var(--controls-h, 120px) + 4px); transition: bottom 0.25s; }
+/* what sits on top of the big feed moves below the floating header */
+.call-screen.immersive .call-tile.main :is(.call-focus, .call-hand) { top: calc(64px + env(safe-area-inset-top)); }
+.call-screen.immersive .call-tile.main .call-stats { top: calc(64px + env(safe-area-inset-top)); left: auto; right: 8px; }
+.call-screen.immersive .call-tile.main .call-name { bottom: calc(var(--controls-h, 120px) + 4px); }
+.call-screen.immersive .call-grid:has(.call-strip:not(:empty)) .call-tile.main .call-name { bottom: calc(var(--controls-h, 120px) + 112px); } /* above the thumbnails */
+.call-screen.bare { cursor: none; }
+.call-screen.bare :is(.call-head, .call-controls, .call-strip, .call-focus, .call-name) { opacity: 0; pointer-events: none; }
+.call-screen.bare .call-grid.pip .call-tile.local { bottom: calc(16px + env(safe-area-inset-bottom)); }
+/* a phone on its side: thumbnails stack down the side instead of covering the middle, our own window goes landscape */
+@media (orientation: landscape) and (max-height: 560px) {
+  .call-screen.immersive .call-strip { flex-direction: column; top: calc(108px + env(safe-area-inset-top)); inset-inline: auto calc(8px + env(safe-area-inset-left)); overflow: hidden auto; }
+  .call-screen.immersive .call-strip .call-tile { width: 140px; height: 88px; }
+  .call-screen.immersive .call-grid:has(.call-strip:not(:empty)) .call-tile.main .call-name { bottom: calc(var(--controls-h, 120px) + 4px); } /* the thumbnails moved to the side */
+  .call-screen.immersive .call-grid.pip .call-tile.local { width: auto; height: 34vh; aspect-ratio: 4 / 3; }
+}
 /* Android picture-in-picture: a tiny window with just the other side's video */
 @media (max-width: 420px) and (max-height: 420px) {
   .call-head, .call-controls, .call-strip, .call-name, .call-focus, .call-panel-backdrop, .call-waiting { display: none; }

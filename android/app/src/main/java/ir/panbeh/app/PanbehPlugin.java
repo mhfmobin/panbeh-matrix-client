@@ -7,6 +7,7 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
+import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.net.Uri;
@@ -23,7 +24,12 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import androidx.core.app.NotificationManagerCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
@@ -261,16 +267,118 @@ public class PanbehPlugin extends Plugin {
     @PluginMethod
     public void callActive(PluginCall call) {
         boolean on = call.getBoolean("on", false), video = call.getBoolean("video", false);
+        String roomId = call.getString("roomId");
         SyncService.setCall(getContext(), on, video);
         AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
         am.setMode(on ? AudioManager.MODE_IN_COMMUNICATION : AudioManager.MODE_NORMAL);
         if (!on && Build.VERSION.SDK_INT >= 31) am.clearCommunicationDevice();
         getActivity().runOnUiThread(() -> MainActivity.showOverLockScreen(getActivity(), on));
+        boolean starting = on && !callOn, ending = !on && callOn; // off without a call = a ring that stopped
         callOn = on;
         callVideo = video;
-        if (!on) speakerOn = false;
+        if (starting) {
+            startRoute(video);
+            watchRoutes(true);
+            if (roomId != null && Build.VERSION.SDK_INT >= 26) CallConnectionService.started(getContext(), roomId, call.getString("name"), video);
+        }
+        if (!on) {
+            speakerOn = false;
+            watchRoutes(false);
+        }
+        if (ending && Build.VERSION.SDK_INT >= 26) CallConnectionService.ended();
         updateProximity();
         call.resolve();
+    }
+
+    /** The page has a call under way. */
+    static boolean inCall() {
+        return instance != null && instance.callOn;
+    }
+
+    private AudioManager audio() {
+        return (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+    }
+
+    /** Where a call starts: a headset if one is connected (Bluetooth first), else the speaker for video and the earpiece for voice. */
+    private void startRoute(boolean video) {
+        AudioManager am = audio();
+        if (Build.VERSION.SDK_INT >= 31) {
+            AudioDeviceInfo best = null;
+            for (AudioDeviceInfo d : am.getAvailableCommunicationDevices()) {
+                String kind = routeKind(d.getType());
+                if ("bluetooth".equals(kind)) { best = d; break; }
+                if ("wired".equals(kind)) best = d;
+                else if ("speaker".equals(kind) && video && best == null) best = d;
+            }
+            if (best != null) am.setCommunicationDevice(best);
+            else am.clearCommunicationDevice();
+            speakerOn = best != null && best.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER;
+        } else {
+            speakerOn = video && !am.isWiredHeadsetOn();
+            am.setSpeakerphoneOn(speakerOn);
+        }
+    }
+
+    private AudioDeviceCallback devicesWatch;
+    private AudioManager.OnCommunicationDeviceChangedListener routeWatch;
+    /** Devices seen so far in this call: the callback also reports the ones already there when it's registered. */
+    private final Set<Integer> knownDevices = new HashSet<>();
+
+    /** Android 12+, during a call: a headset that connects takes the call over, and the page hears whenever the routes change. */
+    private void watchRoutes(boolean on) {
+        if (Build.VERSION.SDK_INT < 31) return;
+        AudioManager am = audio();
+        if (on && devicesWatch == null) {
+            knownDevices.clear();
+            for (AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_ALL)) knownDevices.add(d.getId());
+            devicesWatch = new AudioDeviceCallback() {
+                @Override
+                public void onAudioDevicesAdded(AudioDeviceInfo[] added) {
+                    for (AudioDeviceInfo d : added) {
+                        if (!knownDevices.add(d.getId())) continue;
+                        String kind = routeKind(d.getType());
+                        if (!"wired".equals(kind) && !"bluetooth".equals(kind)) continue;
+                        for (AudioDeviceInfo c : am.getAvailableCommunicationDevices()) {
+                            if (c.getId() == d.getId() || (kind.equals(routeKind(c.getType())) && c.getAddress().equals(d.getAddress()))) {
+                                routeTo(c);
+                                break;
+                            }
+                        }
+                    }
+                    routesChanged();
+                }
+
+                @Override
+                public void onAudioDevicesRemoved(AudioDeviceInfo[] removed) {
+                    for (AudioDeviceInfo d : removed) knownDevices.remove(d.getId());
+                    routesChanged();
+                }
+            };
+            am.registerAudioDeviceCallback(devicesWatch, null);
+            routeWatch = d -> routesChanged();
+            am.addOnCommunicationDeviceChangedListener(getContext().getMainExecutor(), routeWatch);
+        } else if (!on && devicesWatch != null) {
+            am.unregisterAudioDeviceCallback(devicesWatch);
+            am.removeOnCommunicationDeviceChangedListener(routeWatch);
+            devicesWatch = null;
+            routeWatch = null;
+        }
+    }
+
+    private void routesChanged() {
+        if (Build.VERSION.SDK_INT >= 31) {
+            AudioDeviceInfo now = audio().getCommunicationDevice();
+            speakerOn = now != null && now.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER;
+        }
+        updateProximity();
+        notifyListeners("audioRoutes", routesNow());
+    }
+
+    /** Through Telecom while it has our call (it owns routing then), else straight to the audio manager. */
+    private void routeTo(AudioDeviceInfo d) {
+        if (Build.VERSION.SDK_INT < 31) return;
+        if (!CallConnectionService.route(d)) audio().setCommunicationDevice(d);
+        speakerOn = d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER;
     }
 
     /** A video call is on screen: picture-in-picture when the app is left. */
@@ -281,12 +389,27 @@ public class PanbehPlugin extends Plugin {
         call.resolve();
     }
 
+    /** A call's video fills the screen: status and navigation bars hidden (a swipe shows them for a moment). */
+    @PluginMethod
+    public void setImmersive(PluginCall call) {
+        boolean on = call.getBoolean("on", false);
+        getActivity().runOnUiThread(() -> {
+            WindowInsetsControllerCompat c = WindowCompat.getInsetsController(getActivity().getWindow(), getActivity().getWindow().getDecorView());
+            c.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            if (on) c.hide(WindowInsetsCompat.Type.systemBars());
+            else c.show(WindowInsetsCompat.Type.systemBars());
+        });
+        call.resolve();
+    }
+
     /** Loudspeaker vs earpiece (or whatever headset is plugged in). */
     @PluginMethod
     public void setSpeaker(PluginCall call) {
         boolean on = call.getBoolean("on", false);
-        AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
-        if (Build.VERSION.SDK_INT >= 31) {
+        AudioManager am = audio();
+        if (Build.VERSION.SDK_INT >= 26 && CallConnectionService.speaker(on)) {
+            // Telecom routes it
+        } else if (Build.VERSION.SDK_INT >= 31) {
             if (!on) am.clearCommunicationDevice();
             else for (AudioDeviceInfo d : am.getAvailableCommunicationDevices()) {
                 if (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) { am.setCommunicationDevice(d); break; }
@@ -315,10 +438,14 @@ public class PanbehPlugin extends Plugin {
     /** Android 12+: where call audio can go, and where it goes now. Empty before 12 (the page keeps the speaker toggle). */
     @PluginMethod
     public void audioRoutes(PluginCall call) {
+        call.resolve(routesNow());
+    }
+
+    private JSObject routesNow() {
         JSArray routes = new JSArray();
         int current = -1;
         if (Build.VERSION.SDK_INT >= 31) {
-            AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+            AudioManager am = audio();
             for (AudioDeviceInfo d : am.getAvailableCommunicationDevices()) {
                 String kind = routeKind(d.getType());
                 if (kind != null) routes.put(new JSObject().put("id", d.getId()).put("kind", kind).put("name", String.valueOf(d.getProductName())));
@@ -326,19 +453,15 @@ public class PanbehPlugin extends Plugin {
             AudioDeviceInfo now = am.getCommunicationDevice();
             if (now != null) current = now.getId();
         }
-        call.resolve(new JSObject().put("routes", routes).put("current", current));
+        return new JSObject().put("routes", routes).put("current", current);
     }
 
     @PluginMethod
     public void setAudioRoute(PluginCall call) {
         int id = call.getInt("id", -1);
         if (Build.VERSION.SDK_INT >= 31) {
-            AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
-            for (AudioDeviceInfo d : am.getAvailableCommunicationDevices()) {
-                if (d.getId() != id) continue;
-                am.setCommunicationDevice(d);
-                speakerOn = d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER;
-                break;
+            for (AudioDeviceInfo d : audio().getAvailableCommunicationDevices()) {
+                if (d.getId() == id) { routeTo(d); break; }
             }
         }
         updateProximity();
