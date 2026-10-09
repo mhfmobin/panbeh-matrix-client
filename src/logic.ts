@@ -142,6 +142,21 @@ export const aliasLocalpart = (name: string) =>
 /** Search-term folding: case, Arabic/Persian ي ك, and ZWNJ don't matter. */
 export const normalize = (s: string) => s.toLowerCase().replace(/ي/g, "ی").replace(/ك/g, "ک").replace(/\u200c/g, "");
 
+/** Where `term` matches `text` (both normalized), as [start, end) in the original text: normalizing drops ZWNJs, which shifts indices. */
+export function matchRange(text: string, term: string): [number, number] | null {
+  const t = normalize(term);
+  if (!t) return null;
+  let norm = "";
+  const at: number[] = []; // index in `text` of each char of `norm`
+  for (let i = 0; i < text.length; i++) {
+    const n = normalize(text[i]);
+    norm += n;
+    for (let k = 0; k < n.length; k++) at.push(i);
+  }
+  const i = norm.indexOf(t);
+  return i < 0 ? null : [at[i], at[i + t.length - 1] + 1];
+}
+
 export const stamp = (ts: number, now = Date.now()) => `${dayLabel(ts, now)}، ${clock(ts)}`;
 
 /** Telegram-style last seen from m.presence; null when the server told us nothing. */

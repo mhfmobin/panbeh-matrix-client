@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { EventTimeline, KnownMembership, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { client, isEncrypted, searchOlder, searchServer } from "../matrix.ts";
 import { isMessage } from "../hooks.ts";
-import { normalize, stamp } from "../logic.ts";
+import { matchRange, normalize, stamp } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 import { Avatar, previewText, senderMember, senderName, Sheet } from "./common.tsx";
 
@@ -29,7 +29,7 @@ export function scanLoaded(room: Room, term: string): MatrixEvent[] {
 
 function ResultRow({ ev, term, showRoom, onClick }: { ev: MatrixEvent; term: string; showRoom?: boolean; onClick: () => void }) {
   const text = previewText(ev);
-  const i = text.toLowerCase().indexOf(term.trim().toLowerCase());
+  const hit = matchRange(text, term.trim());
   const name = senderName(ev);
   return (
     <button className="user-row" onClick={onClick}>
@@ -37,7 +37,7 @@ function ResultRow({ ev, term, showRoom, onClick }: { ev: MatrixEvent; term: str
       <span>
         <b>{showRoom ? `${client.getRoom(ev.getRoomId())?.name} · ${name}` : name}</b>
         <small dir="auto">
-          {i < 0 ? text : <>{text.slice(0, i)}<mark>{text.slice(i, i + term.trim().length)}</mark>{text.slice(i + term.trim().length)}</>}
+          {!hit ? text : <>{text.slice(0, hit[0])}<mark>{text.slice(...hit)}</mark>{text.slice(hit[1])}</>}
         </small>
       </span>
       <small>{stamp(ev.getTs())}</small>

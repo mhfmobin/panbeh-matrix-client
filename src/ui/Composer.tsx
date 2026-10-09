@@ -3,7 +3,7 @@ import { ContentHelpers, LocationAssetType, MsgType, type IContent, type MatrixE
 import { client, GIF_INFO, startUpload } from "../matrix.ts";
 import { Icon } from "../icons.tsx";
 import { Avatar, bdi, errText, formatSize, me, previewText, senderName, stripReplyFallback } from "./common.tsx";
-import { escRe, formatMessage, num, osmUrl, type Gif } from "../logic.ts";
+import { escRe, formatMessage, normalize, num, osmUrl, type Gif } from "../logic.ts";
 import { isMessage } from "../hooks.ts";
 import { VoiceRecorder } from "./Voice.tsx";
 import { PollForm } from "./Poll.tsx";
@@ -92,9 +92,9 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
   const atPos = at ? caret - at[2].length - 1 : -1;
   const suggestions: Suggestion[] = [];
   if (at && atPos !== closedAt) {
-    const q = at[2].toLowerCase();
+    const q = normalize(at[2]);
     suggestions.push(...room.getJoinedMembers()
-      .filter((m) => m.userId !== me() && (m.name.toLowerCase().includes(q) || m.userId.toLowerCase().includes(q)))
+      .filter((m) => m.userId !== me() && normalize(m.name + " " + m.userId).includes(q))
       .slice(0, 6).map((m) => ({ id: m.userId, name: m.name, mxc: m.getMxcAvatarUrl() })));
     if ("room".startsWith(q) && room.currentState.mayTriggerNotifOfType("room", me())) suggestions.push({ id: "@room", name: "room" });
   }
