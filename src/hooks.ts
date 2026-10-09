@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { ClientEvent, EventTimeline, EventType, M_POLL_START, RoomEvent, RoomMemberEvent, RoomStateEvent, UserEvent, type Room, type MatrixEvent } from "matrix-js-sdk";
+import { ClientEvent, EventTimeline, EventType, M_POLL_START, RoomEvent, RoomMemberEvent, RoomStateEvent, UserEvent, type Room, type RoomMember, type MatrixEvent } from "matrix-js-sdk";
 import { client, getFolderOrder, getUploads, setFolderOrder, subscribeUploads } from "./matrix.ts";
 import { byListOrder, lastSeen, spaceRooms, type RoomInfo } from "./logic.ts";
 import { ARCHIVED, hasTag, isMarkedUnread, PINNED } from "./chats.ts";
@@ -85,12 +85,23 @@ export function usePromise<T>(p: Promise<T> | null | undefined): T | undefined {
   return v && v.p === p ? v.v : undefined;
 }
 
+/** Who else is typing in `room`; re-renders only for typing in this room, not the client's every typing event. */
+export function useTyping(room: Room) {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const on = (_e: MatrixEvent, m: RoomMember) => { if (m.roomId === room.roomId) bump((n) => n + 1); };
+    client.on(RoomMemberEvent.Typing, on);
+    return () => { client.off(RoomMemberEvent.Typing, on); };
+  }, [room]);
+  return room.getMembers().filter((m) => m.typing && m.userId !== client.getUserId());
+}
+
 // ---------- rooms ----------
 
 const ROOM_LIST_EVENTS = [
   ClientEvent.Room, ClientEvent.DeleteRoom, ClientEvent.AccountData,
   RoomEvent.Timeline, RoomEvent.Name, RoomEvent.MyMembership, RoomEvent.UnreadNotifications,
-  RoomEvent.Receipt, RoomEvent.LocalEchoUpdated, RoomStateEvent.Events, RoomMemberEvent.Typing, "Event.decrypted",
+  RoomEvent.Receipt, RoomEvent.LocalEchoUpdated, RoomStateEvent.Events, "Event.decrypted", // typing: useTyping, per row
   RoomEvent.Tags, RoomEvent.AccountData, // pin/archive, marked unread
 ];
 

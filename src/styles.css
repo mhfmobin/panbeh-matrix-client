@@ -118,6 +118,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 /* ---------- login / splash ---------- */
 .login, .splash { height: 100%; display: grid; place-items: center; padding: 16px; }
 .splash { place-content: center; gap: 12px; color: var(--muted); text-align: center; }
+.boot-error { max-width: min(480px, 90vw); overflow-wrap: anywhere; }
 .login-card {
   width: min(380px, 100%); display: grid; gap: 14px; padding: 32px 28px;
   background: var(--panel); border-radius: 24px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
@@ -129,7 +130,7 @@ button:disabled { opacity: 0.6; cursor: default; }
   border-radius: 50%; background: var(--accent); color: #fff; font-size: 34px;
 }
 .login-card label, .card { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
-.login-card input, .card input, .form input {
+.login-card input, .card input, .form input, .modal input:not([role]) {
   height: 48px; padding: 0 14px; border-radius: 12px; font-size: 16px; color: var(--text);
   background: var(--bg); border: 1.5px solid var(--border); transition: border-color 0.15s;
 }
@@ -451,7 +452,7 @@ div.msg-text blockquote { margin: 4px 0; padding-inline-start: 10px; border-inli
 /* user-supplied one-line labels: direction from their own text (so "Alice!" isn't "!Alice"), but always right-aligned */
 .room-name, .room-preview, .room-head-text b, .profile b, .invite h2, .composer-mode span, .user-row b, .chip, .info-text h2 { unicode-bidi: plaintext; text-align: right; }
 /* typed text picks its direction per line; empty fields (placeholder) stay RTL — dir=auto would make them LTR */
-.search input, .composer textarea, .send-caption, .card input, .form input { unicode-bidi: plaintext; }
+.search input, .composer textarea, .send-caption, .card input, .form input, .modal input:not([role]) { unicode-bidi: plaintext; }
 
 /* ---------- new chat ---------- */
 .fab {
@@ -696,7 +697,7 @@ input[role="switch"]:checked::before { transform: translateX(-18px); }
 .now-playing-text b { font-size: 13px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .now-playing-text span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: plaintext; text-align: right; }
 .now-playing-time { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
-.now-playing-line { position: absolute; inset-inline-start: 0; bottom: 0; height: 2px; background: var(--accent); pointer-events: none; }
+.now-playing-line { position: absolute; left: 0; bottom: 0; /* fills left to right like the waveform, RTL or not */ height: 2px; background: var(--accent); pointer-events: none; }
 
 /* ---------- profile / forwarding ---------- */
 button.msg-sender { display: block; max-width: 100%; text-align: start; }
@@ -1237,3 +1238,27 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .segmented[data-pill]:not(.ready) button.on { background: var(--panel); box-shadow: var(--shadow); } /* before the pill is placed */
 .segmented[data-pill].ready button.on { background: transparent; box-shadow: none; }
 .segmented[data-pill] button { position: relative; }
+
+/* link + QR sheet */
+.qr { width: min(240px, 70vw); margin: 8px auto 0; padding: 8px; border-radius: 12px; background: #fff; line-height: 0; }
+.qr svg { width: 100%; height: auto; }
+.qr-link { display: block; text-align: center; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; user-select: text; }
+
+/* app lock */
+.lock-screen { position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 16px; color: var(--text); } /* no fade-in: the app mustn't show through */
+.pinpad { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.pin-dots { display: flex; gap: 12px; min-height: 14px; margin: 6px 0 10px; }
+.pin-dots i { width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--muted); transition: background 0.12s, border-color 0.12s; }
+.pin-dots i.on { background: var(--accent); border-color: var(--accent); }
+.pin-dots.shake { animation: pin-shake 0.35s; }
+@keyframes pin-shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+.pin-keys { display: grid; grid-template-columns: repeat(3, 68px); gap: 12px; }
+.pin-keys button { height: 68px; border-radius: 50%; border: 0; background: var(--panel); color: var(--text); font-size: 26px; display: grid; place-items: center; cursor: pointer; }
+.pin-keys button:active:not(:disabled) { background: var(--hover); }
+.pin-keys button:disabled { opacity: 0.4; cursor: default; }
+.pin-keys .pin-ok { background: var(--accent); color: #fff; }
+.lock-forgot { color: var(--muted); font-size: 14px; }
+.lock-forget { width: min(380px, 100%); display: flex; flex-direction: column; gap: 14px; padding: 16px; border-radius: 16px; background: var(--panel); text-align: start; }
+.lock-forget p { margin: 0; line-height: 1.6; }
+.sheet .pinpad { margin: 12px auto; }
+.sheet .pin-keys button:not(.pin-ok) { background: var(--hover); }

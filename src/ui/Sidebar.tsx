@@ -5,9 +5,9 @@ import { Virtuoso } from "react-virtuoso";
 import { NotificationCountType, UserEvent, type Room } from "matrix-js-sdk";
 import { client, dmPeer } from "../matrix.ts";
 import { setMuted } from "../notify.ts";
-import { isCallStart, useFolderOrder, useRooms, useTick, type RoomRow } from "../hooks.ts";
+import { isCallStart, useFolderOrder, useRooms, useTick, useTyping, type RoomRow } from "../hooks.ts";
 import { ARCHIVED, leaveAndForget, markRead, PINNED, setMarkedUnread, setTag } from "../chats.ts";
-import { applyFolderOrder, BASE_FOLDERS, inFolder, isUnread, listTime, moveFolder, num } from "../logic.ts";
+import { applyFolderOrder, BASE_FOLDERS, inFolder, isUnread, listTime, moveFolder, normalize, num } from "../logic.ts";
 import { useSortableTabs } from "./useSortableTabs.ts";
 import { pushBack } from "../back.ts";
 import { setBadge } from "../desktop.ts";
@@ -37,12 +37,12 @@ export function Sidebar({ loading, selected, onSelect, onSettings, banner }: Pro
   const [order, setOrder] = useFolderOrder();
   const folders = applyFolderOrder([...BASE_FOLDERS, ...spaces.map((s) => ({ id: s.roomId, label: s.name }))], order);
   const active = folders.some((f) => f.id === folder) ? folder : "all";
-  const q = query.trim().toLowerCase();
+  const q = normalize(query.trim());
   const archived = rows.filter((r) => inFolder(r, "archive"));
   const inArchiveView = archive && !q && archived.length > 0;
   const inCalls = calls && !q;
   useEffect(() => { if (!archived.length) setArchive(false); }, [archived.length]); // last one unarchived
-  const shown = rows.filter((r) => (q ? r.room.name.toLowerCase().includes(q) : inFolder(r, inArchiveView ? "archive" : active)));
+  const shown = rows.filter((r) => (q ? normalize(r.room.name).includes(q) : inFolder(r, inArchiveView ? "archive" : active)));
   const unreadIn = (id: string) => rows.filter((r) => isUnread(r) && inFolder(r, id)).length;
   const unreadChats = rows.filter((r) => isUnread(r) && !r.muted).length;
   useEffect(() => { document.title = unreadChats ? `(${num(unreadChats)}) پنبه` : "پنبه"; setBadge(unreadChats); }, [unreadChats]);
@@ -218,7 +218,8 @@ function RoomItem({ row, active, onClick, onMenu }: { row: RoomRow; active: bool
     const who = last.getSender() === me() ? "شما" : row.isDM ? "" : bdi(senderName(last).split(" ")[0]);
     preview = (who ? who + ": " : "") + previewText(last);
   }
-  const typing = row.invite ? [] : room.getMembers().filter((m) => m.typing && m.userId !== me());
+  const typers = useTyping(room);
+  const typing = row.invite ? [] : typers;
   if (typing.length) preview = (row.isDM ? "" : bdi(typing[0].name.split(" ")[0]) + " ") + "در حال نوشتن";
   const muted = !!row.muted;
   const bumped = useChange(row.unread);

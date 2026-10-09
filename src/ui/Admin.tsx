@@ -5,7 +5,7 @@ import { useTick } from "../hooks.ts";
 import { aliasLocalpart, HISTORY, JOIN_RULES, num, roleLabel, supportsKnock } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 import { Avatar, errText, me, Select } from "./common.tsx";
-import { alertDialog, confirmDialog } from "./dialog.tsx";
+import { alertDialog, confirmDialog, promptDialog } from "./dialog.tsx";
 
 const STATE = [RoomStateEvent.Events, RoomStateEvent.Members];
 
@@ -28,7 +28,7 @@ const levelOf = (room: Room, id: string) => {
 };
 
 /** null on cancel, undefined for an empty reason */
-const askReason = (q: string) => { const r = prompt(q); return r === null ? null : r.trim() || undefined; };
+const askReason = (q: string) => promptDialog(q, { danger: true, placeholder: "دلیل (اختیاری)" }).then((r) => (r === null ? null : r || undefined));
 
 // ---------- one member: role, kick, ban ----------
 
@@ -53,12 +53,12 @@ export function MemberAdmin({ room, userId }: { room: Room; userId: string }) {
     if (l >= mine && !(await confirmDialog("هم‌سطح شما می‌شود و دیگر نمی‌توانید نقشش را تغییر دهید یا بیرونش کنید. ادامه می‌دهید؟", { danger: true }))) return;
     act(() => client.setPowerLevel(room.roomId, userId, l));
   };
-  const kick = () => {
-    const r = askReason(membership === "invite" ? "دعوت لغو شود؟ دلیل (اختیاری):" : "از گفتگو بیرون شود؟ دلیل (اختیاری):");
+  const kick = async () => {
+    const r = await askReason(membership === "invite" ? "دعوت لغو شود؟" : "از گفتگو بیرون شود؟");
     if (r !== null) act(() => client.kick(room.roomId, userId, r));
   };
-  const ban = () => {
-    const r = askReason("مسدود شود؟ دیگر نمی‌تواند بپیوندد. دلیل (اختیاری):");
+  const ban = async () => {
+    const r = await askReason("مسدود شود؟ دیگر نمی‌تواند بپیوندد.");
     if (r !== null) act(() => client.ban(room.roomId, userId, r));
   };
 

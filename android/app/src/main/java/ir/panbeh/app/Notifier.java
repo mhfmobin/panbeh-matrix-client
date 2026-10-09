@@ -104,26 +104,62 @@ final class Notifier {
         return PendingIntent.getActivity(ctx, code, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 
-    /** One notification per room (tag = room id): the newest message replaces the previous one. */
+    /** Reply / mark-as-read buttons on a message notification (NotifyReceiver). */
+    static final String EXTRA_NOTIFY = "notifyAction", KEY_REPLY = "reply";
+    /** Messages kept in one chat's notification. */
+    private static final int MAX_MESSAGES = 7;
+    /** Rooms given a conversation shortcut by this process (pushing again per message is wasted work). */
+    private static final java.util.Set<String> shortcuts = new java.util.HashSet<>();
+
+    /** One notification per room (tag = room id), Android's conversation style: the chat's recent messages, newest last,
+     *  with reply and mark-as-read buttons. Earlier messages are read back from the notification already showing, so
+     *  nothing has to be kept here and they survive the process dying. `sender` names who wrote it in a group. */
     @SuppressLint("MissingPermission") // checked via areNotificationsEnabled; SecurityException caught
-    static void show(Context ctx, String roomId, String title, String body, String iconDataUrl, boolean sound) {
+    static void show(Context ctx, String roomId, String title, String sender, String text, long ts, boolean group, String iconDataUrl, boolean sound) {
         createChannels(ctx);
+        NotificationManagerCompat nm = NotificationManagerCompat.from(ctx);
+        if (!nm.areNotificationsEnabled()) return;
+        Bitmap icon = decode(iconDataUrl);
+        Bitmap round = icon == null ? null : circle(ctx, icon);
+
+        NotificationCompat.MessagingStyle style = null;
+        if (Build.VERSION.SDK_INT >= 23) {
+            for (android.service.notification.StatusBarNotification n : ctx.getSystemService(NotificationManager.class).getActiveNotifications()) {
+                if (n.getId() == 1 && roomId.equals(n.getTag())) { style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n.getNotification()); break; }
+            }
+        }
+        if (style == null) style = new NotificationCompat.MessagingStyle(new Person.Builder().setName(ctx.getString(R.string.notify_me)).setKey("me").build());
+        style.setConversationTitle(group ? title : null).setGroupConversation(group);
+        Person.Builder from = new Person.Builder().setName(group && sender != null && !sender.isEmpty() ? sender : title).setKey(group ? "sender:" + sender : "room:" + roomId);
+        if (!group && round != null) from.setIcon(IconCompat.createWithBitmap(round));
+        style.addMessage(text, ts, from.build());
+        java.util.List<NotificationCompat.MessagingStyle.Message> msgs = style.getMessages();
+        while (msgs.size() > MAX_MESSAGES) msgs.remove(0);
+
         NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, sound ? CH_MESSAGES : CH_QUIET)
             .setSmallIcon(R.drawable.ic_stat_panbeh)
             .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+            .setContentText(group && sender != null && !sender.isEmpty() ? sender + ": " + text : text)
+            .setStyle(style)
+            .setShortcutId(conversationShortcut(ctx, roomId, title, round))
+            .setWhen(ts)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(sound ? NotificationCompat.PRIORITY_HIGH : NotificationCompat.PRIORITY_LOW)
             .setColor(0xFF3390EC)
             .setGroup(GROUP)
             .setAutoCancel(true)
             .setOnlyAlertOnce(false)
-            .setContentIntent(openRoom(ctx, roomId));
-        Bitmap icon = decode(iconDataUrl);
-        if (icon != null) b.setLargeIcon(circle(ctx, icon));
-        NotificationManagerCompat nm = NotificationManagerCompat.from(ctx);
-        if (!nm.areNotificationsEnabled()) return;
+            .setContentIntent(openRoom(ctx, roomId))
+            .addAction(new NotificationCompat.Action.Builder(0, ctx.getString(R.string.notify_reply), notifyIntent(ctx, "reply", roomId))
+                .addRemoteInput(new androidx.core.app.RemoteInput.Builder(KEY_REPLY).setLabel(ctx.getString(R.string.notify_reply_hint)).build())
+                .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+                .setShowsUserInterface(false)
+                .build())
+            .addAction(new NotificationCompat.Action.Builder(0, ctx.getString(R.string.notify_read), notifyIntent(ctx, "read", roomId))
+                .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+                .setShowsUserInterface(false)
+                .build());
+        if (round != null) b.setLargeIcon(round);
         try {
             nm.notify(roomId, 1, b.build());
             // the group summary keeps several chats bundled together on Android 7+
@@ -138,6 +174,49 @@ final class Notifier {
         } catch (SecurityException e) {
             // POST_NOTIFICATIONS revoked meanwhile
         }
+    }
+
+    /** A long-lived shortcut per chat: Android 11+ then lists the chat under Conversations (priority, bubbles, per-chat settings). */
+    private static String conversationShortcut(Context ctx, String roomId, String title, Bitmap icon) {
+        if (shortcuts.add(roomId)) {
+            try {
+                androidx.core.content.pm.ShortcutInfoCompat.Builder s = new androidx.core.content.pm.ShortcutInfoCompat.Builder(ctx, roomId)
+                    .setShortLabel(title.isEmpty() ? ctx.getString(R.string.app_name) : title)
+                    .setLongLived(true)
+                    .setIntent(new Intent(ctx, MainActivity.class).setAction(Intent.ACTION_VIEW).putExtra(EXTRA_ROOM, roomId));
+                if (icon != null) s.setIcon(IconCompat.createWithBitmap(icon));
+                androidx.core.content.pm.ShortcutManagerCompat.pushDynamicShortcut(ctx, s.build());
+            } catch (RuntimeException e) {
+                shortcuts.remove(roomId); // rate-limited or refused: the notification works without it
+            }
+        }
+        return roomId;
+    }
+
+    /** A reply from the notification that couldn't be sent: tapping opens the chat. */
+    @SuppressLint("MissingPermission")
+    static void replyFailed(Context ctx, String roomId, String text) {
+        createChannels(ctx);
+        try {
+            NotificationManagerCompat.from(ctx).notify(roomId, 1, new NotificationCompat.Builder(ctx, CH_QUIET)
+                .setSmallIcon(R.drawable.ic_stat_panbeh)
+                .setColor(0xFF3390EC)
+                .setContentTitle(ctx.getString(R.string.notify_failed))
+                .setContentText(text)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
+                .setAutoCancel(true)
+                .setContentIntent(openRoom(ctx, roomId))
+                .build());
+        } catch (SecurityException e) {
+            // POST_NOTIFICATIONS revoked meanwhile
+        }
+    }
+
+    /** To NotifyReceiver. Reply must be mutable: Android fills in the typed text. */
+    private static PendingIntent notifyIntent(Context ctx, String action, String roomId) {
+        Intent i = new Intent(ctx, NotifyReceiver.class).putExtra(EXTRA_NOTIFY, action).putExtra(EXTRA_ROOM, roomId);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT | (action.equals("reply") && Build.VERSION.SDK_INT >= 31 ? PendingIntent.FLAG_MUTABLE : PendingIntent.FLAG_IMMUTABLE);
+        return PendingIntent.getBroadcast(ctx, (roomId + action).hashCode(), i, flags);
     }
 
     static void cancel(Context ctx, String roomId) {

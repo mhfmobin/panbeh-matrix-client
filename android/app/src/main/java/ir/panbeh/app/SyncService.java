@@ -125,9 +125,16 @@ public class SyncService extends Service {
 
     /** A call notification button for the headless page. */
     void deliverCall(org.json.JSONObject a) {
+        deliverJs("panbehCallAction", a);
+    }
+
+    /** Calls window[fn](a) in the headless page, if it's running. */
+    boolean deliverJs(String fn, org.json.JSONObject a) {
+        if (headless == null) return false;
         main.post(() -> {
-            if (headless != null) headless.evaluateJavascript("window.panbehCallAction && panbehCallAction(" + a + ")", null);
+            if (headless != null) headless.evaluateJavascript("window." + fn + " && " + fn + "(" + a + ")", null);
         });
+        return true;
     }
 
     /** The activity is about to load its own WebView: the headless one must be gone first. */
@@ -387,7 +394,8 @@ public class SyncService extends Service {
         public void showNotification(String json) {
             try {
                 JSONObject o = new JSONObject(json);
-                Notifier.show(SyncService.this, o.getString("roomId"), o.getString("title"), o.getString("body"),
+                Notifier.show(SyncService.this, o.getString("roomId"), o.getString("title"), o.optString("sender", ""),
+                    o.optString("text", o.getString("body")), o.optLong("ts", System.currentTimeMillis()), o.optBoolean("group", false),
                     o.optString("icon", null), o.optBoolean("sound", true));
             } catch (JSONException e) {
                 Log.w(TAG, "bad notification", e);

@@ -1,8 +1,9 @@
-import { EventType, MatrixEventEvent, PushRuleActionName, PushRuleKind, ReceiptType, RoomEvent, type IRoomTimelineData, type MatrixEvent, type Room } from "matrix-js-sdk";
+import { EventType, MatrixEventEvent, MsgType, PushRuleActionName, PushRuleKind, ReceiptType, RoomEvent, type IRoomTimelineData, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { avatarUrl, client, pastFirstSync } from "./matrix.ts";
 import { isGroupChat, previewText, senderName, roomAvatarMxc } from "./ui/common.tsx";
 import { loadPrefs } from "./ui/Settings.tsx";
-import { isHeadless, isNative, nativeCancel, nativeNotify, toDataUrl } from "./native.ts";
+import { isHeadless, isNative, nativeCancel, nativeNotify, toDataUrl, type NotifyAction } from "./native.ts";
+import { markRead } from "./chats.ts";
 import { showWindow } from "./desktop.ts";
 
 /** Muted = a room or override rule for this room that doesn't notify (ours, or Element's). */
@@ -49,7 +50,7 @@ async function notify(ev: MatrixEvent, room: Room) {
   // the DM/group switches silence ordinary messages only; mentions and keywords still come through
   if (!actions.tweaks?.highlight && !(isGroupChat(room) ? prefs.notifyGroups : prefs.notifyDMs)) return;
   shown.add(id);
-  await show(room, (isGroupChat(room) ? senderName(ev) + ": " : "") + previewText(ev), !!actions.tweaks?.sound);
+  await show(room, isGroupChat(room) ? senderName(ev) : "", previewText(ev), !!actions.tweaks?.sound, ev.getTs());
 }
 
 /** A notification about a call that didn't ring (missed, or a group call starting). group: obeys the group switch. */
@@ -57,10 +58,12 @@ export async function callNotice(room: Room, body: string, group = false) {
   const prefs = loadPrefs();
   if (!prefs.notify || (group && !prefs.notifyGroups)) return;
   if (!isNative && (!("Notification" in window) || Notification.permission !== "granted")) return;
-  await show(room, body, true);
+  await show(room, "", body, true);
 }
 
-async function show(room: Room, body: string, sound: boolean) {
+/** sender: who wrote it, in a group ("" for a DM or a notice about the chat). */
+async function show(room: Room, sender: string, text: string, sound: boolean, ts = Date.now()) {
+  const body = (sender ? sender + ": " : "") + text;
   // already looking at it (in the app, native checks the activity is on screen)
   if (!isNative && document.hasFocus() && location.hash.slice(1) === room.roomId) return;
   // the sync recalculates names only after emitting the batch's events: a member that names this room may have just arrived
@@ -69,7 +72,7 @@ async function show(room: Room, body: string, sound: boolean) {
     new Promise<undefined>((r) => setTimeout(r, 1500))]);
   if (isNative) {
     nativeNotify({
-      roomId: room.roomId, title: room.name, body, sound,
+      roomId: room.roomId, title: room.name, body, sender, text, ts, group: isGroupChat(room), sound,
       icon: icon && await toDataUrl(icon).catch(() => undefined),
       openRoom: isHeadless ? undefined : location.hash.slice(1),
     });
@@ -82,6 +85,28 @@ async function show(room: Room, body: string, sound: boolean) {
   });
   n.onclick = () => { showWindow(); location.hash = room.roomId; n.close(); };
   if (sound) ding();
+}
+
+/** The room once the client has it: a notification button may have woken a page that's still starting. */
+async function roomWhenReady(roomId: string) {
+  // ponytail: polls; a minute at most, then the press is dropped
+  for (const end = Date.now() + 60_000; Date.now() < end && !(client && pastFirstSync() && client.getRoom(roomId));) await new Promise((r) => setTimeout(r, 500));
+  return client?.getRoom(roomId) ?? null;
+}
+
+/** Reply or mark-as-read from an Android message notification. Replying also marks the chat read, as in the app. */
+export async function onNotifyButton(a: NotifyAction) {
+  const room = await roomWhenReady(a.roomId);
+  if (!room) return;
+  if (a.action === "reply" && a.text) {
+    try {
+      await client.sendMessage(room.roomId, { msgtype: MsgType.Text, body: a.text });
+    } catch {
+      return void show(room, "", `پاسخ شما ارسال نشد: «${a.text}»`, false);
+    }
+  }
+  await markRead(room).catch(() => {});
+  nativeCancel(room.roomId);
 }
 
 let ctx: AudioContext | undefined;

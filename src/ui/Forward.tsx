@@ -2,7 +2,7 @@ import { useState } from "react";
 import { M_POLL_START, type MatrixEvent } from "matrix-js-sdk";
 import { forwardTo } from "../matrix.ts";
 import { useRooms } from "../hooks.ts";
-import { num } from "../logic.ts";
+import { normalize, num } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 import { errText, RoomAvatar, Sheet } from "./common.tsx";
 import { alertDialog } from "./dialog.tsx";
@@ -13,7 +13,7 @@ export function ForwardSheet({ evs, onClose, onSent }: { evs: MatrixEvent[]; onC
   const [q, setQ] = useState("");
   const [sel, setSel] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const shown = rows.filter((r) => !r.invite && r.room.name.toLowerCase().includes(q.trim().toLowerCase()));
+  const shown = rows.filter((r) => !r.invite && normalize(r.room.name).includes(normalize(q.trim())));
   const toggle = (id: string) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   const send = async () => {
     setBusy(true);
@@ -53,7 +53,7 @@ export function ForwardSheet({ evs, onClose, onSent }: { evs: MatrixEvent[]; onC
 export function ShareSheet({ onPick, onClose }: { onPick: (roomId: string) => void; onClose: () => void }) {
   const { rows } = useRooms();
   const [q, setQ] = useState("");
-  const shown = rows.filter((r) => !r.invite && r.room.name.toLowerCase().includes(q.trim().toLowerCase()));
+  const shown = rows.filter((r) => !r.invite && normalize(r.room.name).includes(normalize(q.trim())));
   return (
     <Sheet title="ارسال به…" onClose={onClose}>
       <label className="search">

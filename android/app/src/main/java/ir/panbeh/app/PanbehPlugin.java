@@ -31,6 +31,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import androidx.activity.result.ActivityResult;
+import androidx.biometric.BiometricManager;
+import androidx.biometric.BiometricPrompt;
+import androidx.core.content.ContextCompat;
+import androidx.fragment.app.FragmentActivity;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -120,9 +124,14 @@ public class PanbehPlugin extends Plugin {
 
     /** Hands a call action to the app's page if it's running and listening. */
     static boolean deliverCall(JSObject a) {
+        return deliver("callAction", a);
+    }
+
+    /** An event for the app's page (callAction, notifyAction) if it's running and listening. */
+    static boolean deliver(String event, JSObject a) {
         PanbehPlugin p = instance;
-        if (p == null || !SyncService.activityAlive || !p.hasListeners("callAction")) return false;
-        p.notifyListeners("callAction", a);
+        if (p == null || !SyncService.activityAlive || !p.hasListeners(event)) return false;
+        p.notifyListeners(event, a);
         return true;
     }
 
@@ -178,6 +187,36 @@ public class PanbehPlugin extends Plugin {
         }
         // don't replay the tap or the single-use code if the activity is recreated
         getActivity().setIntent(new Intent(getContext(), MainActivity.class));
+    }
+
+    // ---------- app lock: fingerprint / face ----------
+
+    /** BIOMETRIC_WEAK: face unlock on most phones counts too; this only lifts a UI lock (no key is released). */
+    private static final int BIO = BiometricManager.Authenticators.BIOMETRIC_WEAK;
+
+    @PluginMethod
+    public void biometricAvailable(PluginCall call) {
+        call.resolve(new JSObject().put("available", BiometricManager.from(getContext()).canAuthenticate(BIO) == BiometricManager.BIOMETRIC_SUCCESS));
+    }
+
+    /** Shows the system prompt; resolves { ok } — false when cancelled, failed out, or "use PIN" was pressed. */
+    @PluginMethod
+    public void biometricUnlock(PluginCall call) {
+        FragmentActivity a = getActivity();
+        a.runOnUiThread(() -> {
+            BiometricPrompt p = new BiometricPrompt(a, ContextCompat.getMainExecutor(a), new BiometricPrompt.AuthenticationCallback() {
+                @Override
+                public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult r) { call.resolve(new JSObject().put("ok", true)); }
+                @Override
+                public void onAuthenticationError(int code, CharSequence msg) { call.resolve(new JSObject().put("ok", false)); }
+                // onAuthenticationFailed: one wrong finger; the prompt stays up for another try
+            });
+            p.authenticate(new BiometricPrompt.PromptInfo.Builder()
+                .setTitle(call.getString("title", ""))
+                .setNegativeButtonText(call.getString("cancel", ""))
+                .setAllowedAuthenticators(BIO)
+                .build());
+        });
     }
 
     @PluginMethod
@@ -579,8 +618,10 @@ public class PanbehPlugin extends Plugin {
         String roomId = call.getString("roomId");
         if (roomId == null) { call.reject("roomId required"); return; }
         if (!(MainActivity.visible && roomId.equals(call.getString("openRoom")))) {
-            Notifier.show(getContext(), roomId, call.getString("title", ""), call.getString("body", ""),
-                call.getString("icon"), call.getBoolean("sound", true));
+            String title = call.getString("title", ""), body = call.getString("body", "");
+            Long ts = call.getLong("ts");
+            Notifier.show(getContext(), roomId, title, call.getString("sender", ""), call.getString("text", body),
+                ts == null ? System.currentTimeMillis() : ts, call.getBoolean("group", false), call.getString("icon"), call.getBoolean("sound", true));
         }
         call.resolve();
     }

@@ -15,4 +15,9 @@
     <string name="call_voice">تماس صوتی ورودی</string>
     <string name="call_video">تماس تصویری ورودی</string>
     <string name="call_ongoing">تماس در جریان است</string>
+    <string name="notify_me">شما</string>
+    <string name="notify_reply">پاسخ</string>
+    <string name="notify_reply_hint">پیام</string>
+    <string name="notify_read">خوانده شد</string>
+    <string name="notify_failed">پاسخ شما ارسال نشد؛ برای ارسال، پنبه را باز کنید</string>
 </resources>

@@ -2,7 +2,6 @@ import { useCallback, useState } from "react";
 import { ClientEvent, EventType, RelationType, RoomEvent, RoomStateEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { addToSpace, client, isDirect, removeFromSpace, seenBy, setRoomAvatar } from "../matrix.ts";
 import { matrixToLink, viaServers } from "../uri.ts";
-import { copyMessages } from "./Message.tsx";
 import { usePresence, useTick } from "../hooks.ts";
 import { JOIN_RULES, normalize, num, roleLabel, stamp } from "../logic.ts";
 import { Icon } from "../icons.tsx";
@@ -14,6 +13,14 @@ import { isMuted, setMuted } from "../notify.ts";
 import { PhotoViewer, SharedMedia } from "./Media.tsx";
 import { BannedList, canManage, GroupSettings, KnockRequests } from "./Admin.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
+import { LinkSheet } from "./LinkSheet.tsx";
+
+/** Who the link actually lets in, by join rule (public needs no note). */
+const JOIN_HINTS: Record<string, string> = {
+  invite: "این گفتگو خصوصی است: با این پیوند فقط کسانی که دعوت شده‌اند می‌توانند بپیوندند.",
+  knock: "با این پیوند می‌توان درخواست عضویت داد؛ مدیران آن را می‌پذیرند.",
+  restricted: "فقط اعضای فضای مربوط می‌توانند با این پیوند بپیوندند.",
+};
 
 type View = "main" | "invite" | "add" | "new-group" | "settings";
 
@@ -24,6 +31,7 @@ export function RoomInfo({ room, onClose }: { room: Room; onClose: () => void })
   const [busy, setBusy] = useState(false);
   const [profile, setProfile] = useState<string | null>(null);
   const [media, setMedia] = useState(false);
+  const [qr, setQr] = useState(false);
   const [viewing, setViewing] = useState(false);
   const [q, setQ] = useState("");
   const closeViewer = useCallback(() => setViewing(false), []);
@@ -102,8 +110,8 @@ export function RoomInfo({ room, onClose }: { room: Room; onClose: () => void })
       {!space && <button className="user-row" onClick={() => setMedia(true)}><span className="device-box"><Icon name="file" /></span><span><b>رسانه‌ها، فایل‌ها و پیوندها</b></span></button>}
       {!isDirect(room) && (
         // an alias needs no via; a bare room id does, or people outside it can't join over federation
-        <button className="user-row" onClick={() => { const a = room.getCanonicalAlias(); void copyMessages(a ? matrixToLink(a) : matrixToLink(room.roomId, undefined, viaServers(room.getJoinedMembers().map((m) => m.userId)))); }}>
-          <span className="device-box"><Icon name="link" /></span><span><b>{space ? "کپی پیوند فضا" : "کپی پیوند گفتگو"}</b></span>
+        <button className="user-row" onClick={() => setQr(true)}>
+          <span className="device-box"><Icon name="link" /></span><span><b>{space ? "پیوند فضا" : "پیوند گفتگو"}</b><small>کپی، اشتراک‌گذاری و کد QR</small></span>
         </button>
       )}
       {canManage(room) && (
@@ -162,6 +170,11 @@ export function RoomInfo({ room, onClose }: { room: Room; onClose: () => void })
         {space ? "خروج از فضا" : "خروج از گفتگو"}
       </button>
       {profile && <UserProfile userId={profile} room={room} onClose={() => setProfile(null)} onOpened={onClose} />}
+      {qr && (() => {
+        const a = room.getCanonicalAlias();
+        return <LinkSheet title={space ? "پیوند فضا" : "پیوند گفتگو"} onClose={() => setQr(false)} hint={JOIN_HINTS[room.getJoinRule()]}
+          link={a ? matrixToLink(a) : matrixToLink(room.roomId, undefined, viaServers(room.getJoinedMembers().map((m) => m.userId)))} />;
+      })()}
       {media && <SharedMedia room={room} onClose={() => setMedia(false)} onJump={onClose} />}
     </Sheet>
   );

@@ -3,8 +3,9 @@ import { createRoot } from "react-dom/client";
 import { ClientEvent, SyncState } from "matrix-js-sdk";
 import { cancelAdd, client, finishOAuth, isAdding, isOAuthCallback, logout, recoveryState, savedSession, start } from "./matrix.ts";
 import { useTick } from "./hooks.ts";
-import { startNotifications } from "./notify.ts";
-import { isHeadless, isNative, onCallAction, onOpenLink, onOpenRoom, onShare, requestNotifyPermission, setBackgroundService } from "./native.ts";
+import { onNotifyButton, startNotifications } from "./notify.ts";
+import { startSearchIndex } from "./searchIndex.ts";
+import { isHeadless, isNative, onCallAction, onNotifyAction, onOpenLink, onOpenRoom, onShare, requestNotifyPermission, setBackgroundService } from "./native.ts";
 import { onNativeCall, startCalls } from "./call.ts";
 import { startBackButton } from "./back.ts";
 import { drainLinks, handleIncomingLink } from "./openTarget.ts";
@@ -23,6 +24,8 @@ import { CallBar, CallLayer } from "./ui/Call.tsx";
 import { alertDialog } from "./ui/dialog.tsx";
 import { errText } from "./ui/common.tsx";
 import { Icon } from "./icons.tsx";
+import { LockScreen } from "./ui/Lock.tsx";
+import { useLocked } from "./lock.ts";
 import "@fontsource-variable/vazirmatn";
 import "./styles.css";
 
@@ -33,6 +36,7 @@ try { navigator.registerProtocolHandler?.("matrix", location.origin + location.p
 function App() {
   const [phase, setPhase] = useState<"boot" | "login" | "ready" | "error">((savedSession() && !isAdding()) || isOAuthCallback() ? "boot" : "login");
   const [loginError, setLoginError] = useState<unknown>();
+  const [bootError, setBootError] = useState<unknown>();
   useEffect(() => {
     const s = savedSession();
     // keep the session on failure: dropping it silently would orphan this device and its crypto store
@@ -42,11 +46,11 @@ function App() {
       finishOAuth().then(() => setPhase("ready"), (e) => {
       console.error(e);
       // active account changed = login worked, only startup failed
-      if (savedSession()?.userId !== before) return setPhase("error");
+      if (savedSession()?.userId !== before) { setBootError(e); return setPhase("error"); }
       setLoginError(e);
       setPhase("login");
       });
-    } else if (s && !isAdding()) start(s).then(() => setPhase("ready"), (e) => { console.error(e); setPhase("error"); });
+    } else if (s && !isAdding()) start(s).then(() => setPhase("ready"), (e) => { console.error(e); setBootError(e); setPhase("error"); });
   }, []);
   if (phase === "login") return <Login onDone={() => setPhase("ready")} initialError={loginError} onCancel={savedSession() ? cancelAdd : undefined} />;
   if (phase === "boot") return <Splash text="در حال راه‌اندازی…" />;
@@ -54,6 +58,7 @@ function App() {
     <div className="splash wallpaper">
       <div className="login-logo">✦</div>
       راه‌اندازی ممکن نشد.
+      {bootError !== undefined && <small className="muted boot-error" dir="auto">{errText(bootError)}</small>}
       <button className="primary" onClick={() => location.reload()}>تلاش دوباره</button>
       <button className="danger" onClick={() => logout()}>خروج</button>
     </div>
@@ -74,11 +79,13 @@ function Shell() {
   const synced = client.isInitialSyncComplete();
   useEffect(() => { if (synced) refreshSecurity(); }, [synced]);
   useEffect(startNotifications, []);
+  useEffect(startSearchIndex, []);
   useEffect(startCalls, []);
   // Android call notification buttons: answering may have cold-started the app, so wait for the rooms
   useEffect(() => (synced ? onCallAction((a) => void onNativeCall(a).catch((e) => alertDialog(errText(e)))) : undefined), [synced]);
   useEffect(startBackButton, []);
   useEffect(() => onOpenRoom((id) => { location.hash = id; }), []);
+  useEffect(() => onNotifyAction((a) => void onNotifyButton(a)), []);
   useEffect(() => { // links from outside (Android intents, desktop protocol handler, web handler) wait here until the first sync
     const off = [onOpenLink(handleIncomingLink), onDesktopLink(handleIncomingLink)];
     return () => off.forEach((f) => f());
@@ -117,10 +124,12 @@ function Shell() {
     return () => clearTimeout(t);
   }, [room]);
   const shown = room ?? (leaving ? lastRoom.current : null);
+  const locked = useLocked();
   const open = (id?: string) => { location.hash = id ?? ""; };
 
   return (
-    <div className={"app" + (room ? " room-open" : "")}>
+    <>
+    <div className={"app" + (room ? " room-open" : "")} inert={locked}>
       <Sidebar loading={!synced} selected={roomId} onSelect={open} onSettings={() => setSettings(true)}
         banner={<>
           {(sync === SyncState.Error || sync === SyncState.Reconnecting) && <div className="banner warn">در حال اتصال…</div>}
@@ -140,6 +149,8 @@ function Shell() {
       <VerificationListener onTrustChange={refreshSecurity} />
       <CallLayer />
     </div>
+    {locked && <LockScreen />}
+    </>
   );
 }
 
@@ -153,7 +164,8 @@ const Splash = ({ text }: { text: string }) => (
 function headless() {
   const s = savedSession();
   if (!s || !loadPrefs().notify) return setBackgroundService(false);
-  start(s).then(() => { startNotifications(); startCalls(); onCallAction((a) => void onNativeCall(a)); }, (e) => console.error("headless start failed", e));
+  onNotifyAction((a) => void onNotifyButton(a)); // before start: a button may be what woke the service
+  start(s).then(() => { startNotifications(); startSearchIndex(); startCalls(); onCallAction((a) => void onNativeCall(a)); }, (e) => console.error("headless start failed", e));
 }
 
 if (isHeadless) headless();

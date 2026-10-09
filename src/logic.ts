@@ -142,6 +142,21 @@ export const aliasLocalpart = (name: string) =>
 /** Search-term folding: case, Arabic/Persian ي ك, and ZWNJ don't matter. */
 export const normalize = (s: string) => s.toLowerCase().replace(/ي/g, "ی").replace(/ك/g, "ک").replace(/\u200c/g, "");
 
+/** Where `term` matches `text` (both normalized), as [start, end) in the original text: normalizing drops ZWNJs, which shifts indices. */
+export function matchRange(text: string, term: string): [number, number] | null {
+  const t = normalize(term);
+  if (!t) return null;
+  let norm = "";
+  const at: number[] = []; // index in `text` of each char of `norm`
+  for (let i = 0; i < text.length; i++) {
+    const n = normalize(text[i]);
+    norm += n;
+    for (let k = 0; k < n.length; k++) at.push(i);
+  }
+  const i = norm.indexOf(t);
+  return i < 0 ? null : [at[i], at[i + t.length - 1] + 1];
+}
+
 export const stamp = (ts: number, now = Date.now()) => `${dayLabel(ts, now)}، ${clock(ts)}`;
 
 /** Telegram-style last seen from m.presence; null when the server told us nothing. */
@@ -405,3 +420,25 @@ export const fmtStats = (s: Stats) => [s.w && s.h ? `${s.w}×${s.h}` : "", s.fps
 
 /** Endpoint name for the net log: /_matrix/client/v3/rooms/!x/send/… → rooms. */
 export const endpointOf = (url: string) => new URL(url).pathname.split("/").slice(2).find((x) => !/^(client|media|v\d+|r0|unstable)$/.test(x)) ?? "?";
+
+/** Oldest-first [key, size] entries: the keys to drop, oldest first, so the rest fit in `cap` bytes. */
+export function toEvict(entries: [string, number][], cap: number): string[] {
+  let total = entries.reduce((n, [, size]) => n + size, 0);
+  const out: string[] = [];
+  for (const [key, size] of entries) {
+    if (total <= cap) break;
+    out.push(key);
+    total -= size;
+  }
+  return out;
+}
+
+/** The app lock's PIN check value: PBKDF2-SHA-256 over the PIN with a per-device salt, base64. Slow on purpose. */
+export async function hashPin(pin: string, salt: string, iterations: number) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(pin), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: new TextEncoder().encode(salt), iterations }, key, 256);
+  return btoa(String.fromCharCode(...new Uint8Array(bits)));
+}
+
+/** Wait before the next PIN try after `fails` wrong ones: none for the first 5, then 30s doubling, at most an hour. */
+export const lockDelay = (fails: number) => (fails < 5 ? 0 : Math.min(3_600_000, 30_000 * 2 ** (fails - 5)));

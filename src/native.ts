@@ -2,7 +2,10 @@ import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor
 import { loadPrefs } from "./ui/Settings.tsx";
 
 /** The Android app: our own WebView (Capacitor plugin) or the background service's headless one (JS interface). */
-type Payload = { roomId: string; title: string; body: string; icon?: string; sound: boolean; openRoom?: string };
+/** body: the one-line form (older app builds); sender (in groups), text and ts make the conversation-style notification. */
+type Payload = { roomId: string; title: string; body: string; sender: string; text: string; ts: number; group: boolean; icon?: string; sound: boolean; openRoom?: string };
+/** Reply / mark-as-read pressed on a message notification. */
+export type NotifyAction = { action: "reply" | "read"; roomId: string; text?: string };
 /** interval: minutes between background checks, 0 = real-time. */
 type Status = { permission: "granted" | "denied" | "default"; service: boolean; batteryOptimized: boolean; fullScreen: boolean; interval: number };
 type CallPayload = { roomId: string; eventId: string; caller: string; video: boolean; timeout: number; icon?: string };
@@ -39,9 +42,12 @@ interface PanbehPlugin {
   saveClose(p: { id: string }): Promise<void>;
   saveAbort(p: { id: string }): Promise<void>;
   takeLaunchShare(): Promise<Partial<Shared>>;
+  biometricAvailable(): Promise<{ available: boolean }>;
+  biometricUnlock(p: { title: string; cancel: string }): Promise<{ ok: boolean }>;
   addListener(e: "openRoom", f: (d: { roomId: string }) => void): Promise<PluginListenerHandle>;
   addListener(e: "openLink", f: (d: { link: string }) => void): Promise<PluginListenerHandle>;
   addListener(e: "callAction", f: (d: CallAction) => void): Promise<PluginListenerHandle>;
+  addListener(e: "notifyAction", f: (d: NotifyAction) => void): Promise<PluginListenerHandle>;
   addListener(e: "share", f: (d: Shared) => void): Promise<PluginListenerHandle>;
   addListener(e: "audioRoutes", f: (d: Routes) => void): Promise<PluginListenerHandle>;
 }
@@ -145,6 +151,21 @@ export function onCallAction(f: (a: CallAction) => void) {
   }
   plugin.takeLaunchCall().then((a) => a.action && f(a as CallAction), () => {});
   const h = plugin.addListener("callAction", f);
+  return () => { h.then((x) => x.remove()); };
+}
+
+/** The app lock's fingerprint/face unlock: whether the phone has one set up, and asking for it. */
+export const biometricAvailable = () => (isNative && !headless ? plugin.biometricAvailable().then((r) => r.available, () => false) : Promise.resolve(false));
+export const biometricUnlock = () => plugin.biometricUnlock({ title: "باز کردن پنبه", cancel: "ورود رمز" }).then((r) => r.ok, () => false);
+
+/** Message notification buttons, in the app's page or (via window.panbehNotifyAction) the headless one. Returns an unsubscribe. */
+export function onNotifyAction(f: (a: NotifyAction) => void) {
+  if (!isNative) return () => {};
+  if (headless) {
+    (window as unknown as { panbehNotifyAction?: unknown }).panbehNotifyAction = f;
+    return () => {};
+  }
+  const h = plugin.addListener("notifyAction", f);
   return () => { h.then((x) => x.remove()); };
 }
 

@@ -1,10 +1,11 @@
-import { ClientEvent, createClient, EventTimeline, EventType, Filter, SearchOrderBy, HttpApiEvent, IndexedDBStore, MatrixEvent, Method, OAuth2, Preset, SetPresence, SyncState, Visibility, type ICreateRoomStateEvent, type MatrixClient, type MatrixError, type Room } from "matrix-js-sdk";
+import { ClientEvent, createClient, Direction, EventTimeline, EventType, Filter, SearchOrderBy, HttpApiEvent, IndexedDBStore, MatrixEvent, Method, OAuth2, Preset, SetPresence, SyncState, Visibility, type ICreateRoomStateEvent, type MatrixClient, type MatrixError, type Room } from "matrix-js-sdk";
 import { decodeRecoveryKey, deriveRecoveryKeyFromPassphrase } from "matrix-js-sdk/lib/crypto-api/index.js";
 import { decryptAttachment, encryptAttachment, type IEncryptedFile } from "matrix-encrypt-attachment";
 import { endpointOf, fitSize, hasGif, isGif, normalizeServer, roomName, withGif, withoutGif, type Gif } from "./logic.ts";
 import { isHeadless, isNative, nativeCancelAll, nativeLog, nativeSyncState, onKick, setBackgroundService } from "./native.ts";
 import { isDesktop, isWindowVisible, onWindowVisibility, openExternal } from "./desktop.ts";
 import { confirmDialog } from "./ui/dialog.tsx";
+import { cacheClear, cacheGet, cachePut } from "./mediaCache.ts";
 
 type Session = { baseUrl: string; userId: string; deviceId: string; accessToken: string; refreshToken?: string; oauthClientId?: string; legacy?: boolean };
 // several accounts, one running client at a time; switching reloads the page so every cache starts clean
@@ -236,6 +237,8 @@ export async function finishOAuth() {
 export async function logout() {
   // drop only this account, first, so a hang below can't leave a dead session behind
   const left = sessions().filter((x) => x.userId !== current?.userId);
+  if (current) localStorage.removeItem(`panbeh.drafts:${current.userId}`);
+  if (current) indexedDB.deleteDatabase(`panbeh-search:${current.userId}`); // searchIndex.ts's local message index
   setSessions(left);
   if (left.length) localStorage.setItem(ACTIVE_KEY, left[0].userId); else localStorage.removeItem(ACTIVE_KEY);
   if (isNative) { nativeCancelAll(); if (!left.length) setBackgroundService(false); }
@@ -247,7 +250,23 @@ export async function logout() {
   // clearStores can leave the rust crypto DBs behind; best effort, a blocked delete just stays pending
   if (current) for (const n of ["matrix-sdk-crypto", "matrix-sdk-crypto-meta"]) indexedDB.deleteDatabase(`${dbNames(current).crypto}::${n}`);
   mediaCache.forEach((p) => p.then(URL.revokeObjectURL, () => {}));
+  await cacheClear();
   location.reload();
+}
+
+/** Every account off this device (the app lock's PIN was forgotten): the others first, then this one, which reloads. */
+export async function logoutAll() {
+  const others = sessions().filter((x) => x.userId !== current?.userId);
+  setSessions(sessions().filter((x) => x.userId === current?.userId));
+  await Promise.race([Promise.all(others.map((s) => createClient({ baseUrl: s.baseUrl, accessToken: s.accessToken }).logout(true).catch(() => {}))),
+    new Promise((r) => setTimeout(r, 3000))]);
+  for (const s of others) {
+    const db = dbNames(s);
+    // best effort, as in logout(): a blocked delete stays pending
+    for (const n of [`matrix-js-sdk:${db.sync}`, `${db.crypto}::matrix-sdk-crypto`, `${db.crypto}::matrix-sdk-crypto-meta`, `panbeh-search:${s.userId}`]) indexedDB.deleteDatabase(n);
+    localStorage.removeItem(`panbeh.drafts:${s.userId}`);
+  }
+  await logout();
 }
 
 // ---------- E2EE: recovery ----------
@@ -346,7 +365,9 @@ export function mediaUrl(c: FileContent, thumb?: { w: number; h: number }, onPro
     // through the SDK, not fetch: OAuth access tokens expire every few minutes and it refreshes them
     const viaSdk = () => client.http.authedRequest<Blob>(Method.Get, http.pathname, Object.fromEntries(http.searchParams), undefined,
       { baseUrl: http.origin, prefix: "", rawResponseBody: true }).then((b) => b.arrayBuffer());
-    p = (onProgress ? fetchProgress(http, onProgress, (c.info as { size?: number } | undefined)?.size, signal).then((b) => b ?? viaSdk()) : viaSdk())
+    const download = () => (onProgress ? fetchProgress(http, onProgress, (c.info as { size?: number } | undefined)?.size, signal).then((b) => b ?? viaSdk()) : viaSdk())
+      .then((buf) => { cachePut(cacheKey, buf); return buf; });
+    p = cacheGet(cacheKey).then((hit) => hit ?? download())
       // typed so <audio>/<video> don't have to sniff; thumbnails may be another image type, so leave those untyped
       .then(async (buf) => URL.createObjectURL(new Blob([c.file ? await decryptAttachment(buf, c.file) : buf],
         { type: thumb ? "" : c.info?.mimetype ?? c.file?.mimetype ?? "" })));
@@ -709,17 +730,33 @@ export async function accountManageUrl(action?: string) {
 
 // ---------- search ----------
 
-/** Server-side search; finds nothing in encrypted rooms. */
+/** Server-side search; finds nothing in encrypted rooms. Throws if the server couldn't search. */
 export async function searchServer(term: string, roomId?: string): Promise<MatrixEvent[]> {
-  try {
-    const r = await client.search({ body: { search_categories: { room_events: { search_term: term, order_by: SearchOrderBy.Recent, filter: roomId ? { rooms: [roomId] } : {} /* Conduit rejects a missing filter */ } } } });
-    return (r.search_categories.room_events?.results ?? []).map((x) => new MatrixEvent(x.result));
-  } catch {
-    return [];
-  }
+  const r = await client.search({ body: { search_categories: { room_events: { search_term: term, order_by: SearchOrderBy.Recent, filter: roomId ? { rooms: [roomId] } : {} /* Conduit rejects a missing filter */ } } } });
+  return (r.search_categories.room_events?.results ?? []).map((x) => new MatrixEvent(x.result));
 }
 
 export const isEncrypted = (room: Room) => room.hasEncryptionStateEvent();
+
+let useHistoryFilter = true; // Conduit rejected some /messages filters; drop it after the first refusal
+
+/** One page (newest first) of a room's messages from `from` (null = the latest), apart from the live timeline, decrypted.
+ *  end: where the next older page starts, null at the start of history. */
+export async function historyPage(room: Room, from: string | null): Promise<{ events: MatrixEvent[]; end: string | null }> {
+  let r;
+  try {
+    const f = new Filter(client.getUserId());
+    f.setDefinition({ room: { timeline: { types: ["m.room.message", "m.room.encrypted"] } } });
+    r = await client.createMessagesRequest(room.roomId, from, 100, Direction.Backward, useHistoryFilter ? f : undefined);
+  } catch (e) {
+    if (!useHistoryFilter) throw e;
+    useHistoryFilter = false;
+    return historyPage(room, from);
+  }
+  const events = r.chunk.map(client.getEventMapper({ decrypt: false }));
+  await Promise.all(events.map((e) => client.decryptEventIfNeeded(e).catch(() => {})));
+  return { events, end: r.chunk.length && r.end ? r.end : null };
+}
 
 /** Page the live timeline back and decrypt what arrived. Resolves to whether older history remains. */
 export async function searchOlder(room: Room, pages = 5): Promise<boolean> {

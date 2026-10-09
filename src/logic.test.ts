@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applyFolderOrder, moveFolder, byListOrder, endpointOf, inArchive, isUnread, parseStats, fmtStats } from "./logic.ts";
-import { aliasLocalpart, buildRows, roomName, dayLabel, downsample, fmtDuration, inFolder, isUserId, formatMessage, parseGeoUri, spaceRooms, stamp, normalizeServer, normalize, lastSeen, tallyPoll, fitSize, type Msg } from "./logic.ts";
+import { aliasLocalpart, buildRows, roomName, dayLabel, downsample, fmtDuration, inFolder, isUserId, formatMessage, parseGeoUri, spaceRooms, stamp, normalizeServer, normalize, matchRange, toEvict, hashPin, lockDelay, lastSeen, tallyPoll, fitSize, type Msg } from "./logic.ts";
 
 const T = new Date("2026-09-30T12:00:00").getTime();
 const m = (id: string, sender: string, min: number, kind: Msg["kind"] = "msg"): Msg => ({ id, sender, ts: T + min * 60_000, kind });
@@ -314,4 +314,34 @@ test("parseStats: video over audio, simulcast adds up, bitrate from the last sam
   assert.equal(fmtStats(b), "1280×720 · 30fps · 1200kbps · 1.3% · 42ms · VP8");
   const audio = parseStats([{ type: "inbound-rtp", kind: "audio", bytesReceived: 10, packetsLost: 1, packetsReceived: 199, timestamp: 5 }], "in");
   assert.deepEqual([audio.w, audio.loss], [undefined, 0.5]);
+});
+
+test("matchRange: normalized match mapped back to the original text", () => {
+  assert.deepEqual(matchRange("سلام علي", "علی"), [5, 8]); // Arabic yeh in the text
+  assert.deepEqual(matchRange("می\u200cروم خانه", "میروم"), [0, 6]); // ZWNJ inside the match
+  assert.deepEqual(matchRange("Hello World", "world"), [6, 11]);
+  assert.equal(matchRange("abc", "x"), null);
+  assert.equal(matchRange("abc", ""), null);
+});
+
+test("toEvict drops the oldest until the rest fit", () => {
+  const e: [string, number][] = [["a", 40], ["b", 30], ["c", 20], ["d", 10]];
+  assert.deepEqual(toEvict(e, 100), []);
+  assert.deepEqual(toEvict(e, 60), ["a"]);
+  assert.deepEqual(toEvict(e, 25), ["a", "b", "c"]);
+  assert.deepEqual(toEvict(e, 0), ["a", "b", "c", "d"]);
+});
+
+test("hashPin: same PIN and salt agree, anything else doesn't", async () => {
+  const a = await hashPin("1234", "salt", 1000);
+  assert.equal(await hashPin("1234", "salt", 1000), a);
+  assert.notEqual(await hashPin("1235", "salt", 1000), a);
+  assert.notEqual(await hashPin("1234", "other", 1000), a);
+});
+
+test("lockDelay: free tries, then doubling up to an hour", () => {
+  assert.equal(lockDelay(4), 0);
+  assert.equal(lockDelay(5), 30_000);
+  assert.equal(lockDelay(6), 60_000);
+  assert.equal(lockDelay(30), 3_600_000);
 });
