@@ -55,8 +55,9 @@ export async function setPin(pin: string) {
   save({ salt, hash: await hashPin(pin, salt, ITER), iter: ITER, len: pin.length, after: c?.after ?? 5, bio: c?.bio ?? false });
 }
 export const setLockOpts = (p: Partial<Pick<LockConf, "after" | "bio">>) => { const c = lockConf(); if (c) save({ ...c, ...p }); };
-export function removeLock() {
+/** keepLocked: the PIN is forgotten and every account is being signed out; the app stays covered until the reload. */
+export function removeLock(keepLocked = false) {
   save(null);
   localStorage.removeItem(FAILS);
-  setLocked(false);
+  if (!keepLocked) setLocked(false);
 }

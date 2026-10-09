@@ -1258,5 +1258,7 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .pin-keys button:disabled { opacity: 0.4; cursor: default; }
 .pin-keys .pin-ok { background: var(--accent); color: #fff; }
 .lock-forgot { color: var(--muted); font-size: 14px; }
+.lock-forget { width: min(380px, 100%); display: flex; flex-direction: column; gap: 14px; padding: 16px; border-radius: 16px; background: var(--panel); text-align: start; }
+.lock-forget p { margin: 0; line-height: 1.6; }
 .sheet .pinpad { margin: 12px auto; }
 .sheet .pin-keys button:not(.pin-ok) { background: var(--hover); }

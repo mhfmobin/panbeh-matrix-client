@@ -7,7 +7,6 @@ import { checkPin, lockConf, removeLock, setLockOpts, setPin, unlock, unlockedBy
 import { num } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 import { Select, Sheet, toast } from "./common.tsx";
-import { confirmDialog } from "./dialog.tsx";
 
 const MIN = 4, MAX = 8;
 
@@ -70,7 +69,7 @@ function useWait() {
 
 /** Covers the app until the PIN (or a finger) is given. */
 export function LockScreen() {
-  const c = lockConf()!;
+  const [c] = useState(() => lockConf()!); // kept: forgetting deletes it while this is still on screen
   const [shake, setShake] = useState(0);
   const [wait, rewait] = useWait();
   const [bio, setBio] = useState(false);
@@ -80,16 +79,27 @@ export function LockScreen() {
     if (!c.bio) return;
     biometricAvailable().then((a) => { setBio(a); if (a) tryBio(); });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const forgot = () => confirmDialog("رمز را فراموش کرده‌اید؟ قفل برداشته می‌شود و همه‌ی حساب‌ها از این دستگاه خارج می‌شوند. پیام‌های رمزنگاری‌شده فقط با کلید بازیابی دوباره خوانده می‌شوند.", { danger: true, ok: "خروج از همه‌ی حساب‌ها" })
-    .then((y) => { if (y) { removeLock(); void logoutAll(); } });
+  // asked here, not with confirmDialog: dialogs sit under the lock screen, and lifting them would show the app's over it
+  const [forgetting, setForgetting] = useState<"ask" | "busy" | null>(null);
+  const forget = () => { setForgetting("busy"); removeLock(true); void logoutAll(); }; // logout reloads
   return (
     <div className="lock-screen wallpaper" role="dialog" aria-modal="true" aria-label="پنبه قفل است">
       <div className="login-logo">✦</div>
+      {forgetting ? (
+        <div className="lock-forget">
+          <p>رمز را فراموش کرده‌اید؟ قفل برداشته می‌شود و همه‌ی حساب‌ها از این دستگاه خارج می‌شوند. پس از ورود دوباره، پیام‌های رمزنگاری‌شده‌ی قبلی فقط با کلید بازیابی یا تأیید از دستگاهی دیگر خوانده می‌شوند.</p>
+          <div className="modal-actions">
+            <button disabled={forgetting === "busy"} onClick={() => setForgetting(null)}>لغو</button>
+            <button className="danger" disabled={forgetting === "busy"} onClick={forget}>{forgetting === "busy" ? "در حال خروج…" : "خروج از همه‌ی حساب‌ها"}</button>
+          </div>
+        </div>
+      ) : <>
       <PinPad title="رمز پنبه را وارد کنید" len={c.len} shake={shake} disabled={wait > 0}
         sub={wait > 0 ? `${num(wait)} ثانیه‌ی دیگر دوباره امتحان کنید` : undefined}
         extra={bio ? <button onClick={tryBio} aria-label="اثر انگشت"><Icon name="fingerprint" /></button> : undefined}
         onDone={(pin) => void unlock(pin).then((ok) => { if (!ok) { setShake((n) => n + 1); rewait(); navigator.vibrate?.(200); } })} />
-      <button className="plain lock-forgot" onClick={forgot}>رمز را فراموش کرده‌اید؟</button>
+      <button className="plain lock-forgot" onClick={() => setForgetting("ask")}>رمز را فراموش کرده‌اید؟</button>
+      </>}
     </div>
   );
 }
