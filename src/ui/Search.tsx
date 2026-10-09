@@ -45,19 +45,24 @@ function ResultRow({ ev, term, showRoom, onClick }: { ev: MatrixEvent; term: str
   );
 }
 
-/** Debounced term (>= MIN chars) -> results; `run` is re-evaluated whenever `deps` change. */
-function useResults(term: string, run: (t: string) => Promise<MatrixEvent[]> | MatrixEvent[], deps: unknown[] = []) {
-  const [res, setRes] = useState<MatrixEvent[] | null>(null);
+/** Server results, or none if the server couldn't search (flagged through `failed`). */
+const serverOr = (p: Promise<MatrixEvent[]>, failed: () => void) => p.catch(() => { failed(); return []; });
+
+/** Debounced term (>= MIN chars) -> results, and whether the server search failed; `run` is re-evaluated whenever `deps` change. */
+function useResults(term: string, run: (t: string, failed: () => void) => Promise<MatrixEvent[]> | MatrixEvent[], deps: unknown[] = []) {
+  const [res, setRes] = useState<{ evs: MatrixEvent[]; failed: boolean } | null>(null);
   useEffect(() => {
     const t = term.trim();
     if (t.length < MIN) { setRes(null); return; }
-    let live = true;
+    let live = true, failed = false;
     setRes(null);
-    const h = setTimeout(async () => { const r = await run(t); if (live) setRes(r); }, 300);
+    const h = setTimeout(async () => { const evs = await run(t, () => { failed = true; }); if (live) setRes({ evs, failed }); }, 300);
     return () => { live = false; clearTimeout(h); };
   }, [term, ...deps]); // eslint-disable-line react-hooks/exhaustive-deps
   return res;
 }
+
+const ServerFailed = () => <p className="muted">جستجو روی سرور انجام نشد؛ فقط پیام‌های بارگذاری‌شده جستجو شدند</p>;
 
 export function SearchSheet({ room, onJump, onClose }: { room: Room; onJump: (eventId: string, fromServer: boolean) => void; onClose: () => void }) {
   const [q, setQ] = useState("");
@@ -65,9 +70,10 @@ export function SearchSheet({ room, onJump, onClose }: { room: Room; onJump: (ev
   const [more, setMore] = useState(() => !!room.getLiveTimeline().getPaginationToken(EventTimeline.BACKWARDS));
   const [paging, setPaging] = useState(false);
   const [round, setRound] = useState(0); // bumped after paging back: rescan
-  const res = useResults(q, (t) => (enc ? scanLoaded(room, t)
+  const found = useResults(q, (t, failed) => (enc ? scanLoaded(room, t)
     // the server doesn't fold ي/ك or ZWNJ; the local scan catches loaded messages it misses
-    : searchServer(t, room.roomId).then((s) => merge([...s, ...scanLoaded(room, t)]))), [round]);
+    : serverOr(searchServer(t, room.roomId), failed).then((s) => merge([...s, ...scanLoaded(room, t)]))), [round]);
+  const res = found?.evs;
   const older = async () => { setPaging(true); setMore(await searchOlder(room)); setPaging(false); setRound((r) => r + 1); };
   const ready = q.trim().length >= MIN;
   return (
@@ -79,6 +85,7 @@ export function SearchSheet({ room, onJump, onClose }: { room: Room; onJump: (ev
         </label>
         {enc && <p className="muted">در گفتگوهای رمزنگاری‌شده فقط پیام‌های بارگذاری‌شده جستجو می‌شوند</p>}
         {ready && !res && <p className="muted">در حال جستجو…</p>}
+        {found?.failed && <ServerFailed />}
         {res?.length === 0 && <p className="muted">پیامی پیدا نشد</p>}
         {res?.map((ev) => <ResultRow key={ev.getId()} ev={ev} term={q} onClick={() => { onClose(); onJump(ev.getId()!, !enc); }} />)}
         {enc && ready && more && <button className="primary" disabled={paging} onClick={older}>{paging ? "در حال جستجو…" : "جستجو در پیام‌های قدیمی‌تر"}</button>}
@@ -90,17 +97,19 @@ export function SearchSheet({ room, onJump, onClose }: { room: Room; onJump: (ev
 /** Sidebar: messages matching across all joined chats. */
 // ponytail: global search only scans what's loaded in encrypted rooms; per-chat search can page back.
 export function MessageResults({ term, onPick }: { term: string; onPick: (roomId: string, eventId: string) => void }) {
-  const res = useResults(term, async (t) => {
+  const found = useResults(term, async (t, failed) => {
     const joined = client.getRooms().filter((r) => r.getMyMembership() === KnownMembership.Join);
-    const server = (await searchServer(t)).filter((e) => joined.some((r) => r.roomId === e.getRoomId()));
+    const server = (await serverOr(searchServer(t), failed)).filter((e) => joined.some((r) => r.roomId === e.getRoomId()));
     const local = joined.filter((r) => !r.isSpaceRoom() && isEncrypted(r)).flatMap((r) => scanLoaded(r, t));
     return merge([...server, ...local]).slice(0, 50);
   });
   if (term.trim().length < MIN) return null;
+  const res = found?.evs;
   return (
     <div className="msg-results">
       <h3>پیام‌ها</h3>
       {!res && <p className="muted">در حال جستجو…</p>}
+      {found?.failed && <ServerFailed />}
       {res?.length === 0 && <p className="muted">پیامی پیدا نشد</p>}
       {res?.map((ev) => <ResultRow key={ev.getId()} ev={ev} term={term} showRoom onClick={() => onPick(ev.getRoomId()!, ev.getId()!)} />)}
     </div>

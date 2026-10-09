@@ -710,14 +710,10 @@ export async function accountManageUrl(action?: string) {
 
 // ---------- search ----------
 
-/** Server-side search; finds nothing in encrypted rooms. */
+/** Server-side search; finds nothing in encrypted rooms. Throws if the server couldn't search. */
 export async function searchServer(term: string, roomId?: string): Promise<MatrixEvent[]> {
-  try {
-    const r = await client.search({ body: { search_categories: { room_events: { search_term: term, order_by: SearchOrderBy.Recent, filter: roomId ? { rooms: [roomId] } : {} /* Conduit rejects a missing filter */ } } } });
-    return (r.search_categories.room_events?.results ?? []).map((x) => new MatrixEvent(x.result));
-  } catch {
-    return [];
-  }
+  const r = await client.search({ body: { search_categories: { room_events: { search_term: term, order_by: SearchOrderBy.Recent, filter: roomId ? { rooms: [roomId] } : {} /* Conduit rejects a missing filter */ } } } });
+  return (r.search_categories.room_events?.results ?? []).map((x) => new MatrixEvent(x.result));
 }
 
 export const isEncrypted = (room: Room) => room.hasEncryptionStateEvent();
