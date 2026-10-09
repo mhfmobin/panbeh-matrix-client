@@ -1,6 +1,8 @@
 import { useCallback, useState } from "react";
 import { ClientEvent, EventType, RelationType, RoomEvent, RoomStateEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
-import { addToSpace, client, removeFromSpace, seenBy, setRoomAvatar } from "../matrix.ts";
+import { addToSpace, client, isDirect, removeFromSpace, seenBy, setRoomAvatar } from "../matrix.ts";
+import { matrixToLink, viaServers } from "../uri.ts";
+import { copyMessages } from "./Message.tsx";
 import { usePresence, useTick } from "../hooks.ts";
 import { JOIN_RULES, normalize, num, roleLabel, stamp } from "../logic.ts";
 import { Icon } from "../icons.tsx";
@@ -98,6 +100,12 @@ export function RoomInfo({ room, onClose }: { room: Room; onClose: () => void })
           <input type="checkbox" role="switch" checked={!isMuted(room)} disabled={busy} onChange={(e) => act(() => setMuted(room, !e.target.checked))} /></label>
       )}
       {!space && <button className="user-row" onClick={() => setMedia(true)}><span className="device-box"><Icon name="file" /></span><span><b>رسانه‌ها، فایل‌ها و پیوندها</b></span></button>}
+      {!isDirect(room) && (
+        // an alias needs no via; a bare room id does, or people outside it can't join over federation
+        <button className="user-row" onClick={() => { const a = room.getCanonicalAlias(); void copyMessages(a ? matrixToLink(a) : matrixToLink(room.roomId, undefined, viaServers(room.getJoinedMembers().map((m) => m.userId)))); }}>
+          <span className="device-box"><Icon name="link" /></span><span><b>{space ? "کپی پیوند فضا" : "کپی پیوند گفتگو"}</b></span>
+        </button>
+      )}
       {canManage(room) && (
         <button className="user-row" onClick={() => setView("settings")}>
           <span className="device-box"><Icon name="settings" /></span>

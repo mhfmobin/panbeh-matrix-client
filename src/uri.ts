@@ -60,3 +60,15 @@ export const parseMatrixLink = (s: string): Target | null => {
 /** The `matrix.to` hash form (`#/!room:server/$event`) of a page hash such as location.hash. */
 export const parseMatrixHash = (hash: string): Target | null =>
   hash.startsWith("#/") ? fromMatrixTo("https://matrix.to/" + hash) : null;
+
+/** Up to 3 homeservers of the room's joined members, most members first (what Element sends as ?via=). */
+export function viaServers(userIds: string[]): string[] {
+  const n = new Map<string, number>();
+  for (const u of userIds) { const s = u.slice(u.indexOf(":") + 1); n.set(s, (n.get(s) ?? 0) + 1); }
+  return [...n].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([s]) => s);
+}
+
+/** `https://matrix.to/#/<id>[/<$event>][?via=…]`: the inverse of fromMatrixTo. */
+export const matrixToLink = (id: string, eventId?: string, via: string[] = []) =>
+  "https://matrix.to/#/" + encodeURIComponent(id) + (eventId ? "/" + encodeURIComponent(eventId) : "")
+  + (via.length ? "?" + new URLSearchParams(via.map((v) => ["via", v])) : "");
