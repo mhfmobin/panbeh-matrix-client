@@ -3,9 +3,9 @@ import { createRoot } from "react-dom/client";
 import { ClientEvent, SyncState } from "matrix-js-sdk";
 import { cancelAdd, client, finishOAuth, isAdding, isOAuthCallback, logout, recoveryState, savedSession, start } from "./matrix.ts";
 import { useTick } from "./hooks.ts";
-import { startNotifications } from "./notify.ts";
+import { onNotifyButton, startNotifications } from "./notify.ts";
 import { startSearchIndex } from "./searchIndex.ts";
-import { isHeadless, isNative, onCallAction, onOpenLink, onOpenRoom, onShare, requestNotifyPermission, setBackgroundService } from "./native.ts";
+import { isHeadless, isNative, onCallAction, onNotifyAction, onOpenLink, onOpenRoom, onShare, requestNotifyPermission, setBackgroundService } from "./native.ts";
 import { onNativeCall, startCalls } from "./call.ts";
 import { startBackButton } from "./back.ts";
 import { drainLinks, handleIncomingLink } from "./openTarget.ts";
@@ -83,6 +83,7 @@ function Shell() {
   useEffect(() => (synced ? onCallAction((a) => void onNativeCall(a).catch((e) => alertDialog(errText(e)))) : undefined), [synced]);
   useEffect(startBackButton, []);
   useEffect(() => onOpenRoom((id) => { location.hash = id; }), []);
+  useEffect(() => onNotifyAction((a) => void onNotifyButton(a)), []);
   useEffect(() => { // links from outside (Android intents, desktop protocol handler, web handler) wait here until the first sync
     const off = [onOpenLink(handleIncomingLink), onDesktopLink(handleIncomingLink)];
     return () => off.forEach((f) => f());
@@ -157,6 +158,7 @@ const Splash = ({ text }: { text: string }) => (
 function headless() {
   const s = savedSession();
   if (!s || !loadPrefs().notify) return setBackgroundService(false);
+  onNotifyAction((a) => void onNotifyButton(a)); // before start: a button may be what woke the service
   start(s).then(() => { startNotifications(); startSearchIndex(); startCalls(); onCallAction((a) => void onNativeCall(a)); }, (e) => console.error("headless start failed", e));
 }
 

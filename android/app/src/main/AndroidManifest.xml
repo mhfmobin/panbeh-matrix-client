@@ -80,6 +80,11 @@
             android:name=".CallReceiver"
             android:exported="false" />
 
+        <!-- reply / mark as read on a message notification -->
+        <receiver
+            android:name=".NotifyReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".BootReceiver"
             android:exported="false">

@@ -120,9 +120,14 @@ public class PanbehPlugin extends Plugin {
 
     /** Hands a call action to the app's page if it's running and listening. */
     static boolean deliverCall(JSObject a) {
+        return deliver("callAction", a);
+    }
+
+    /** An event for the app's page (callAction, notifyAction) if it's running and listening. */
+    static boolean deliver(String event, JSObject a) {
         PanbehPlugin p = instance;
-        if (p == null || !SyncService.activityAlive || !p.hasListeners("callAction")) return false;
-        p.notifyListeners("callAction", a);
+        if (p == null || !SyncService.activityAlive || !p.hasListeners(event)) return false;
+        p.notifyListeners(event, a);
         return true;
     }
 
@@ -579,8 +584,10 @@ public class PanbehPlugin extends Plugin {
         String roomId = call.getString("roomId");
         if (roomId == null) { call.reject("roomId required"); return; }
         if (!(MainActivity.visible && roomId.equals(call.getString("openRoom")))) {
-            Notifier.show(getContext(), roomId, call.getString("title", ""), call.getString("body", ""),
-                call.getString("icon"), call.getBoolean("sound", true));
+            String title = call.getString("title", ""), body = call.getString("body", "");
+            Long ts = call.getLong("ts");
+            Notifier.show(getContext(), roomId, title, call.getString("sender", ""), call.getString("text", body),
+                ts == null ? System.currentTimeMillis() : ts, call.getBoolean("group", false), call.getString("icon"), call.getBoolean("sound", true));
         }
         call.resolve();
     }
