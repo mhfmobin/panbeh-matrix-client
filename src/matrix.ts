@@ -236,6 +236,7 @@ export async function finishOAuth() {
 export async function logout() {
   // drop only this account, first, so a hang below can't leave a dead session behind
   const left = sessions().filter((x) => x.userId !== current?.userId);
+  if (current) localStorage.removeItem(`panbeh.drafts:${current.userId}`);
   setSessions(left);
   if (left.length) localStorage.setItem(ACTIVE_KEY, left[0].userId); else localStorage.removeItem(ACTIVE_KEY);
   if (isNative) { nativeCancelAll(); if (!left.length) setBackgroundService(false); }

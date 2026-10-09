@@ -17,12 +17,24 @@ const MEDIA = ["m.image", "m.video", "m.file"];
 export const EDITABLE = ["m.text", "m.emote", "m.notice", ...MEDIA];
 /** A media message's caption (MSC2530): body differs from filename; otherwise body is just the name. */
 export const captionOf = (c: IContent): string => (c.filename && c.body !== c.filename ? c.body ?? "" : "");
-const drafts = new Map<string, string>();
+// per account, kept in localStorage so a reload or Android killing the app doesn't lose them; read once the client exists
+const draftsKey = () => `panbeh.drafts:${client.getUserId()}`;
+let drafts: Map<string, string> | null = null;
+const getDrafts = () => {
+  if (!drafts) try { drafts = new Map(Object.entries(JSON.parse(localStorage.getItem(draftsKey()) ?? "{}"))); } catch { drafts = new Map(); }
+  return drafts;
+};
+function setDraft(key: string, text: string) {
+  const d = getDrafts();
+  if ((d.get(key) ?? "") === text) return;
+  if (text) d.set(key, text); else d.delete(key);
+  try { localStorage.setItem(draftsKey(), JSON.stringify(Object.fromEntries(d))); } catch { /* full or blocked: memory only */ }
+}
 const shared = new Map<string, File[]>(); // shared from another app, waiting for the chat to open
 
 /** "Share with Panbeh": text becomes the chat's draft, files open the send dialog. */
 export function shareInto(roomId: string, text: string, files: File[]) {
-  if (text) drafts.set(roomId, [drafts.get(roomId), text].filter(Boolean).join("\n"));
+  if (text) setDraft(roomId, [getDrafts().get(roomId), text].filter(Boolean).join("\n"));
   if (files.length) shared.set(roomId, files);
 }
 export function takeShared(roomId: string) {
@@ -37,7 +49,7 @@ type Suggestion = Mention & { mxc?: string | null };
 
 export function Composer({ room, threadId, mode, setMode, files, setFiles }: Props) {
   const draftKey = room.roomId + (threadId ?? "");
-  const [text, setText] = useState(drafts.get(draftKey) ?? "");
+  const [text, setText] = useState(getDrafts().get(draftKey) ?? "");
   const mediaEdit = mode?.kind === "edit" && MEDIA.includes(mode.ev.getContent().msgtype ?? "");
   const [menu, setMenu] = useState(false);
   const [menuShown, menuClosing] = useExit(menu);
@@ -56,7 +68,7 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
   const editing = useRef(false);
   const mentions = useRef<Mention[]>([]); // people picked from the @ list; turned into links on send
 
-  useEffect(() => { drafts.set(draftKey, editing.current ? stash.current : text); }, [draftKey, text]);
+  useEffect(() => { setDraft(draftKey, editing.current ? stash.current : text); }, [draftKey, text]);
   const mounted = useRef(false);
   useEffect(() => { // autosize
     const el = ta.current;
