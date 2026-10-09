@@ -61,7 +61,7 @@ function playNext(ev: MatrixEvent) {
   const evs = room ? eventsAround(room, ev) : [];
   const next = evs.slice(evs.findIndex((e) => e.getId() === ev.getId()) + 1).find((e) => e.getContent().msgtype === "m.audio" && !e.isRedacted());
   if (evs.some((e) => e.getId() === ev.getId()) && next) return void start(trackFor(next));
-  set({ pos: 0, state: "paused" });
+  stopPlayer(); // the last one: the bar above the chat closes
 }
 
 audio.onplay = () => set({ state: "playing" });

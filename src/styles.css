@@ -697,7 +697,7 @@ input[role="switch"]:checked::before { transform: translateX(-18px); }
 .now-playing-text b { font-size: 13px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .now-playing-text span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: plaintext; text-align: right; }
 .now-playing-time { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
-.now-playing-line { position: absolute; inset-inline-start: 0; bottom: 0; height: 2px; background: var(--accent); pointer-events: none; }
+.now-playing-line { position: absolute; left: 0; bottom: 0; /* fills left to right like the waveform, RTL or not */ height: 2px; background: var(--accent); pointer-events: none; }
 
 /* ---------- profile / forwarding ---------- */
 button.msg-sender { display: block; max-width: 100%; text-align: start; }
