@@ -85,7 +85,7 @@ export function Settings({ onClose, onSecurityChange }: { onClose: () => void; o
   if (view === "deactivate") return <Sheet title="غیرفعال‌سازی حساب" onClose={back}>{isOAuth() ? <AccountPage action="org.matrix.account_deactivate" /> : <Deactivate />}</Sheet>;
 
   return (
-    <Sheet title="تنظیمات" onClose={onClose}>
+    <Sheet key="main" title="تنظیمات" onClose={onClose}>{/* key: a sub-page's Sheet sits in this same slot; reusing it would keep its "closing" state and leave settings stuck invisible */}
       <MyProfile />
 
       <h3>حساب‌ها</h3>
