@@ -249,7 +249,10 @@ button:disabled { opacity: 0.6; cursor: default; }
 .room-head-text span.typing, .room-preview.typing { color: var(--accent); }
 
 .timeline-wrap { position: relative; flex: 1; min-height: 0; }
-.timeline { height: 100%; overflow-x: hidden; } /* a swiped row (translateX) mustn't scroll the RTL list sideways */
+.timeline {
+  height: 100%; overflow-x: hidden; /* a swiped row (translateX) mustn't scroll the RTL list sideways */
+  -webkit-mask-image: linear-gradient(to top, transparent, #000 var(--composer-h, 0px)); mask-image: linear-gradient(to top, transparent, #000 var(--composer-h, 0px));
+}
 .row { max-width: 760px; margin: 0 auto; display: flow-root; } /* flow-root: child margins count toward the measured height */
 
 .pill {
@@ -386,18 +389,20 @@ div.msg-text blockquote { margin: 4px 0; padding-inline-start: 10px; border-inli
 @keyframes pop { from { opacity: 0; transform: scale(0.9) translateY(4px); } }
 
 /* ---------- composer ---------- */
-.composer { flex: none; width: 100%; max-width: 760px; margin: 0 auto; padding: 4px 12px 12px; }
-.composer-mode {
-  display: flex; align-items: center; gap: 10px; padding: 8px; padding-inline-start: 14px; margin-bottom: -10px; padding-bottom: 18px;
-  background: var(--panel); border-radius: 18px 18px 0 0; color: var(--accent); font-size: 14px;
+/* floats over the timeline: messages scroll under it and fade out (mask on .timeline) */
+.composer { position: absolute; z-index: 4; inset-inline: 0; bottom: 0; width: 100%; max-width: 760px; margin: 0 auto; padding: 4px 12px 12px; }
+.composer-mode { display: flex; align-items: center; gap: 10px; padding: 6px 4px 0; padding-inline-start: 14px; color: var(--accent); font-size: 14px; }
+.composer > .composer-mode { /* standalone above the voice recorder */
+  margin-bottom: 8px; padding-bottom: 6px; background: var(--panel); border-radius: 18px; box-shadow: var(--shadow);
 }
 .composer-mode div { flex: 1; min-width: 0; display: grid; border-inline-start: 2px solid var(--accent); padding-inline-start: 8px; }
 .composer-mode span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .composer-row { display: flex; align-items: flex-end; gap: 8px; }
 .composer-row label.icon-btn { margin-bottom: 7px; background: var(--panel); box-shadow: var(--shadow); }
+.composer-field { flex: 1; min-width: 0; display: grid; background: var(--panel); border-radius: 18px; box-shadow: var(--shadow); }
 .composer-row textarea {
-  flex: 1; min-height: 54px; max-height: 200px; padding: 16px 16px; resize: none; border: 0; outline: none;
-  border-radius: 18px; background: var(--panel); box-shadow: var(--shadow); line-height: 1.4;
+  min-height: 54px; max-height: 200px; padding: 16px 16px; resize: none; border: 0; outline: none;
+  border-radius: inherit; background: transparent; line-height: 1.4;
 }
 .send-btn {
   width: 54px; height: 54px; flex: none; display: grid; place-items: center; border-radius: 50%;
@@ -588,7 +593,6 @@ input[role="switch"]:checked::before { transform: translateX(-18px); }
 .modal-actions button.danger { width: auto; margin: 0; background: #e53935; color: #fff; }
 
 /* ---------- attach menu / mention list ---------- */
-.composer { position: relative; }
 .attach { position: relative; flex: none; margin-bottom: 7px; }
 .attach > .icon-btn { background: var(--panel); box-shadow: var(--shadow); }
 .menu-backdrop { position: fixed; inset: 0; z-index: 20; }
@@ -847,7 +851,7 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
   background: color-mix(in srgb, var(--panel) 85%, transparent);
 }
 .jump-bottom {
-  position: absolute; right: 16px; bottom: 12px; z-index: 3; display: grid; place-items: center; width: 46px; height: 46px;
+  position: absolute; right: 16px; bottom: calc(var(--composer-h, 0px) + 12px); z-index: 5; display: grid; place-items: center; width: 46px; height: 46px;
   border-radius: 50%; background: var(--panel); color: var(--muted); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
 }
 .jump-bottom:hover { color: var(--text); }
@@ -964,7 +968,8 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
   .msg-text.jumbo { font-size: 40px; }
   .composer { padding: 4px 8px 8px; }
   .composer-row { gap: 6px; }
-  .composer-row textarea { min-height: 46px; padding: 12px 14px; font-size: 15px; line-height: 1.45; border-radius: 23px; }
+  .composer-field { border-radius: 23px; }
+  .composer-row textarea { min-height: 46px; padding: 12px 14px; font-size: 15px; line-height: 1.45; }
   .send-btn { width: 46px; height: 46px; }
   .composer-row label.icon-btn { margin-bottom: 3px; }
   .composer-row .icon-btn { width: 46px; height: 46px; }
