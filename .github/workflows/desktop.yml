@@ -32,6 +32,8 @@ jobs:
           cache: npm
 
       - name: Build web app
+        env:
+          VITE_APP_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('0.1.0-{0}', github.run_number) }}
         run: |
           npm ci
           npm test
