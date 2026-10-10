@@ -180,6 +180,7 @@ export function Settings({ onClose, onSecurityChange }: { onClose: () => void; o
       )}
 
       <button className="danger" onClick={() => confirmDialog("از این دستگاه خارج می‌شوید؟", { danger: true }).then((y) => y && void logout())}>خروج از این حساب</button>
+      <p className="muted">پنبه <span dir="ltr">{import.meta.env.VITE_APP_VERSION ?? "dev"}</span></p>
     </Sheet>
   );
 }
