@@ -453,6 +453,8 @@ div.msg-text blockquote { margin: 4px 0; padding-inline-start: 10px; border-inli
 .room-name, .room-preview, .room-head-text b, .profile b, .invite h2, .composer-mode span, .user-row b, .chip, .info-text h2 { unicode-bidi: plaintext; text-align: right; }
 /* typed text picks its direction per line; empty fields (placeholder) stay RTL — dir=auto would make them LTR */
 .search input, .composer textarea, .send-caption, .card input, .form input, .modal input:not([role]) { unicode-bidi: plaintext; }
+/* password dots have no direction of their own, so they'd follow the page's RTL; once typed, they fill left to right */
+input[type="password"]:not(:placeholder-shown) { direction: ltr; }
 
 /* ---------- new chat ---------- */
 .fab {
