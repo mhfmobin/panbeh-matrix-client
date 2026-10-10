@@ -82,7 +82,7 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
     if (!el) return;
     const from = el.offsetHeight;
     el.style.height = "auto";
-    const to = Math.min(el.scrollHeight, 200);
+    const to = Math.min(el.scrollHeight, parseFloat(getComputedStyle(el).maxHeight)); // cap lives in CSS (40dvh)
     if (from && from !== to && !reducedMotion()) { el.style.height = from + "px"; void el.offsetHeight; } // transition from where it was
     el.style.height = to + "px";
   }, [text, recording]);
@@ -255,6 +255,7 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
   };
 
   const canRecord = !text.trim() && mode?.kind !== "edit" && "MediaRecorder" in window;
+  const attachAway = !!text.trim() || mode?.kind === "edit";
 
   const bar = (
     <>
@@ -290,7 +291,7 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
         <VoiceRecorder onDone={(v) => { setRecording(false); if (v) { startUpload(room, v.file, threadId, mode?.kind === "reply" ? mode.ev : undefined, v.extra); setMode(null); } }} />
       ) : (
         <div className="composer-row">
-          {/* RTL: first child sits on the right — send/mic there, attach + emoji on the left */}
+          {/* RTL: first child sits on the right — send/mic there, the pill on the left */}
           {canRecord ? (
             <button className="send-btn" onClick={() => setRecording(true)} title="پیام صوتی" aria-label="ضبط پیام صوتی"><Icon key="mic" name="mic" /></button>
           ) : (
@@ -299,28 +300,29 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
               <Icon key={mode?.kind === "edit" ? "check" : "send"} name={mode?.kind === "edit" ? "check" : "send"} />
             </button>
           )}
+          {/* Telegram: one pill — emoji, text, attach (attach slides away while typing) */}
           <div className="composer-field">
             {bar}
+            <button className="icon-btn emoji-toggle" title="اموجی و استیکر" aria-label="اموجی و استیکر" aria-expanded={emoji} onClick={() => setEmoji((x) => !x)}><Icon name="smile" /></button>
             <textarea ref={ta} rows={1} value={text} placeholder={mediaEdit ? "کپشن…" : "پیام"} aria-label="پیام"
               onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart); setSel(0); typing(!!e.target.value); }}
               onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
               onKeyDown={onKey} onPaste={onPaste} onBlur={() => typingAt.current && typing(false)} />
-          </div>
-          <button className="icon-btn emoji-toggle" title="اموجی و استیکر" aria-label="اموجی و استیکر" aria-expanded={emoji} onClick={() => setEmoji((x) => !x)}><Icon name="smile" /></button>
-          <div className="attach">
-            {/* outside the menu: picking closes the menu, and an unmounted input never gets its change event */}
-            <input ref={fileInput} type="file" multiple hidden onChange={(e) => { const f = [...e.target.files!]; setFiles((x) => [...x, ...f]); e.target.value = ""; }} />
-            <button className="icon-btn" title="پیوست" aria-label="پیوست" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><Icon name="attach" /></button>
-            {menuShown && (
-              <>
-                <div className="menu-backdrop" onClick={() => setMenu(false)} />
-                <div className={"attach-menu" + (menuClosing ? " closing" : "")} role="menu" onClick={() => setMenu(false)}>
-                  <button role="menuitem" onClick={() => fileInput.current?.click()}><Icon name="file" /> فایل یا عکس</button>
-                  <button role="menuitem" onClick={() => setPollForm(true)}><Icon name="poll" /> نظرسنجی</button>
-                  <button role="menuitem" onClick={shareLocation}><Icon name="location" /> موقعیت مکانی</button>
-                </div>
-              </>
-            )}
+            <div className={"attach" + (attachAway ? " away" : "")}>
+              {/* outside the menu: picking closes the menu, and an unmounted input never gets its change event */}
+              <input ref={fileInput} type="file" multiple hidden onChange={(e) => { const f = [...e.target.files!]; setFiles((x) => [...x, ...f]); e.target.value = ""; }} />
+              <button className="icon-btn" title="پیوست" aria-label="پیوست" aria-expanded={menu} aria-hidden={attachAway} tabIndex={attachAway ? -1 : undefined} onClick={() => setMenu((m) => !m)}><Icon name="attach" /></button>
+              {menuShown && (
+                <>
+                  <div className="menu-backdrop" onClick={() => setMenu(false)} />
+                  <div className={"attach-menu" + (menuClosing ? " closing" : "")} role="menu" onClick={() => setMenu(false)}>
+                    <button role="menuitem" onClick={() => fileInput.current?.click()}><Icon name="file" /> فایل یا عکس</button>
+                    <button role="menuitem" onClick={() => setPollForm(true)}><Icon name="poll" /> نظرسنجی</button>
+                    <button role="menuitem" onClick={shareLocation}><Icon name="location" /> موقعیت مکانی</button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
