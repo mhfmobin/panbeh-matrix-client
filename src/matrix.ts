@@ -238,6 +238,7 @@ export async function logout() {
   // drop only this account, first, so a hang below can't leave a dead session behind
   const left = sessions().filter((x) => x.userId !== current?.userId);
   if (current) localStorage.removeItem(`panbeh.drafts:${current.userId}`);
+  if (current) localStorage.removeItem(`panbeh.profile:${current.userId}`);
   if (current) indexedDB.deleteDatabase(`panbeh-search:${current.userId}`); // searchIndex.ts's local message index
   setSessions(left);
   if (left.length) localStorage.setItem(ACTIVE_KEY, left[0].userId); else localStorage.removeItem(ACTIVE_KEY);
@@ -265,6 +266,7 @@ export async function logoutAll() {
     // best effort, as in logout(): a blocked delete stays pending
     for (const n of [`matrix-js-sdk:${db.sync}`, `${db.crypto}::matrix-sdk-crypto`, `${db.crypto}::matrix-sdk-crypto-meta`, `panbeh-search:${s.userId}`]) indexedDB.deleteDatabase(n);
     localStorage.removeItem(`panbeh.drafts:${s.userId}`);
+    localStorage.removeItem(`panbeh.profile:${s.userId}`);
   }
   await logout();
 }

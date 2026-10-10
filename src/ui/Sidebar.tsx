@@ -125,6 +125,8 @@ export function Sidebar({ loading, selected, onSelect, onSettings, banner }: Pro
         {inArchiveView || inCalls
           ? <button className="icon-btn" onClick={() => inCalls ? setCalls(false) : setArchive(false)} title="بازگشت" aria-label="بازگشت"><Icon name="back" /></button>
           : <button className="icon-btn" onClick={onSettings} title="تنظیمات" aria-label="تنظیمات"><Icon name="settings" /></button>}
+        <svg className="logo" viewBox="6 6 96 96" role="img" aria-label="پنبه"><rect x="6" y="6" width="96" height="96" rx="22" />
+          <path d="M54,26 C56.5,45 63,51.5 82,54 C63,56.5 56.5,63 54,82 C51.5,63 45,56.5 26,54 C45,51.5 51.5,45 54,26 Z" /></svg>{/* build/icon.svg */}
         <label className="search">
           <Icon name="search" size={16} />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={inArchiveView ? "جستجو در همه" : "جستجو"} aria-label="جستجوی گفتگوها"

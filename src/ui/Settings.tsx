@@ -354,17 +354,23 @@ function PushRules() {
   );
 }
 
-/** My name + photo, read from the server (client.getUser can be missing or stale). */
+type ProfileInfo = { displayname?: string; avatar_url?: string };
+const profileKey = () => `panbeh.profile:${me()}`; // dropped in logout(), like drafts
+const cachedProfile = (): ProfileInfo => { try { return JSON.parse(localStorage.getItem(profileKey()) ?? "{}"); } catch { return {}; } };
+
+/** My name + photo, read from the server (client.getUser can be missing or stale); the last copy shows instantly meanwhile. */
 function MyProfile() {
-  const [profile, setProfile] = useState<{ displayname?: string; avatar_url?: string }>({});
-  const [name, setName] = useState("");
+  const [profile, setProfile] = useState(cachedProfile);
+  const [name, setName] = useState(() => profile.displayname ?? "");
   const [busy, setBusy] = useState(false);
+  const keep = (p: ProfileInfo) => { setProfile(p); try { localStorage.setItem(profileKey(), JSON.stringify(p)); } catch { /* not remembered */ } };
   useEffect(() => {
-    client.getProfileInfo(me()).then((p) => { setProfile(p); setName(p.displayname ?? ""); }, () => {});
+    const was = profile.displayname ?? "";
+    client.getProfileInfo(me()).then((p) => { keep(p); setName((n) => (n === was ? p.displayname ?? "" : n)); }, () => {}); // keep what they started typing
   }, []);
-  const act = async (fn: () => Promise<typeof profile>) => {
+  const act = async (fn: () => Promise<ProfileInfo>) => {
     setBusy(true);
-    try { const patch = await fn(); setProfile((p) => ({ ...p, ...patch })); } catch (e) { alertDialog(errText(e)); }
+    try { keep({ ...profile, ...(await fn()) }); } catch (e) { alertDialog(errText(e)); }
     setBusy(false);
   };
   const dirty = name.trim() !== "" && name.trim() !== (profile.displayname ?? "");
