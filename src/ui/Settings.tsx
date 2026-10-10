@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { SystemBars, SystemBarsStyle } from "@capacitor/core";
 import { ClientEvent, PushRuleActionName, PushRuleKind, RuleId, TweakName, type PushRuleAction } from "matrix-js-sdk";
 import { CryptoEvent, type DeviceVerificationStatus } from "matrix-js-sdk/lib/crypto-api/index.js";
 import { accountManageUrl, addAccount, client, sessions, switchAccount, deleteDevices, deviceManageUrl, isOAuth, logout, NeedsPassword, recoveryState, setBlocked, setMyAvatar, setShareLastSeen, setupRecovery, unlock, withPassword } from "../matrix.ts";
@@ -53,6 +54,8 @@ export function applyPrefs(p = loadPrefs()) {
   if (p.theme === "system") delete root.dataset.theme; else root.dataset.theme = p.theme;
   root.dataset.wallpaper = p.wallpaper;
   root.style.setProperty("--accent", p.accent);
+  // status-bar icons follow the app's theme, not just the phone's
+  if (isNative) SystemBars.setStyle({ style: { system: SystemBarsStyle.Default, light: SystemBarsStyle.Light, dark: SystemBarsStyle.Dark }[p.theme] }).catch(() => {});
 }
 
 type View = "main" | "devices" | "password" | "keys" | "blocked" | "deactivate" | "link" | "lock";
