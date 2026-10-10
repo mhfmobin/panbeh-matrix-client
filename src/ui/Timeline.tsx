@@ -8,6 +8,7 @@ import { buildRows, dayLabel, num, type Msg, type Row } from "../logic.ts";
 import { Message, ProgressRing, type Actions } from "./Message.tsx";
 import { audioDuration, bdi, formatSize, isVoice, me, noticeText } from "./common.tsx";
 import { AudioPlayer } from "./Voice.tsx";
+import { useAttentive } from "../desktop.ts";
 
 const EVENTS = [
   RoomEvent.Timeline, RoomEvent.TimelineReset, RoomEvent.LocalEchoUpdated, RoomEvent.Redaction, RoomEvent.Receipt,
@@ -212,21 +213,16 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
     loadOlder();
   }, [view.n, events.length, loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // read receipt for the newest event while we're looking at it (re-checked when the tab becomes visible)
-  const [hidden, setHidden] = useState(document.hidden);
-  useEffect(() => {
-    const onVis = () => setHidden(document.hidden);
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
-  }, []);
+  // read receipt for the newest event while someone is looking at it (re-checked when they're back)
+  const attentive = useAttentive();
   const lastEv = events.at(-1);
   useEffect(() => {
-    if (!atBottom || !atLive || !lastEv || lastEv.status || hidden || lastEv.getSender() === me()) return;
+    if (!atBottom || !atLive || !lastEv || lastEv.status || !attentive || lastEv.getSender() === me()) return;
     if (room.hasUserReadEvent(me(), lastEv.getId()!)) return;
     client.sendReadReceipt(lastEv).catch(() => {});
     // fully-read marker (where the divider goes next time) only; the receipt above keeps its thread semantics
     if (!thread) client.setRoomReadMarkers(room.roomId, lastEv.getId()!).catch(() => {});
-  }, [atBottom, atLive, lastEv, room, hidden]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [atBottom, atLive, lastEv, room, attentive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // jump to an event (pinned messages): page back until it's loaded, then scroll once its row renders
   const [target, setTarget] = useState<string | null>(null);

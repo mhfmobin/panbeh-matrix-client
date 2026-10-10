@@ -1,3 +1,6 @@
+import { useSyncExternalStore } from "react";
+import { isLocked, onLockChange } from "./lock.ts";
+
 /** The desktop app (Electron): desktop/preload.cjs exposes this bridge. */
 type Bridge = {
   setBadge(n: number): void;
@@ -39,6 +42,29 @@ export function onWindowVisibility(f: () => void) {
   document.addEventListener("visibilitychange", f);
   return () => { listeners.delete(f); document.removeEventListener("visibilitychange", f); };
 }
+
+// "Someone is looking": visible, focused, unlocked, and touched in the last minute. Read receipts wait for it.
+// ponytail: browsers report no OS screen lock (Idle Detection needs a permission), so the idle timeout stands in for it
+const IDLE_MS = 60_000;
+let lastInput = Date.now(), idleTimer = 0;
+const attention = new Set<() => void>();
+const ping = () => attention.forEach((f) => f());
+const onInput = () => {
+  const wasIdle = Date.now() - lastInput >= IDLE_MS;
+  lastInput = Date.now();
+  if (wasIdle) ping();
+  clearTimeout(idleTimer);
+  idleTimer = window.setTimeout(ping, IDLE_MS);
+};
+for (const ev of ["pointerdown", "pointermove", "keydown", "wheel", "touchstart"]) addEventListener(ev, onInput, { capture: true, passive: true });
+idleTimer = window.setTimeout(ping, IDLE_MS);
+for (const ev of ["focus", "blur"]) addEventListener(ev, ping);
+onWindowVisibility(ping);
+onLockChange(ping);
+
+export const isAttentive = () => isWindowVisible() && document.hasFocus() && !isLocked() && Date.now() - lastInput < IDLE_MS;
+const onAttentive = (f: () => void) => { attention.add(f); return () => { attention.delete(f); }; };
+export const useAttentive = () => useSyncExternalStore(onAttentive, isAttentive);
 
 /** matrix.to / matrix: links the OS or a click handed to the app. Returns an unsubscribe. */
 export const onDesktopLink = (cb: (link: string) => void) => bridge?.onLink(cb) ?? (() => {});
