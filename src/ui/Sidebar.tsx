@@ -141,7 +141,7 @@ export function Sidebar({ loading, selected, onSelect, onSettings, banner }: Pro
           // mouse wheel scrolls the tabs sideways; RTL, so "down" moves toward the left end
           onWheel={(e) => { if (!e.deltaX) e.currentTarget.scrollBy({ left: -e.deltaY }); }}>
           {folders.map((f) => {
-            const n = f.id === "unread" ? 0 : unreadIn(f.id);
+            const n = unreadIn(f.id);
             return (
               <button key={f.id} data-id={f.id} role="tab" aria-selected={f.id === active} className={(f.id === active ? "on" : "") + (f.id === dragging ? " dragging" : "")} onClick={() => pick(f.id)}>
                 {f.label}{n > 0 && <span className="folder-badge">{num(n)}</span>}
