@@ -300,14 +300,9 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
               <Icon key={mode?.kind === "edit" ? "check" : "send"} name={mode?.kind === "edit" ? "check" : "send"} />
             </button>
           )}
-          {/* Telegram: one pill — emoji, text, attach (attach slides away while typing) */}
+          {/* Telegram: one pill — attach, text, emoji (attach slides away while typing) */}
           <div className="composer-field">
             {bar}
-            <button className="icon-btn emoji-toggle" title="اموجی و استیکر" aria-label="اموجی و استیکر" aria-expanded={emoji} onClick={() => setEmoji((x) => !x)}><Icon name="smile" /></button>
-            <textarea ref={ta} rows={1} value={text} placeholder={mediaEdit ? "کپشن…" : "پیام"} aria-label="پیام"
-              onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart); setSel(0); typing(!!e.target.value); }}
-              onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
-              onKeyDown={onKey} onPaste={onPaste} onBlur={() => typingAt.current && typing(false)} />
             <div className={"attach" + (attachAway ? " away" : "")}>
               {/* outside the menu: picking closes the menu, and an unmounted input never gets its change event */}
               <input ref={fileInput} type="file" multiple hidden onChange={(e) => { const f = [...e.target.files!]; setFiles((x) => [...x, ...f]); e.target.value = ""; }} />
@@ -323,6 +318,11 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
                 </>
               )}
             </div>
+            <textarea ref={ta} rows={1} value={text} placeholder={mediaEdit ? "کپشن…" : "پیام"} aria-label="پیام"
+              onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart); setSel(0); typing(!!e.target.value); }}
+              onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+              onKeyDown={onKey} onPaste={onPaste} onBlur={() => typingAt.current && typing(false)} />
+            <button className="icon-btn emoji-toggle" title="اموجی و استیکر" aria-label="اموجی و استیکر" aria-expanded={emoji} onClick={() => setEmoji((x) => !x)}><Icon name="smile" /></button>
           </div>
         </div>
       )}
