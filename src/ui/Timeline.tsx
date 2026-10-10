@@ -364,7 +364,7 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
 type Ctx = { roomId: string; threadId: string | null };
 const COMPONENTS = {
   Header: () => <div style={{ height: 12 }} />,
-  Footer: ({ context }: { context?: Ctx }) => <>{context && <PendingUploads {...context} />}<div style={{ height: 8 }} /></>,
+  Footer: ({ context }: { context?: Ctx }) => <>{context && <PendingUploads {...context} />}<div style={{ height: "calc(var(--composer-h, 0px) + 8px)" }} /></>,
 };
 
 function PendingUploads({ roomId, threadId }: Ctx) {

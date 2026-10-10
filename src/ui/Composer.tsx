@@ -62,6 +62,13 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
   const [sel, setSel] = useState(0);
   const [closedAt, setClosedAt] = useState(-1); // Esc hides the mention list for this "@"
   const ta = useRef<HTMLTextAreaElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => { // the composer floats over the timeline; tell it how much room to leave at the bottom
+    const el = root.current!, host = el.parentElement!;
+    const ro = new ResizeObserver(() => host.style.setProperty("--composer-h", el.offsetHeight + "px"));
+    ro.observe(el);
+    return () => { ro.disconnect(); host.style.removeProperty("--composer-h"); };
+  }, []);
   const fileInput = useRef<HTMLInputElement>(null);
   const typingAt = useRef(0);
   const stash = useRef(""); // the draft, put aside while editing a message
@@ -249,8 +256,8 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
 
   const canRecord = !text.trim() && mode?.kind !== "edit" && "MediaRecorder" in window;
 
-  return (
-    <div className="composer">
+  const bar = (
+    <>
       {mode && (
         <div className="composer-mode">
           <Icon name={mode.kind === "edit" ? "edit" : "reply"} />
@@ -262,6 +269,11 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
         </div>
       )}
       {locating && <div className="composer-mode"><span className="spinner inline" /> در حال پیدا کردن موقعیت…</div>}
+    </>
+  );
+
+  return (
+    <div className="composer" ref={root}>
       {suggestions.length > 0 && (
         <div className="mention-list" role="listbox" aria-label="نام بردن">
           {suggestions.map((s, i) => (
@@ -273,6 +285,7 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
           ))}
         </div>
       )}
+      {recording && bar}
       {recording ? (
         <VoiceRecorder onDone={(v) => { setRecording(false); if (v) { startUpload(room, v.file, threadId, mode?.kind === "reply" ? mode.ev : undefined, v.extra); setMode(null); } }} />
       ) : (
@@ -286,10 +299,13 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
               <Icon key={mode?.kind === "edit" ? "check" : "send"} name={mode?.kind === "edit" ? "check" : "send"} />
             </button>
           )}
-          <textarea ref={ta} rows={1} value={text} placeholder={mediaEdit ? "کپشن…" : "پیام"} aria-label="پیام"
-            onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart); setSel(0); typing(!!e.target.value); }}
-            onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
-            onKeyDown={onKey} onPaste={onPaste} onBlur={() => typingAt.current && typing(false)} />
+          <div className="composer-field">
+            {bar}
+            <textarea ref={ta} rows={1} value={text} placeholder={mediaEdit ? "کپشن…" : "پیام"} aria-label="پیام"
+              onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart); setSel(0); typing(!!e.target.value); }}
+              onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+              onKeyDown={onKey} onPaste={onPaste} onBlur={() => typingAt.current && typing(false)} />
+          </div>
           <button className="icon-btn emoji-toggle" title="اموجی و استیکر" aria-label="اموجی و استیکر" aria-expanded={emoji} onClick={() => setEmoji((x) => !x)}><Icon name="smile" /></button>
           <div className="attach">
             {/* outside the menu: picking closes the menu, and an unmounted input never gets its change event */}
