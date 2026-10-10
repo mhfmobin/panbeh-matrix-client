@@ -24,11 +24,20 @@ function PinPad({ title, sub, len, disabled, shake, extra, onDone }:
     setPin(next);
     if (len && next.length === len) onDone(next);
   };
-  // touch: the key acts as the finger lands, not on lift; the click that follows is skipped and drops the focus the tap
-  // gave it (Android draws it as a highlight on the last key). Mouse and keyboard use click.
+  // touch: the key acts as the finger lands, not on lift; the click that follows is eaten wherever it lands (the last digit
+  // can swap the pad for another screen, and the click would hit the button now under the finger, e.g. "turn the lock off")
+  // and drops the focus the tap gave the key (Android draws it as a highlight on the last key). Mouse and keyboard use click.
   const touched = useRef(0);
   const tap = (k: string) => ({
-    onPointerDown: (e: PointerEvent) => { if (e.pointerType === "mouse") return; touched.current = Date.now(); navigator.vibrate?.(8); press(k); },
+    onPointerDown: (e: PointerEvent) => {
+      if (e.pointerType === "mouse") return;
+      touched.current = Date.now();
+      const eat = (c: Event) => { c.preventDefault(); c.stopPropagation(); (document.activeElement as HTMLElement | null)?.blur(); };
+      addEventListener("click", eat, { capture: true, once: true });
+      setTimeout(() => removeEventListener("click", eat, true), 800);
+      navigator.vibrate?.(8);
+      press(k);
+    },
     onClick: (e: MouseEvent<HTMLButtonElement>) => { if (Date.now() - touched.current > 800) press(k); else e.currentTarget.blur(); },
   });
   const pressRef = useRef(press);
