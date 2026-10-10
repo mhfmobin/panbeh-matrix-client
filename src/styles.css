@@ -1247,20 +1247,35 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
 .qr-link { display: block; text-align: center; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; user-select: text; }
 
 /* app lock */
-.lock-screen { position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 16px; color: var(--text); } /* no fade-in: the app mustn't show through */
+.lock-screen { position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; gap: 16px; overflow-y: auto; color: var(--text);
+  padding: max(8vh, 32px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom)); } /* no fade-in: the app mustn't show through */
+.lock-screen .login-logo { flex: none; }
+.lock-screen .pinpad { flex: 1; }
+.lock-screen .pin-keys { margin-top: auto; } /* title and dots up top, keys down where the thumb is */
 .pinpad { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
-.pin-dots { display: flex; gap: 12px; min-height: 14px; margin: 6px 0 10px; }
-.pin-dots i { width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--muted); transition: background 0.12s, border-color 0.12s; }
-.pin-dots i.on { background: var(--accent); border-color: var(--accent); }
+.pin-dots { display: flex; gap: 20px; min-height: 16px; margin: 10px 0 16px; }
+.pin-dots i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--muted); transition: background var(--dur-fast), border-color var(--dur-fast); }
+.pin-dots i.on { background: var(--accent); border-color: var(--accent); animation: pin-fill 0.18s var(--ease-spring); }
+@keyframes pin-fill { from { transform: scale(0.4); } }
 .pin-dots.shake { animation: pin-shake 0.35s; }
+.pin-dots.shake i { border-color: #e53935; }
 @keyframes pin-shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
-.pin-keys { display: grid; grid-template-columns: repeat(3, 68px); gap: 12px; }
-.pin-keys button { height: 68px; border-radius: 50%; border: 0; background: var(--panel); color: var(--text); font-size: 26px; display: grid; place-items: center; cursor: pointer; }
-.pin-keys button:active:not(:disabled) { background: var(--hover); }
+.pin-keys { --key: min(76px, 21vw); display: grid; grid-template-columns: repeat(3, var(--key)); gap: 14px 26px; }
+.pin-keys button { height: var(--key); border-radius: 50%; border: 0; padding: 0; display: grid; place-items: center; cursor: pointer; font: inherit; font-size: 30px; line-height: 1; color: var(--text);
+  background: color-mix(in srgb, var(--panel) 55%, transparent); backdrop-filter: blur(8px);
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; transition: transform var(--dur-fast), background var(--dur-fast); }
+.pin-keys button:active:not(:disabled) { transform: scale(0.92); background: color-mix(in srgb, var(--accent) 22%, var(--panel)); }
 .pin-keys button:disabled { opacity: 0.4; cursor: default; }
+.pin-keys .pin-del, .pin-keys .pin-bio { background: transparent; backdrop-filter: none; color: var(--muted); }
+.pin-keys .pin-bio { color: var(--accent); }
+.pin-keys .pin-del:disabled { opacity: 0; } /* nothing to erase: the key steps aside like Telegram's */
 .pin-keys .pin-ok { background: var(--accent); color: #fff; }
 .lock-forgot { color: var(--muted); font-size: 14px; }
 .lock-forget { width: min(380px, 100%); display: flex; flex-direction: column; gap: 14px; padding: 16px; border-radius: 16px; background: var(--panel); text-align: start; }
 .lock-forget p { margin: 0; line-height: 1.6; }
-.sheet .pinpad { margin: 12px auto; }
-.sheet .pin-keys button:not(.pin-ok) { background: var(--hover); }
+.pin-title { font-size: 18px; }
+.pin-badge { width: 64px; height: 64px; margin-bottom: 6px; display: grid; place-items: center; border-radius: 50%; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.lock-screen .pin-badge { display: none; }
+.sheet:has(> .pinpad) { display: flex; flex-direction: column; }
+.sheet > .pinpad { margin: auto; padding-bottom: 56px; } /* centred in what's left under the header; the padding offsets it so it reads as centred on the screen */
+.sheet .pin-keys button:not(.pin-ok, .pin-del) { background: var(--hover); backdrop-filter: none; }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { App } from "@capacitor/app";
 import { biometricAvailable, biometricUnlock } from "../native.ts";
 import { pushBack } from "../back.ts";
@@ -17,13 +17,20 @@ function PinPad({ title, sub, len, disabled, shake, extra, onDone }:
   const [pin, setPin] = useState("");
   useEffect(() => { setPin(""); }, [shake, title]);
   const press = (k: string) => {
-    if (disabled) return;
+    if (disabled || (len && pin.length === len)) return; // a full PIN is being checked; a wrong one resets it
     if (k === "⌫") return setPin((p) => p.slice(0, -1));
     if (k === "ok") { if (pin.length >= MIN) onDone(pin); return; }
     const next = (pin + k).slice(0, len ?? MAX);
     setPin(next);
     if (len && next.length === len) onDone(next);
   };
+  // touch: the key acts as the finger lands, not on lift; the click that follows is skipped and drops the focus the tap
+  // gave it (Android draws it as a highlight on the last key). Mouse and keyboard use click.
+  const touched = useRef(0);
+  const tap = (k: string) => ({
+    onPointerDown: (e: PointerEvent) => { if (e.pointerType === "mouse") return; touched.current = Date.now(); navigator.vibrate?.(8); press(k); },
+    onClick: (e: MouseEvent<HTMLButtonElement>) => { if (Date.now() - touched.current > 800) press(k); else e.currentTarget.blur(); },
+  });
   const pressRef = useRef(press);
   pressRef.current = press;
   useEffect(() => {
@@ -41,16 +48,18 @@ function PinPad({ title, sub, len, disabled, shake, extra, onDone }:
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="pinpad">
-      <b>{title}</b>
+      <span className="pin-badge"><Icon name="lock" size={28} /></span>{/* the lock screen shows the logo instead */}
+      <b className="pin-title">{title}</b>
       {sub && <small className="muted">{sub}</small>}
-      <div className={"pin-dots" + (shake ? " shake" : "")} key={shake} aria-label={`${num(pin.length)} رقم`}>
+      {/* ltr: digits are entered left to right, like the number itself */}
+      <div className={"pin-dots" + (shake ? " shake" : "")} dir="ltr" key={shake} aria-label={`${num(pin.length)} رقم`}>
         {Array.from({ length: len ?? Math.max(MIN, pin.length) }, (_, i) => <i key={i} className={i < pin.length ? "on" : ""} />)}
       </div>
       <div className="pin-keys" dir="ltr">
-        {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((k) => <button key={k} disabled={disabled} onClick={() => press(k)}>{num(+k)}</button>)}
-        {len ? (extra ?? <span />) : <button className="pin-ok" disabled={disabled || pin.length < MIN} onClick={() => press("ok")} aria-label="تأیید"><Icon name="check" /></button>}
-        <button disabled={disabled} onClick={() => press("0")}>{num(0)}</button>
-        <button disabled={disabled || !pin} onClick={() => press("⌫")} aria-label="پاک کردن"><Icon name="backspace" /></button>
+        {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((k) => <button key={k} disabled={disabled} {...tap(k)}>{num(+k)}</button>)}
+        {len ? (extra ?? <span />) : <button className="pin-ok" disabled={disabled || pin.length < MIN} {...tap("ok")} aria-label="تأیید"><Icon name="check" /></button>}
+        <button disabled={disabled} {...tap("0")}>{num(0)}</button>
+        <button className="pin-del" disabled={disabled || !pin} {...tap("⌫")} aria-label="پاک کردن"><Icon name="backspace" /></button>
       </div>
     </div>
   );
@@ -96,7 +105,7 @@ export function LockScreen() {
       ) : <>
       <PinPad title="رمز پنبه را وارد کنید" len={c.len} shake={shake} disabled={wait > 0}
         sub={wait > 0 ? `${num(wait)} ثانیه‌ی دیگر دوباره امتحان کنید` : undefined}
-        extra={bio ? <button onClick={tryBio} aria-label="اثر انگشت"><Icon name="fingerprint" /></button> : undefined}
+        extra={bio ? <button className="pin-bio" onClick={tryBio} aria-label="اثر انگشت"><Icon name="fingerprint" /></button> : undefined}
         onDone={(pin) => void unlock(pin).then((ok) => { if (!ok) { setShake((n) => n + 1); rewait(); navigator.vibrate?.(200); } })} />
       <button className="plain lock-forgot" onClick={() => setForgetting("ask")}>رمز را فراموش کرده‌اید؟</button>
       </>}

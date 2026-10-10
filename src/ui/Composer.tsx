@@ -281,7 +281,8 @@ export function Composer({ room, threadId, mode, setMode, files, setFiles }: Pro
           {canRecord ? (
             <button className="send-btn" onClick={() => setRecording(true)} title="پیام صوتی" aria-label="ضبط پیام صوتی"><Icon key="mic" name="mic" /></button>
           ) : (
-            <button className={"send-btn" + (text.trim() || mediaEdit ? " ready" : "")} onClick={send} aria-label="ارسال" disabled={!text.trim() && !mediaEdit}>
+            <button className={"send-btn" + (text.trim() || mediaEdit ? " ready" : "")} onClick={send} aria-label="ارسال"
+              onMouseDown={(e) => e.preventDefault()} /* keeps focus (and the phone's keyboard) in the textarea */ disabled={!text.trim() && !mediaEdit}>
               <Icon key={mode?.kind === "edit" ? "check" : "send"} name={mode?.kind === "edit" ? "check" : "send"} />
             </button>
           )}
