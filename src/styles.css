@@ -227,7 +227,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 /* ---------- room ---------- */
 .room { flex: 1; min-width: 0; display: grid; grid-template-columns: 1fr; }
 .room.with-thread { grid-template-columns: 1fr minmax(320px, 400px); }
-.room-main, .thread-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100vh; height: 100dvh; }
+.room-main, .thread-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100vh; /* minus #root's safe-area padding, or the composer sits under the gesture bar */ height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
 .thread-panel { background: var(--chat-bg); border-inline-start: 1px solid var(--border); animation: slide-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
 @keyframes slide-in { from { transform: translateX(calc(var(--fwd) * 40px)); opacity: 0; } }
 @media (max-width: 1000px) {
