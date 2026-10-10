@@ -14,7 +14,7 @@ import { useSlider } from "./useSlider.ts";
 import { num, stamp } from "../logic.ts";
 import { decryptKeyFile, encryptKeyFile } from "../keyfile.ts";
 import { showVerification } from "./Verify.tsx";
-import { desktopVersion, getAutostart, isDesktop, setAutostart } from "../desktop.ts";
+import { getAutostart, isDesktop, setAutostart } from "../desktop.ts";
 import { isNative, nativeCancelAll, nativeStatus, requestBatteryExemption, requestFullScreen, requestNotifyPermission, saveFile, setBackgroundInterval, setBackgroundService } from "../native.ts";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 import { LinkSheet } from "./LinkSheet.tsx";
@@ -292,11 +292,10 @@ function Storage({ prefs, set }: { prefs: Prefs; set: (p: Partial<Prefs>) => voi
   );
 }
 
-/** The desktop app: start with the system (into the tray), and its version. */
+/** The desktop app: start with the system (into the tray). */
 function DesktopApp() {
   const [autostart, setOn] = useState<boolean>();
-  const [version, setVersion] = useState<string>();
-  useEffect(() => { getAutostart().then(setOn, () => {}); desktopVersion()?.then(setVersion, () => {}); }, []);
+  useEffect(() => { getAutostart().then(setOn, () => {}); }, []);
   return (
     <>
       <h3>برنامه</h3>
@@ -304,7 +303,6 @@ function DesktopApp() {
         <label className="switch-row"><span>اجرا هنگام ورود به سیستم<small>پنبه در سینی سیستم باز می‌شود تا اعلان‌ها برسند</small></span>
           <input type="checkbox" role="switch" checked={autostart} onChange={(e) => setAutostart(e.target.checked).then(setOn, (err) => alertDialog(errText(err)))} /></label>
       )}
-      {version && <p className="muted">نسخه‌ی <bdi dir="ltr">{version}</bdi></p>}
     </>
   );
 }

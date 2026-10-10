@@ -26,7 +26,6 @@ export const showWindow = () => bridge ? bridge.focus() : focus();
 export const openExternal = (url: string) => bridge?.openExternal(url);
 export const getAutostart = () => bridge?.autostart() ?? Promise.resolve(false);
 export const setAutostart = (on: boolean) => bridge?.autostart(on) ?? Promise.resolve(false);
-export const desktopVersion = () => bridge?.info().then((i) => i.version);
 
 // the page stays "visible" in the tray (background throttling is off so it keeps syncing): ask the window instead
 let windowVisible = true;
