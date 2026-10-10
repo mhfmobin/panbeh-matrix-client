@@ -4,7 +4,7 @@ import { isGroupChat, previewText, senderName, roomAvatarMxc } from "./ui/common
 import { loadPrefs } from "./ui/Settings.tsx";
 import { isHeadless, isNative, nativeCancel, nativeNotify, toDataUrl, type NotifyAction } from "./native.ts";
 import { markRead } from "./chats.ts";
-import { showWindow } from "./desktop.ts";
+import { isAttentive, showWindow } from "./desktop.ts";
 
 /** Muted = a room or override rule for this room that doesn't notify (ours, or Element's). */
 export function isMuted(room: Room) {
@@ -65,7 +65,7 @@ export async function callNotice(room: Room, body: string, group = false) {
 async function show(room: Room, sender: string, text: string, sound: boolean, ts = Date.now()) {
   const body = (sender ? sender + ": " : "") + text;
   // already looking at it (in the app, native checks the activity is on screen)
-  if (!isNative && document.hasFocus() && location.hash.slice(1) === room.roomId) return;
+  if (!isNative && isAttentive() && location.hash.slice(1) === room.roomId) return;
   // the sync recalculates names only after emitting the batch's events: a member that names this room may have just arrived
   room.recalculate();
   const icon = await Promise.race([avatarUrl(roomAvatarMxc(room), 96)?.catch(() => undefined),

@@ -1,5 +1,5 @@
 // Panbeh desktop: the web app (dist/) in Electron's Chromium, plus a tray, badge, autostart and updates.
-const { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, net, protocol, screen, shell } = require("electron");
+const { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, net, powerMonitor, protocol, screen, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
@@ -71,7 +71,7 @@ function createWindow(hidden) {
     win.hide();
   });
   win.on("closed", () => { win = null; });
-  for (const ev of ["show", "hide", "minimize", "restore"]) win.on(ev, () => win.webContents.send("visibility", win.isVisible() && !win.isMinimized()));
+  for (const ev of ["show", "hide", "minimize", "restore"]) win.on(ev, sendVisibility);
 
   // the app's own links open in the system browser; the window only ever shows the app
   win.webContents.setWindowOpenHandler(({ url }) => { openExternal(url); return { action: "deny" }; });
@@ -235,9 +235,16 @@ ipcMain.on("links-ready", (e) => {
 });
 ipcMain.on("open-external", (_e, url) => openExternal(String(url)));
 ipcMain.handle("autostart", (_e, on) => { if (typeof on === "boolean") setAutostart(on); return getAutostart(); });
-ipcMain.handle("info", () => ({ version: app.getVersion(), platform: process.platform, visible: !!win?.isVisible() }));
+ipcMain.handle("info", () => ({ version: app.getVersion(), platform: process.platform, visible: windowSeen() }));
+
+// the page can't tell (no throttling = always "visible"): it marks messages read only while the window can be seen
+let screenLocked = false;
+const windowSeen = () => !!win && win.isVisible() && !win.isMinimized() && !screenLocked;
+const sendVisibility = () => win?.webContents.send("visibility", windowSeen());
 
 app.whenReady().then(() => {
+  powerMonitor.on("lock-screen", () => { screenLocked = true; sendVisibility(); });
+  powerMonitor.on("unlock-screen", () => { screenLocked = false; sendVisibility(); });
   if (isWin) app.setAppUserModelId("ir.panbeh.app"); // notifications and taskbar grouping
   if (!isMac) Menu.setApplicationMenu(null); // macOS keeps the default menu: it carries the copy/paste shortcuts
 

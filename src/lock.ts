@@ -15,7 +15,9 @@ const save = (c: LockConf | null) => (c ? localStorage.setItem(KEY, JSON.stringi
 let locked = !!lockConf(); // starting up locks
 const subs = new Set<() => void>();
 const setLocked = (v: boolean) => { locked = v; subs.forEach((f) => f()); };
-export const useLocked = () => useSyncExternalStore((f) => { subs.add(f); return () => { subs.delete(f); }; }, () => locked);
+export const isLocked = () => locked;
+export const onLockChange = (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; };
+export const useLocked = () => useSyncExternalStore(onLockChange, isLocked);
 
 let hiddenAt = 0;
 document.addEventListener("visibilitychange", () => {
