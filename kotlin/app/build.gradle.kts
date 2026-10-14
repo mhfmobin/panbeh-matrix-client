@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "ir.panbeh.app"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "ir.panbeh.app.kotlin"
