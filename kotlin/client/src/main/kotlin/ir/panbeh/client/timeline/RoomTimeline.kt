@@ -129,6 +129,9 @@ class RoomTimeline(
     @Volatile private var lastBuilt: Built? = null
     @Volatile private var lastCtx: Ctx = Ctx()
     private var focusSeq = 0
+    // Trixnity keeps offering a page at the very start of a room (a gap marker nothing clears): a page that adds nothing means we're there
+    @Volatile private var olderExhausted = false
+    @Volatile private var newerExhausted = false
     private var windowSeq = 0
     private var focus: String? = null
     private val receiptTsCache = ConcurrentHashMap<String, Long>()
@@ -290,8 +293,8 @@ class RoomTimeline(
         _state.value = cur.copy(
             items = items, rows = rows, unreadAfter = inp.unread, initialized = thread != null || st.isInitialized,
             loadingOlder = inp.busy.first, loadingNewer = inp.busy.second,
-            canLoadOlder = if (thread != null) threadMore.value else st.canLoadBefore,
-            canLoadNewer = thread == null && st.canLoadAfter && !inp.follow,
+            canLoadOlder = if (thread != null) threadMore.value else st.canLoadBefore && !olderExhausted,
+            canLoadNewer = thread == null && st.canLoadAfter && !inp.follow && !newerExhausted,
             atLive = thread != null || !st.canLoadAfter || inp.follow,
             focus = focus, focusSeq = focusSeq, windowSeq = windowSeq,
         )
@@ -324,6 +327,7 @@ class RoomTimeline(
             if (first != null) hold.value = Hold(older = EventId(first), newer = hold.value.newer)
             val ch = tl.loadBefore { fetchSize = options.pageSize; maxSize = options.pageSize; fetchTimeout = 30.seconds; decryptionTimeout = options.decryptionTimeout }
             awaitDecrypted(ch.addedElements)
+            if (ch.addedElements.isEmpty()) olderExhausted = true
             released = ch.addedElements.firstOrNull()?.first()?.event?.id?.full
         } finally {
             hold.value = Hold(newer = hold.value.newer)
@@ -345,6 +349,7 @@ class RoomTimeline(
             if (last != null) hold.value = Hold(older = hold.value.older, newer = EventId(last))
             val ch = tl.loadAfter { fetchSize = options.pageSize; maxSize = options.pageSize; fetchTimeout = 30.seconds; decryptionTimeout = options.decryptionTimeout }
             awaitDecrypted(ch.addedElements)
+            if (ch.addedElements.isEmpty()) newerExhausted = true
             released = ch.addedElements.lastOrNull()?.first()?.event?.id?.full
         } finally {
             hold.value = Hold(older = hold.value.older)
@@ -423,6 +428,8 @@ class RoomTimeline(
     }
 
     private suspend fun reinit(start: EventId, focusOn: String?): Boolean {
+        olderExhausted = false
+        newerExhausted = false
         follow.value = false
         hold.value = Hold(blockAll = true)
         try {
