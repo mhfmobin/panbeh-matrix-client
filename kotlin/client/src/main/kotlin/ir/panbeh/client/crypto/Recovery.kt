@@ -38,6 +38,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.coroutines.withTimeoutOrNull
+import org.koin.core.qualifier.named
 import kotlin.time.Duration.Companion.seconds
 
 /** "ok": this device holds the cross-signing and backup keys; "unlock": the account has secret storage to load; "setup": nothing yet. */
@@ -103,7 +104,7 @@ class Recovery(private val client: MatrixClient) {
 
     /** Fetches every session from the server key backup into the store. Returns how many were new or improved; needs [unlock] first. */
     suspend fun restoreKeyBackup(onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }): Int {
-        val version = withTimeoutOrNull(30.seconds) { client.di.get<KeyBackupService>().version.filterNotNull().first() }
+        val version = withTimeoutOrNull(30.seconds) { client.di.get<KeyBackupService>(named<KeyBackupService>()).version.filterNotNull().first() }
             ?: throw IllegalStateException("پشتیبان کلیدها در دسترس نیست")
         val privateKey = keyStore.getSecrets()[SecretType.M_MEGOLM_BACKUP_V1]?.decryptedPrivateKey ?: throw IllegalStateException("کلید پشتیبان هنوز باز نشده است")
         val driver = client.di.get<CryptoDriver>()

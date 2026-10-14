@@ -23,6 +23,7 @@ class KeyFilesTest {
         val hs = testServer ?: return@runBlocking
         val (u, p, c1) = newUser(hs)
         val room = c1.api.room.createRoom(initialState = listOf(InitialStateEvent(EncryptionEventContent(), ""))).getOrThrow()
+        withTimeout(30_000) { c1.room.getById(room).first { it?.encrypted == true } } // Trixnity encrypts only once it has seen the encryption state
         val tx = c1.room.sendMessage(room) { text("old secret") }
         val eventId = withTimeout(30_000) { c1.room.getOutbox(room, tx).first { it?.eventId != null }!!.eventId!! }
 

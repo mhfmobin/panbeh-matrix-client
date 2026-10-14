@@ -1,6 +1,9 @@
 package ir.panbeh.client.crypto
 
 import de.connect2x.trixnity.client.MatrixClient
+import de.connect2x.trixnity.client.room
+import de.connect2x.trixnity.client.store.eventId
+import de.connect2x.trixnity.client.store.roomId
 import de.connect2x.trixnity.client.verification
 import de.connect2x.trixnity.client.verification.ActiveSasVerificationMethod
 import de.connect2x.trixnity.client.verification.ActiveSasVerificationState
@@ -10,6 +13,7 @@ import de.connect2x.trixnity.core.model.EventId
 import de.connect2x.trixnity.core.model.RoomId
 import de.connect2x.trixnity.core.model.UserId
 import de.connect2x.trixnity.core.model.events.m.key.verification.VerificationMethod
+import de.connect2x.trixnity.core.model.events.m.room.RoomMessageEventContent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -54,6 +58,8 @@ data class VerifyUi(val id: String, val self: Boolean, val otherUserId: String, 
 /**
  * Device and user verification with SAS (emoji and decimal) on top of Trixnity's VerificationService; one verification at a time,
  * like the web app. There is no QR-code verification: Trixnity only implements m.sas.v1, so only SAS is offered.
+ * Incoming in-room (chat) requests need `m.room.message` with msgtype `m.key.verification.request` to decode as Trixnity's typed
+ * `RoomMessageEventContent.VerificationRequest`, which PanbehEvents' RawMessageSerializer must pass through.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class Verification(private val client: MatrixClient, private val scope: CoroutineScope) {
@@ -82,6 +88,13 @@ class Verification(private val client: MatrixClient, private val scope: Coroutin
         }
         scope.launch { service.activeDeviceVerification.collect { it?.let { v -> offer(v) } } }
         scope.launch { service.activeUserVerifications.collect { l -> l.forEach { offer(it) } } }
+        // Trixnity doesn't pick up in-room requests by itself: look at new chat events for ones addressed to me
+        scope.launch {
+            client.room.getTimelineEventsFromNowOn().collect { te ->
+                val c = te.content?.getOrNull() as? RoomMessageEventContent.VerificationRequest ?: return@collect
+                if (c.to == client.userId && te.event.sender != client.userId) runCatching { service.getActiveUserVerification(te.roomId, te.eventId) }.getOrNull()?.let { offer(it) }
+            }
+        }
     }
 
     private fun mk(e: Entry, p: VerifyPhase) = VerifyUi(
@@ -145,7 +158,7 @@ class Verification(private val client: MatrixClient, private val scope: Coroutin
     /** Asks one of my other devices. */
     suspend fun verifyDevice(deviceId: String) = start(service.createDeviceVerificationRequest(client.userId, setOf(deviceId)).getOrThrow())
 
-    /** Verifies another user in a direct chat with them (created when missing). */
+    /** Verifies another user in our joined direct chat (m.direct); when there is none, Trixnity creates and invites, and they see the request once they join. */
     suspend fun verifyUser(userId: String) = start(service.createUserVerificationRequest(UserId(userId)).getOrThrow())
 
     private fun start(v: ActiveVerification) = show(Entry(v, true))

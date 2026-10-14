@@ -19,6 +19,7 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.buildClassSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonObject
@@ -41,7 +42,7 @@ import kotlinx.serialization.json.jsonObject
 val RoomMessageEventContent.json: JsonObject
     get() = when (this) {
         is RoomMessageEventContent.Unknown -> raw
-        else -> error("m.room.message must be decoded with RawMessageSerializer")
+        else -> Json.encodeToJsonElement(RoomMessageEventContent.Serializer, this).jsonObject // typed: verification requests
     }
 
 /** Builds an m.room.message from raw JSON (msgtype and body are required by the spec). */
@@ -62,6 +63,9 @@ object RawMessageSerializer : KSerializer<RoomMessageEventContent> {
     override fun deserialize(decoder: Decoder): RoomMessageEventContent {
         decoder as JsonDecoder
         val o = decoder.decodeJsonElement().jsonObject
+        // in-room verification requests must stay typed: Trixnity's verification service looks for them
+        if ((o["msgtype"] as? JsonPrimitive)?.contentOrNull == "m.key.verification.request")
+            return decoder.json.decodeFromJsonElement(RoomMessageEventContent.Serializer, o)
         return RoomMessageEventContent.Unknown(
             type = (o["msgtype"] as? JsonPrimitive)?.contentOrNull ?: "m.text",
             body = (o["body"] as? JsonPrimitive)?.contentOrNull ?: "",

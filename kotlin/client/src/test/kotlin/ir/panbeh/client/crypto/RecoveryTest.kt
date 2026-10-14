@@ -52,6 +52,7 @@ class BackupRestoreTest {
         val (u, p, c1) = newUser(hs)
         val key = Recovery(c1).setup(password = p)
         val room = c1.api.room.createRoom(initialState = listOf(de.connect2x.trixnity.core.model.events.InitialStateEvent(de.connect2x.trixnity.core.model.events.m.room.EncryptionEventContent(), ""))).getOrThrow()
+        withTimeout(30_000) { c1.room.getById(room).first { it?.encrypted == true } }
         val tx = c1.room.sendMessage(room) { text("from the backup") }
         val eventId = withTimeout(30_000) { c1.room.getOutbox(room, tx).first { it?.eventId != null }!!.eventId!! }
         // the new session is uploaded to the backup in the background (after a second)
