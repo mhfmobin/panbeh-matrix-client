@@ -3,6 +3,7 @@ package ir.panbeh.app
 import android.app.Application
 import io.ktor.client.engine.okhttp.OkHttp
 import ir.panbeh.app.data.AndroidStores
+import ir.panbeh.app.data.AppState
 import ir.panbeh.app.data.PrefsStore
 import ir.panbeh.client.Accounts
 import ir.panbeh.client.Platform
@@ -17,6 +18,8 @@ class PanbehApp : Application() {
         private set
     lateinit var accounts: Accounts
         private set
+    lateinit var state: AppState
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -28,6 +31,8 @@ class PanbehApp : Application() {
             deviceName = "Panbeh Android",
         )
         accounts = Accounts(platform)
+        state = AppState(this)
+        state.boot()
     }
 
     companion object {
