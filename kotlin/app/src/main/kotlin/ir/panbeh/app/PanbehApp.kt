@@ -36,6 +36,8 @@ class PanbehApp : Application(), SingletonImageLoader.Factory {
             stores = AndroidStores(this),
             httpEngine = OkHttp.create(),
             deviceName = "Panbeh Android",
+            oauthRedirect = "${MainActivity.OAUTH_SCHEME}:/oauth",
+            oauthClientUri = "https://kotlin.app.panbeh.ir/",
         )
         accounts = Accounts(platform)
         state = AppState(this)
