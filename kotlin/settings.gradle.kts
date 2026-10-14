@@ -10,6 +10,7 @@ dependencyResolutionManagement {
     repositories {
         mavenCentral()
         google()
+        maven("https://jitpack.io") { content { includeGroup("com.github.davidliu") } } // LiveKit's audioswitch
     }
 }
 rootProject.name = "panbeh"

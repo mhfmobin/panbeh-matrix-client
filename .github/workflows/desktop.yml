@@ -1,4 +1,12 @@
-# disabled on the kotlin branch; uncomment to re-enable
+# disabled on the kotlin branch; uncomment to re-enable (and drop this placeholder, which only keeps the file valid)
+name: desktop (disabled)
+on: workflow_dispatch
+jobs:
+  disabled:
+    if: false
+    runs-on: ubuntu-latest
+    steps: [{ run: "true" }]
+
 # name: Desktop apps
 #
 # on:
