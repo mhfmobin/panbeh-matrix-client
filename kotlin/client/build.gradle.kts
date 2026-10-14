@@ -14,3 +14,11 @@ dependencies {
 }
 
 tasks.test { useJUnitPlatform() }
+
+dependencies {
+    testImplementation(libs.trixnity.vodozemac)
+    testImplementation(libs.ktor.okhttp)
+}
+
+// integration tests run against PANBEH_TEST_HS (e.g. a local Synapse with open registration); skipped without it
+tasks.test { environment("PANBEH_TEST_HS", System.getenv("PANBEH_TEST_HS") ?: "") }
