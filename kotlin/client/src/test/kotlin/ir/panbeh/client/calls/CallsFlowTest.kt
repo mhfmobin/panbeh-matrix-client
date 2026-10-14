@@ -91,10 +91,9 @@ class CallsFlowTest {
         // ordinary members start with state_default 50: not allowed. The creator is.
         withTimeout(30_000) { while (pb.access(room) != CallAccess.DENIED) delay(100) }
         assertEquals(CallAccess.ALLOWED, pa.access(room))
-        // b as a moderator that can change power levels but not join calls
-        setPl(a.client, room) { it.copy(users = it.users + (b.client.userId to 50L)) }
-        setPl(a.client, room) { it.copy(events = it.events.filterKeys { k -> k.name != "m.room.power_levels" } + (EventType(null, "m.room.power_levels") to 50L)) }
-        setPl(a.client, room) { it.copy(events = it.events.filterKeys { k -> k.name != CallTypes.MEMBER } + (EventType(null, CallTypes.MEMBER) to 100L)) }
+        // b at 25 can change power levels but state events (call.member) need 50
+        setPl(a.client, room) { it.copy(users = it.users + (b.client.userId to 25L)) }
+        setPl(a.client, room) { it.copy(events = it.events.filterKeys { k -> k.name != "m.room.power_levels" } + (EventType(null, "m.room.power_levels") to 25L)) }
         withTimeout(30_000) { while (pb.access(room) != CallAccess.ASK_ENABLE) delay(100) }
         val cb = calls(b)
         val e = assertFailsWith<CallPermissionException> { cb.startCall(room, false) }
