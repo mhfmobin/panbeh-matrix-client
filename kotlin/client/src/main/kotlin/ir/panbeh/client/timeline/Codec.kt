@@ -32,7 +32,7 @@ fun isMessageType(type: String) = type in MESSAGE_TYPES || type == "m.room.encry
 fun isPollStart(type: String) = type == Types.POLL_START || type == "m.poll.start"
 
 /** JSON ⇄ Trixnity content, keeping every field of Panbeh's raw message types. */
-class Codec(val json: Json, private val mappings: de.connect2x.trixnity.core.serialization.events.EventContentSerializerMappings) {
+class Codec(val json: Json, val mappings: de.connect2x.trixnity.core.serialization.events.EventContentSerializerMappings) {
     constructor(client: MatrixClient) : this(client.api.json, client.api.eventContentSerializerMappings)
 
     /** The event type of a content. */
