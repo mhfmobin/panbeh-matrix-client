@@ -94,6 +94,14 @@ class MediaTest {
             assertEquals("p0.png", items[0].content.string("body"))
             val row = eventually("album row") { tb.state.value.rows.filterIsInstance<Row.Album>().firstOrNull() }
             assertEquals(3, row.ids.size)
+            // edit the caption: the file stays, the body is the new caption
+            val own = ta.item("own caption") { it.eventId == items[2].eventId }
+            d.sa.edit(d.roomId, own, "new caption")
+            val recaptioned = tb.item("recaptioned") { it.eventId == items[2].eventId && it.content.string("body") == "new caption" }
+            assertTrue(recaptioned.edited)
+            assertEquals(items[2].content.string("url"), recaptioned.content.string("url"))
+            assertEquals("p2.png", recaptioned.content.string("filename"))
+            assertEquals("m.image", recaptioned.msgtype)
             // delete the whole album
             d.sa.redact(d.roomId, items)
             eventually("album gone") { if (tb.state.value.items.none { it.msgtype == "m.image" }) true else null }

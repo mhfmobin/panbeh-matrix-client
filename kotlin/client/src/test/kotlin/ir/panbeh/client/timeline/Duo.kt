@@ -2,7 +2,6 @@ package ir.panbeh.client.timeline
 
 import de.connect2x.trixnity.client.MatrixClient
 import de.connect2x.trixnity.client.room
-import de.connect2x.trixnity.core.model.RoomId
 import de.connect2x.trixnity.core.model.events.InitialStateEvent
 import de.connect2x.trixnity.core.model.events.m.room.EncryptionEventContent
 import de.connect2x.trixnity.core.model.events.m.room.Membership
@@ -72,5 +71,3 @@ suspend fun RoomTimeline.item(what: String = "item", ms: Long = 60_000, p: (Time
 
 /** The first item matching [p], local echoes included. */
 suspend fun RoomTimeline.echo(what: String = "echo", ms: Long = 60_000, p: (TimelineItem) -> Boolean) = eventually(what, ms) { state.value.items.firstOrNull(p) }
-
-@Suppress("unused") private val keep = RoomId("!x:y")

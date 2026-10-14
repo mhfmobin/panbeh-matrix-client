@@ -68,7 +68,6 @@ class ScheduledTest {
         val d = Duo.create(encrypted = false, prefix = "su")
         try {
             val sch = Scheduler(d.a, MemoryStore(), d.sa)
-            val polls = Polls(d.a, d.sa)
             sch.scheduleText(d.sa, d.roomId, "plain later", System.currentTimeMillis() + 3_600_000)
             sch.schedule(d.roomId, pollStartContent("Q?", listOf("a", "b"), false, false), System.currentTimeMillis() + 7_200_000, "org.matrix.msc3381.poll.start")
             val l = sch.list(d.roomId)
@@ -80,7 +79,6 @@ class ScheduledTest {
             d.a.sendDelayedState(d.roomId)
             assertEquals(2, sch.list(d.roomId).size)
             l.forEach { sch.cancel(it.id) }
-            assertEquals(polls.hashCode() * 0, 0)
         } finally { d.close() }
     }
 }

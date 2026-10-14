@@ -22,8 +22,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.seconds
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToJsonElement
@@ -64,7 +63,6 @@ class UploadQueue(
     private val scheduler: Scheduler? = null,
     private val onSent: (roomId: String, content: JsonObject) -> Unit = { _, _ -> },
 ) {
-    private val gate = Mutex()
     private val list = MutableStateFlow<List<UploadState>>(emptyList())
     private val jobs = HashMap<Int, Job>()
     private val specs = HashMap<Int, Job1>()
@@ -92,30 +90,43 @@ class UploadQueue(
         return id
     }
 
-    private fun run(id: Int) {
-        val spec = specs[id] ?: return
-        patch(id) { it.copy(phase = UploadPhase.QUEUED, error = null, loaded = 0) }
-        val j = scope.launch {
-            gate.withLock {
-                patch(id) { it.copy(phase = UploadPhase.UPLOADING, loaded = 0) }
-                try {
-                    val content = upload(id, spec)
-                    if (spec.sendAt != null && scheduler != null) scheduler.schedule(spec.roomId, content, spec.sendAt)
-                    else {
-                        val txn = sender.sendEvent(spec.roomId, "m.room.message", content, spec.thread, spec.replyTo)
-                        // the next file waits until this one is out, so a batch (an album) arrives in order
-                        withTimeoutOrNull(20.seconds) { client.room.getOutbox(RoomId(spec.roomId), txn).first { it == null || it.sentAt != null || it.sendError != null } }
-                    }
-                    remove(id)
-                    onSent(spec.roomId, content)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    patch(id) { it.copy(phase = UploadPhase.FAILED, error = errText(e)) }
-                }
+    // one worker takes the uploads in the order they were queued (a launch per upload would race)
+    private val queue = Channel<Int>(Channel.UNLIMITED)
+    init {
+        scope.launch {
+            for (id in queue) {
+                if (specs[id] == null) continue // cancelled while waiting
+                val j = launch { attempt(id) }
+                synchronized(jobs) { jobs[id] = j }
+                j.join()
             }
         }
-        synchronized(jobs) { jobs[id] = j }
+    }
+
+    private fun run(id: Int) {
+        if (specs[id] == null) return
+        patch(id) { it.copy(phase = UploadPhase.QUEUED, error = null, loaded = 0) }
+        queue.trySend(id)
+    }
+
+    private suspend fun attempt(id: Int) {
+        val spec = specs[id] ?: return
+        patch(id) { it.copy(phase = UploadPhase.UPLOADING, loaded = 0) }
+        try {
+            val content = upload(id, spec)
+            if (spec.sendAt != null && scheduler != null) scheduler.schedule(spec.roomId, content, spec.sendAt)
+            else {
+                val txn = sender.sendEvent(spec.roomId, "m.room.message", content, spec.thread, spec.replyTo)
+                // the next file waits until this one is out, so a batch (an album) arrives in order
+                withTimeoutOrNull(20.seconds) { client.room.getOutbox(RoomId(spec.roomId), txn).first { it == null || it.sentAt != null || it.sendError != null } }
+            }
+            remove(id)
+            onSent(spec.roomId, content)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            patch(id) { it.copy(phase = UploadPhase.FAILED, error = errText(e)) }
+        }
     }
 
     /** Stops an upload and removes it. */

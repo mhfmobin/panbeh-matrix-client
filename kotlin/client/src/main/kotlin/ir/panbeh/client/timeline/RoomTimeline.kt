@@ -323,11 +323,12 @@ class RoomTimeline(
         refresh { copy(loadingOlder = true) }
         var released: String? = null
         try {
+            val t0 = System.currentTimeMillis()
             val first = lastBuilt?.slim?.firstOrNull()?.id
             if (first != null) hold.value = Hold(older = EventId(first), newer = hold.value.newer)
             val ch = tl.loadBefore { fetchSize = options.pageSize; maxSize = options.pageSize; fetchTimeout = 30.seconds; decryptionTimeout = options.decryptionTimeout }
             awaitDecrypted(ch.addedElements)
-            if (ch.addedElements.isEmpty()) olderExhausted = true
+            if (ch.addedElements.isEmpty() && System.currentTimeMillis() - t0 < 25_000) olderExhausted = true // (not a timeout)
             released = ch.addedElements.firstOrNull()?.first()?.event?.id?.full
         } finally {
             hold.value = Hold(newer = hold.value.newer)
@@ -345,11 +346,12 @@ class RoomTimeline(
         refresh { copy(loadingNewer = true) }
         var released: String? = null
         try {
+            val t0 = System.currentTimeMillis()
             val last = lastBuilt?.slim?.lastOrNull()?.id
             if (last != null) hold.value = Hold(older = hold.value.older, newer = EventId(last))
             val ch = tl.loadAfter { fetchSize = options.pageSize; maxSize = options.pageSize; fetchTimeout = 30.seconds; decryptionTimeout = options.decryptionTimeout }
             awaitDecrypted(ch.addedElements)
-            if (ch.addedElements.isEmpty()) newerExhausted = true
+            if (ch.addedElements.isEmpty() && System.currentTimeMillis() - t0 < 25_000) newerExhausted = true
             released = ch.addedElements.lastOrNull()?.first()?.event?.id?.full
         } finally {
             hold.value = Hold(older = hold.value.older)

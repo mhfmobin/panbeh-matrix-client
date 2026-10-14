@@ -1,12 +1,9 @@
 package ir.panbeh.client.timeline
 
 import de.connect2x.trixnity.client.room
-import de.connect2x.trixnity.core.model.events.InitialStateEvent
-import de.connect2x.trixnity.core.model.events.m.room.EncryptionEventContent
 import ir.panbeh.client.testServer
 import ir.panbeh.core.util.string
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
@@ -117,8 +114,4 @@ class ThreadsTest {
             assertFalse(sent.isLocal)
         } finally { d.close() }
     }
-
-    @Suppress("unused") private val k = JsonPrimitive(1)
-    @Suppress("unused") private val e = EncryptionEventContent()
-    @Suppress("unused") private val i = InitialStateEvent(EncryptionEventContent(), "")
 }
