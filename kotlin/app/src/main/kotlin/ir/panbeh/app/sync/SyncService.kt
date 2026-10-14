@@ -88,7 +88,7 @@ class SyncService : Service() {
     }
 
     /** Status text and progress of the running client. */
-    private suspend fun follow(c: MatrixClient) = coroutineScope {
+    private suspend fun follow(c: MatrixClient): Nothing = coroutineScope {
         val unsubscribe = c.api.sync.subscribe { SyncControl.lastProgress = SystemClock.elapsedRealtime() }
         launch { combine(c.syncState, online) { s, o -> s to o }.collect { refresh() } }
         try { awaitCancellation() } finally { unsubscribe() }

@@ -1,0 +1,68 @@
+package ir.panbeh.client.crypto
+
+import ir.panbeh.client.testServer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+
+class VerificationTest {
+    @Test
+    fun `self verification with SAS ends verified on both sides`() = runBlocking {
+        val hs = testServer ?: return@runBlocking
+        val (u, p, c1) = newUser(hs)
+        Recovery(c1).setup(password = p)
+        val c2 = device(hs, u, p)
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        try {
+            val v1 = Verification(c1, scope)
+            val v2 = Verification(c2, scope)
+            v2.requestSelf()
+            assertEquals(VerifyPhase.Requested(true), withTimeout(30_000) { v2.current.first { it != null } }!!.phase)
+            val req = withTimeout(30_000) { v1.incoming.first() }
+            assertTrue(req.self)
+            assertEquals(VerifyPhase.Requested(false), withTimeout(30_000) { v1.current.first { it != null } }!!.phase)
+            v1.accept()
+            val a = withTimeout(60_000) { v1.current.first { it?.phase is VerifyPhase.Compare } }!!.phase as VerifyPhase.Compare
+            val b = withTimeout(60_000) { v2.current.first { it?.phase is VerifyPhase.Compare } }!!.phase as VerifyPhase.Compare
+            assertEquals(7, a.emoji.size)
+            assertEquals(a.emoji, b.emoji)
+            assertEquals(a.decimal, b.decimal)
+            assertTrue(a.emoji.all { it.name.isNotBlank() && it.name != it.emoji })
+            v1.confirmMatch()
+            v2.confirmMatch()
+            assertIs<VerifyPhase.Done>(withTimeout(60_000) { v1.current.first { it?.finished == true } }!!.phase)
+            assertIs<VerifyPhase.Done>(withTimeout(60_000) { v2.current.first { it?.finished == true } }!!.phase)
+            withTimeout(30_000) { Devices(c1).watch().first { l -> l.all { it.crossSigningVerified } && l.size == 2 } }
+        } finally { scope.cancel() }
+    }
+
+    @Test
+    fun `a mismatch cancels with the Persian reason`() = runBlocking {
+        val hs = testServer ?: return@runBlocking
+        val (u, p, c1) = newUser(hs)
+        Recovery(c1).setup(password = p)
+        val c2 = device(hs, u, p)
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        try {
+            val v1 = Verification(c1, scope)
+            val v2 = Verification(c2, scope)
+            v2.requestSelf()
+            withTimeout(30_000) { v1.incoming.first() }
+            v1.accept()
+            withTimeout(60_000) { v1.current.first { it?.phase is VerifyPhase.Compare } }
+            withTimeout(60_000) { v2.current.first { it?.phase is VerifyPhase.Compare } }
+            v1.mismatch()
+            val c = withTimeout(60_000) { v1.current.first { it?.finished == true } }!!.phase
+            assertEquals(VerifyPhase.Cancelled("شکلک‌ها مطابقت نداشتند؛ تأیید لغو شد."), c)
+            assertIs<VerifyPhase.Cancelled>(withTimeout(60_000) { v2.current.first { it?.finished == true } }!!.phase)
+        } finally { scope.cancel() }
+    }
+}
