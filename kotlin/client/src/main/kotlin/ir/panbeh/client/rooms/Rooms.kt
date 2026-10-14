@@ -35,7 +35,6 @@ import de.connect2x.trixnity.core.model.push.PushRuleKind
 import de.connect2x.trixnity.clientserverapi.model.push.SetPushRule
 import ir.panbeh.client.KeyValueStore
 import ir.panbeh.client.errcode
-import ir.panbeh.client.events.CallMember
 import ir.panbeh.client.events.FamedlyMarkedUnread
 import ir.panbeh.client.events.FolderOrder
 import ir.panbeh.client.events.MuteUntil
@@ -74,6 +73,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -181,6 +181,7 @@ class Rooms(
 
     // ---------- per-room data ----------
 
+    @Suppress("UNCHECKED_CAST")
     private fun base(id: RoomId, roomFlow: Flow<Room?>): Flow<Base?> {
         val rooms = client.room
         val tags = rooms.getAccountData<TagEventContent>(id).map { c -> c?.tags?.keys?.map { it.name }?.toSet() ?: emptySet() }.distinctUntilChanged()
@@ -239,7 +240,7 @@ class Rooms(
         if (te == null || depth == 0) return flowOf(null)
         val d = describe(te, ig)
             ?: return client.room.getPreviousTimelineEvent(te, timelineCfg)?.flatMapLatest { walk(it, ig, depth - 1) } ?: flowOf(null)
-        val roomId = te.event.roomId ?: return flowOf(null)
+        val roomId = te.event.roomId
         return client.room.getState<MemberEventContent>(roomId, d.sender).map { m ->
             val name = m?.content?.displayName?.takeIf(String::isNotEmpty) ?: d.sender
             LastMessage(te.event.id.full, d.sender, name, d.ts, d.text(name), d.sender == me.full, d.call)
@@ -281,7 +282,7 @@ class Rooms(
     /** Joined and invited chats (replaced/tombstoned rooms hidden, spaces separate), sorted invites > pinned > newest. */
     val list: StateFlow<RoomList> = combine(bases, direct, mutedRooms, counts) { b, d, m, c -> assemble(b, d, m, c) }
         .debounce(40)
-        .catch { e -> System.err.println("ROOMLIST DIED: $e"); e.printStackTrace(); emit(RoomList(ready = true)) }
+        .retryWhen { _, _ -> delay(1000); true }
         .stateIn(scope, SharingStarted.Eagerly, RoomList())
 
     private fun assemble(bases: List<Base>, direct: Map<String, String>, muted: Set<String>, counts: Map<String, Counts>): RoomList {
@@ -431,7 +432,7 @@ class Rooms(
     private suspend fun setMuted(roomId: String, mute: Boolean, until: Long?) {
         val rid = RoomId(roomId)
         val g = api.push
-        val roomRules = g.getPushRules().getOrThrow().global?.room.orEmpty()
+        val roomRules = g.getPushRules().getOrThrow().global.room.orEmpty()
         val overrides = g.getPushRules().getOrNull()?.global?.override.orEmpty()
         if (mute) {
             g.setPushRule("global", PushRuleKind.ROOM, roomId, SetPushRule.Request(actions = emptySet())).getOrThrow()
@@ -460,7 +461,7 @@ class Rooms(
 
     /** Unmutes every chat whose timed mute has run out. */
     suspend fun unmuteExpired(now: Long = System.currentTimeMillis()) {
-        for (r in list.value.rows) if (r.muted && (r.muteUntil ?: Long.MAX_VALUE) <= now) runCatching { unmute(r.id) }.onFailure { System.err.println("UNMUTE FAIL $it") }
+        for (r in list.value.rows) if (r.muted && (r.muteUntil ?: Long.MAX_VALUE) <= now) runCatching { unmute(r.id) }
     }
 
     private var muteTimer: Job? = null

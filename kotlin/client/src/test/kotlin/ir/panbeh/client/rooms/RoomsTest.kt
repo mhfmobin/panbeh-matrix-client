@@ -7,6 +7,7 @@ import de.connect2x.trixnity.core.model.RoomId
 import de.connect2x.trixnity.core.model.events.m.space.ParentEventContent
 import de.connect2x.trixnity.clientserverapi.client.getStateEventContent
 import de.connect2x.trixnity.core.model.events.m.room.JoinRulesEventContent
+import de.connect2x.trixnity.clientserverapi.model.room.DirectoryVisibility
 import ir.panbeh.client.Accounts
 import ir.panbeh.client.register
 import ir.panbeh.client.testPlatform
@@ -285,22 +286,27 @@ class RoomsTest {
 
             val alias = "pub" + a.name.takeLast(6)
             val pub = a.chats.createChat(NewChat(name = "pub $alias", alias = alias, encrypted = false)).roomId
-            val found = withTimeout(30_000) {
-                var r: PublicRooms
-                do { r = b.chats.publicRooms(alias); if (r.rooms.none { it.id == pub }) kotlinx.coroutines.delay(500) } while (r.rooms.none { it.id == pub })
-                r
+            // the test Synapse needs room_list_publication_rules (allow) to list rooms; without it the room stays private
+            val listed = a.client.api.room.getDirectoryVisibility(RoomId(pub)).getOrThrow() == DirectoryVisibility.PUBLIC
+            assertEquals(emptyList(), b.chats.publicRooms("zzzz-no-such-room-${a.name}").rooms)
+            if (listed) {
+                val found = withTimeout(30_000) {
+                    var r: PublicRooms
+                    do { r = b.chats.publicRooms(alias); if (r.rooms.none { it.id == pub }) kotlinx.coroutines.delay(500) } while (r.rooms.none { it.id == pub })
+                    r
+                }
+                val pr = found.rooms.first { it.id == pub }
+                assertEquals("#$alias:localhost", pr.alias)
+                assertFalse(pr.joined)
             }
-            val pr = found.rooms.first { it.id == pub }
-            assertEquals("#$alias:localhost", pr.alias)
-            assertFalse(pr.joined)
             val j = b.chats.join("#$alias:localhost")
             assertTrue(j is JoinResult.Joined && j.roomId == pub && !j.isSpace)
             b.row(pub)
-            assertTrue(b.chats.publicRooms(alias).rooms.first { it.id == pub }.joined)
+            if (listed) assertTrue(b.chats.publicRooms(alias).rooms.first { it.id == pub }.joined)
 
             val priv = a.chats.createChat(NewChat(name = "خصوصی", encrypted = false)).roomId
             assertEquals(JoinResult.NeedsKnock, b.chats.join(priv, setOf("localhost")))
-            assertNotNull(b.chats.knock(priv, setOf("localhost")).let { it as? KnockResult })
+            assertEquals(KnockResult.Refused(Chats.KNOCK_REFUSED), b.chats.knock(priv, setOf("localhost")))
         } finally { a.close(); b.close() }
     }
 
