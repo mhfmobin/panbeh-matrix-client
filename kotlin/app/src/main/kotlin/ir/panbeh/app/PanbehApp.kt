@@ -1,6 +1,13 @@
 package ir.panbeh.app
 
 import android.app.Application
+import coil3.ImageLoader
+import coil3.PlatformContext
+import coil3.SingletonImageLoader
+import coil3.gif.AnimatedImageDecoder
+import coil3.video.VideoFrameDecoder
+import ir.panbeh.app.media.MxcFetcher
+import ir.panbeh.app.media.MxcKeyer
 import io.ktor.client.engine.okhttp.OkHttp
 import ir.panbeh.app.data.AndroidStores
 import ir.panbeh.app.data.AppState
@@ -12,7 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 
 /** App-wide singletons (hand-rolled DI). */
-class PanbehApp : Application() {
+class PanbehApp : Application(), SingletonImageLoader.Factory {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     lateinit var platform: Platform
         private set
@@ -34,6 +41,15 @@ class PanbehApp : Application() {
         state = AppState(this)
         state.boot()
     }
+
+    override fun newImageLoader(context: PlatformContext): ImageLoader = ImageLoader.Builder(context)
+        .components {
+            add(MxcKeyer())
+            add(MxcFetcher.Factory())
+            add(AnimatedImageDecoder.Factory())
+            add(VideoFrameDecoder.Factory())
+        }
+        .build()
 
     companion object {
         lateinit var instance: PanbehApp
