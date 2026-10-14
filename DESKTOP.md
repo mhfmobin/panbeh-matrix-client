@@ -34,11 +34,15 @@ attaches them to that release:
 
 ### First launch of unsigned builds
 
-The apps aren't code-signed yet, so the first launch shows a warning:
+Feature-branch and local builds aren't signed, so the first launch shows a warning:
 
 - **Windows**: SmartScreen says "Windows protected your PC" → *More info* → *Run anyway*.
 - **macOS**: "Apple could not verify…" → System Settings → Privacy & Security → *Open Anyway* (once).
   Or, in Terminal: `xattr -dr com.apple.quarantine /Applications/Panbeh.app`.
+
+Release builds (`main` and `v*` tags) are **Windows-signed via Azure Trusted Signing** and no
+longer show the SmartScreen warning once its reputation builds (a fresh certificate needs a few
+days of downloads first).
 
 ## Updates
 
@@ -56,20 +60,23 @@ The app checks for a new version at start and every 6 hours, against GitHub rele
 To release: bump nothing, just push a tag, e.g. `git tag v1.0.0 && git push origin v1.0.0`. The version
 comes from the tag.
 
-## Signing (optional, later)
+## Signing
 
-CI signs automatically once these secrets exist (GitHub → Settings → Secrets and variables → Actions):
+Windows release builds are signed with **Azure Trusted Signing**; setup (account, secrets, the
+`.pfx` fallback) is in [docs/desktop-signing.md](docs/desktop-signing.md). CI fails if a `main` or
+`v*` build would go out unsigned.
+
+macOS needs an Apple Developer account ($99/year) and these secrets:
 
 | Secret | Value |
 | --- | --- |
 | `MAC_CSC_LINK` | Developer ID Application certificate, `.p12` as base64 (`base64 -i cert.p12`) |
 | `MAC_CSC_KEY_PASSWORD` | the `.p12` password |
 | `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | for notarization (an app-specific password from appleid.apple.com) |
-| `WIN_CSC_LINK` | Windows code-signing certificate, `.pfx` as base64 |
-| `WIN_CSC_KEY_PASSWORD` | the `.pfx` password |
 
-macOS needs an Apple Developer account ($99/year). Without the Apple secrets, macOS builds get an ad-hoc
-signature, the minimum Apple Silicon needs to run them at all.
+Without the Apple secrets, macOS builds get an ad-hoc signature, the minimum Apple Silicon needs
+to run them at all. Once macOS is signed, drop the `!isMac` from `autoDownload` and
+`downloadUpdate()` in `desktop/main.cjs` to let it auto-update too.
 
 ## OAuth login (MAS)
 

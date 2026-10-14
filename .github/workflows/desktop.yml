@@ -39,7 +39,19 @@ jobs:
           npm test
           npm run build
 
-      # signing is optional: without the secrets the apps are unsigned (see DESKTOP.md)
+      # Windows: Azure Trusted Signing (see docs/desktop-signing.md). The .pfx path below is the fallback.
+      # Signing is required on main and v* tags; a feature branch without secrets just builds unsigned.
+      - name: Require Windows signing on main and tags
+        if: runner.os == 'Windows' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        env:
+          AZURE_SIGN_ENDPOINT: ${{ secrets.AZURE_SIGN_ENDPOINT }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+        run: |
+          if [ -z "$AZURE_SIGN_ENDPOINT" ] && [ -z "$WIN_CSC_LINK" ]; then
+            echo "::error::Neither AZURE_SIGN_ENDPOINT nor WIN_CSC_LINK is set. Unsigned installers can't update installed apps and SmartScreen blocks them. See docs/desktop-signing.md."
+            exit 1
+          fi
+
       - name: Signing keys
         shell: bash
         env:
@@ -50,6 +62,12 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          AZURE_SIGN_ENDPOINT: ${{ secrets.AZURE_SIGN_ENDPOINT }}
+          AZURE_SIGN_ACCOUNT: ${{ secrets.AZURE_SIGN_ACCOUNT }}
+          AZURE_SIGN_PROFILE: ${{ secrets.AZURE_SIGN_PROFILE }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_SIGN_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_SIGN_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_SIGN_CLIENT_SECRET }}
         run: |
           put() { if [ -n "${!1}" ]; then echo "$1=${!1}" >> "$GITHUB_ENV"; fi; }
           if [ "$RUNNER_OS" = macOS ]; then
@@ -61,15 +79,31 @@ jobs:
               echo "BUILDER_ARGS=-c.mac.identity=-" >> "$GITHUB_ENV"
             fi
           elif [ "$RUNNER_OS" = Windows ]; then
-            put WIN_CSC_LINK; put WIN_CSC_KEY_PASSWORD
-            [ -n "$WIN_CSC_LINK" ] || echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            # Azure Trusted Signing auth, exported for the Package step below.
+            # Without it: the .pfx fallback, or unsigned (feature branches without secrets).
+            if [ -n "$AZURE_SIGN_ENDPOINT" ]; then
+              for v in AZURE_SIGN_ENDPOINT AZURE_SIGN_ACCOUNT AZURE_SIGN_PROFILE AZURE_TENANT_ID \
+                       AZURE_CLIENT_ID AZURE_CLIENT_SECRET; do put $v; done
+            else
+              put WIN_CSC_LINK; put WIN_CSC_KEY_PASSWORD
+              [ -n "$WIN_CSC_LINK" ] || echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            fi
           fi
 
       - name: Package
         shell: bash
         env:
           VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('0.1.0-{0}', github.run_number) }}
-        run: npx electron-builder ${{ matrix.target }} --publish never -c.extraMetadata.version="${VERSION#v}" $BUILDER_ARGS
+        run: |
+          flags=(${{ matrix.target }} --publish never -c.extraMetadata.version="${VERSION#v}" $BUILDER_ARGS)
+          if [ "$RUNNER_OS" = Windows ] && [ -n "$AZURE_SIGN_ENDPOINT" ]; then
+            # Azure Trusted Signing (docs/desktop-signing.md); takes precedence over CSC_LINK
+            flags+=(-c.win.azureSignOptions.endpoint="$AZURE_SIGN_ENDPOINT"
+                    -c.win.azureSignOptions.codeSigningAccountName="$AZURE_SIGN_ACCOUNT"
+                    -c.win.azureSignOptions.certificateProfileName="$AZURE_SIGN_PROFILE"
+                    -c.win.azureSignOptions.publisherName="Panbeh")
+          fi
+          npx electron-builder "${flags[@]}"
 
       - uses: actions/upload-artifact@v7
         with:

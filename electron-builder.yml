@@ -28,6 +28,9 @@ win:
   target:
     - target: nsis
       arch: [x64] # also runs on Windows on ARM, emulated
+  # Signing isn't configured here on purpose: CI adds it at build time, either Azure Trusted Signing
+  # (preferred, from AZURE_SIGN_* secrets) or a .pfx (WIN_CSC_LINK), so branch builds without
+  # secrets stay unsigned. See docs/desktop-signing.md.
 nsis:
   oneClick: true
   perMachine: false # per-user: no admin prompt, and updates install silently

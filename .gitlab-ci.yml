@@ -1,6 +1,8 @@
 # GitLab twin of .github/workflows/{android,desktop}.yml.
 # CI/CD variables: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
-# (same as the GitHub secrets; see ANDROID.md). Artifacts carry installers only: no latest*.yml, no blockmaps.
+# (same as the GitHub secrets; see ANDROID.md), and for Windows signing AZURE_SIGN_* or
+# WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD (see docs/desktop-signing.md).
+# Artifacts carry installers only: no latest*.yml, no blockmaps.
 
 stages: [build, release]
 
@@ -74,7 +76,24 @@ apk:
     - npm ci --cache .npm --prefer-offline
     - npm test
     - npm run build
-    - npx electron-builder $TARGET --publish never -c.extraMetadata.version="${VERSION#v}" $BUILDER_ARGS
+    # release builds (main, tags) must be signed, like the GitHub workflow; see docs/desktop-signing.md
+    - |
+      if [ "$TARGET" = "--win" ] && { [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ] || [ -n "$CI_COMMIT_TAG" ]; }; then
+        if [ -z "$AZURE_SIGN_ENDPOINT" ] && [ -z "$WIN_CSC_LINK" ]; then
+          echo "Neither AZURE_SIGN_ENDPOINT nor WIN_CSC_LINK is set. Unsigned installers can't update installed apps and SmartScreen blocks them. See docs/desktop-signing.md."
+          exit 1
+        fi
+      fi
+    - |
+      if [ "$TARGET" = "--win" ] && [ -n "$AZURE_SIGN_ENDPOINT" ]; then
+        npx electron-builder $TARGET --publish never -c.extraMetadata.version="${VERSION#v}" $BUILDER_ARGS \
+          -c.win.azureSignOptions.endpoint="$AZURE_SIGN_ENDPOINT" \
+          -c.win.azureSignOptions.codeSigningAccountName="$AZURE_SIGN_ACCOUNT" \
+          -c.win.azureSignOptions.certificateProfileName="$AZURE_SIGN_PROFILE" \
+          -c.win.azureSignOptions.publisherName="Panbeh"
+      else
+        npx electron-builder $TARGET --publish never -c.extraMetadata.version="${VERSION#v}" $BUILDER_ARGS
+      fi
     - eval "$RENAME"
   after_script:
     - rm -rf node_modules dist .npm release/*-unpacked release/mac-* release/*.yml release/*.blockmap ~/.cache/electron ~/.cache/electron-builder
