@@ -42,5 +42,8 @@ fun Root() {
         }
         ToastHost()
         DialogHost()
+        // above everything, dialogs included: lifting them would show the app over the lock
+        val locked by ir.panbeh.app.data.AppLock.locked.collectAsStateWithLifecycle()
+        if (locked) ir.panbeh.app.ui.lock.LockScreen()
     }
 }

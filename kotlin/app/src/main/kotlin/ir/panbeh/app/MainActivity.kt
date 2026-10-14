@@ -2,10 +2,11 @@ package ir.panbeh.app
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
+import androidx.fragment.app.FragmentActivity
+import ir.panbeh.app.data.AppLock
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import ir.panbeh.app.ui.Root
@@ -13,7 +14,7 @@ import ir.panbeh.app.ui.theme.PanbehTheme
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -31,6 +32,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() { super.onResume(); visible = true }
     override fun onPause() { super.onPause(); visible = false }
+    override fun onStart() { super.onStart(); AppLock.onShown() }
+    override fun onStop() { super.onStop(); AppLock.onHidden() }
 
     private fun handle(intent: Intent?) {
         val app = PanbehApp.instance
