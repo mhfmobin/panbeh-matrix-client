@@ -9,6 +9,7 @@ import de.connect2x.trixnity.clientserverapi.model.authentication.IdentifierType
 import de.connect2x.trixnity.clientserverapi.model.room.CreateRoom
 import de.connect2x.trixnity.core.model.RoomId
 import de.connect2x.trixnity.core.model.events.InitialStateEvent
+import de.connect2x.trixnity.core.model.events.m.DirectEventContent
 import de.connect2x.trixnity.core.model.events.m.room.EncryptionEventContent
 import de.connect2x.trixnity.core.model.events.m.room.Membership
 import de.connect2x.trixnity.core.serialization.events.EventContentSerializerMappings
@@ -87,6 +88,12 @@ suspend fun roomOf(a: MatrixClient, b: MatrixClient, direct: Boolean = true, enc
     b.api.room.joinRoom(id).getOrThrow()
     withTimeout(30_000) { a.room.getById(id).filterNotNull().first { true } }
     withTimeout(30_000) { b.room.getById(id).filterNotNull().first { it.membership == Membership.JOIN } }
+    if (direct) {
+        // m.direct is what makes a room a DM; Trixnity fills it in a moment after the invite, so don't wait for that
+        a.api.user.setAccountData(DirectEventContent(mapOf(b.userId to setOf(id))), a.userId)
+        b.api.user.setAccountData(DirectEventContent(mapOf(a.userId to setOf(id))), b.userId)
+        withTimeout(30_000) { a.room.getById(id).filterNotNull().first { it.isDirect }; b.room.getById(id).filterNotNull().first { it.isDirect } }
+    }
     return id
 }
 
