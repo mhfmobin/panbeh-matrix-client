@@ -18,6 +18,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ir.panbeh.app.PanbehApp
 import ir.panbeh.app.data.Phase
+import ir.panbeh.app.ui.common.DialogHost
+import ir.panbeh.app.ui.common.ToastHost
 import ir.panbeh.app.ui.login.LoginScreen
 import ir.panbeh.app.ui.theme.Panbeh
 
@@ -38,5 +40,7 @@ fun Root() {
             }
             is Phase.Ready -> MainScreen(p.client)
         }
+        ToastHost()
+        DialogHost()
     }
 }
