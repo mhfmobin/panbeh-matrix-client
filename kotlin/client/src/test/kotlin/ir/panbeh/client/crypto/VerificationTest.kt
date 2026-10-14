@@ -41,9 +41,8 @@ class VerificationTest {
             val v2 = Verification(c2, scope)
             v2.requestSelf()
             assertEquals(VerifyPhase.Requested(true), withTimeout(30_000) { v2.current.first { it != null } }!!.phase)
-            val req = withTimeout(30_000) { v1.incoming.first() }
+            val req = withTimeout(30_000) { v1.current.first { it?.phase == VerifyPhase.Requested(false) } }!!
             assertTrue(req.self)
-            assertEquals(VerifyPhase.Requested(false), withTimeout(30_000) { v1.current.first { it != null } }!!.phase)
             v1.accept()
             val a = withTimeout(60_000) { v1.current.first { it?.phase is VerifyPhase.Compare } }!!.phase as VerifyPhase.Compare
             val b = withTimeout(60_000) { v2.current.first { it?.phase is VerifyPhase.Compare } }!!.phase as VerifyPhase.Compare
@@ -70,7 +69,8 @@ class VerificationTest {
             val v1 = Verification(c1, scope)
             val v2 = Verification(c2, scope)
             v2.requestSelf()
-            withTimeout(30_000) { v1.incoming.first() }
+            // the StateFlow, not the incoming SharedFlow (which has no replay and may have emitted already)
+            withTimeout(30_000) { v1.current.first { it?.phase == VerifyPhase.Requested(false) } }
             v1.accept()
             withTimeout(60_000) { v1.current.first { it?.phase is VerifyPhase.Compare } }
             withTimeout(60_000) { v2.current.first { it?.phase is VerifyPhase.Compare } }
@@ -112,7 +112,7 @@ class UserVerificationTest {
             withTimeout(30_000) { ca.user.getById(dm, UserId("@$b:localhost")).first { it?.event?.content?.membership == Membership.JOIN } }
             withTimeout(30_000) { ca.room.getById(dm).first { it?.encrypted == true } }
             va.verifyUser("@$b:localhost")
-            val req = withTimeout(60_000) { vb.incoming.first() }
+            val req = withTimeout(60_000) { vb.current.first { it?.phase == VerifyPhase.Requested(false) } }!!
             assertEquals(false, req.self)
             assertEquals("@$a:localhost", req.otherUserId)
             vb.accept()
