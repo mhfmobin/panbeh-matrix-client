@@ -67,7 +67,10 @@ suspend fun <T : Any> eventually(what: String, ms: Long = 60_000, cond: suspend 
     throw AssertionError("timed out waiting for $what" + (last?.let { ": $it" } ?: ""), last)
 }
 
-/** The first item of [t] matching [p]. */
-suspend fun RoomTimeline.item(what: String = "item", ms: Long = 60_000, p: (TimelineItem) -> Boolean) = eventually(what, ms) { state.value.items.firstOrNull(p) }
+/** The first item that came back from the server (not a local echo) matching [p]. */
+suspend fun RoomTimeline.item(what: String = "item", ms: Long = 60_000, p: (TimelineItem) -> Boolean) = eventually(what, ms) { state.value.items.firstOrNull { it.eventId != null && it.sendState == null && p(it) } }
+
+/** The first item matching [p], local echoes included. */
+suspend fun RoomTimeline.echo(what: String = "echo", ms: Long = 60_000, p: (TimelineItem) -> Boolean) = eventually(what, ms) { state.value.items.firstOrNull(p) }
 
 @Suppress("unused") private val keep = RoomId("!x:y")

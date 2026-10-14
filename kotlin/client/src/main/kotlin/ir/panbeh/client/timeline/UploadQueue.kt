@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
@@ -99,7 +101,11 @@ class UploadQueue(
                 try {
                     val content = upload(id, spec)
                     if (spec.sendAt != null && scheduler != null) scheduler.schedule(spec.roomId, content, spec.sendAt)
-                    else sender.sendEvent(spec.roomId, "m.room.message", content, spec.thread, spec.replyTo)
+                    else {
+                        val txn = sender.sendEvent(spec.roomId, "m.room.message", content, spec.thread, spec.replyTo)
+                        // the next file waits until this one is out, so a batch (an album) arrives in order
+                        withTimeoutOrNull(20.seconds) { client.room.getOutbox(RoomId(spec.roomId), txn).first { it == null || it.sentAt != null || it.sendError != null } }
+                    }
                     remove(id)
                     onSent(spec.roomId, content)
                 } catch (e: CancellationException) {

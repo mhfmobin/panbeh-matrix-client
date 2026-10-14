@@ -74,8 +74,10 @@ data class TimelineItem(
     /** the text a search finds / the one-line preview of this item */
     val preview: String = "",
     val forwardedFrom: Forwarded? = null,
-    /** I (or whoever) pinned it */
+    /** the room's pinned messages include it */
     val pinned: Boolean = false,
+    /** m.mentions names me (or the whole room): highlight it */
+    val mentionsMe: Boolean = false,
 ) {
     val isLocal get() = eventId == null || sendState != null && sendState != SendState.SENT
 }

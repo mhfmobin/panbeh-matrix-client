@@ -39,6 +39,8 @@ internal class Ctx(
     val receipts: Map<UserId, RoomUserReceipts> = emptyMap(),
     val outbox: List<RoomOutboxMessage<*>> = emptyList(),
     val pinned: Set<String> = emptySet(),
+    /** blocked users (m.ignored_user_list): their messages are hidden, as some servers keep sending them */
+    val ignored: Set<String> = emptySet(),
 )
 
 /** The result of one assembly pass. */
@@ -47,7 +49,7 @@ internal class Built(val items: List<TimelineItem>, val slim: List<Slim>) {
 }
 
 /** An event as the unread-marker logic sees it; [key] is the item's key when it's shown. */
-internal class Slim(val id: String, val sender: String, val key: String?, val isMessage: Boolean)
+internal class Slim(val id: String, val sender: String, val key: String?, val isMessage: Boolean, val thread: String? = null)
 
 private val HIDDEN_TYPES = setOf("m.reaction", "m.room.redaction")
 
@@ -112,6 +114,12 @@ internal class Assembler(private val codec: Codec, private val roomId: String, p
 
     private fun senderOf(ctx: Ctx, id: String) = Triple(id, nameOf(ctx, id) ?: id, ctx.members[UserId(id)]?.event?.content?.avatarUrl)
 
+    /** m.mentions names me or the whole room. */
+    private fun mentions(c: JsonObject): Boolean {
+        val m = c["m.mentions"] as? JsonObject ?: return false
+        return (m["room"] as? JsonPrimitive)?.content == "true" || (m["user_ids"] as? kotlinx.serialization.json.JsonArray)?.any { (it as? JsonPrimitive)?.content == me } == true
+    }
+
     private val calls = setOf(Types.RTC_NOTIFICATION, "m.rtc.notification", "m.call.invite")
 
     /**
@@ -152,6 +160,7 @@ internal class Assembler(private val codec: Codec, private val roomId: String, p
             val prev = ((ev.unsigned as? UnsignedRoomEventData.UnsignedStateEventData)?.previousContent)?.let { codec.jsonOf(it) } ?: JsonObject(emptyMap())
             val mt = c.string("msgtype")
             val message = isMessageType(type) && mt != VERIFY_REQUEST && state == null
+            if (message && sender in ctx.ignored) return@forEachIndexed
             var call: CallLine? = null
             if (!redacted && type in calls) {
                 val after = entries.drop(i + 1).map { callEv(it) }
@@ -182,6 +191,7 @@ internal class Assembler(private val codec: Codec, private val roomId: String, p
                     decryption = decryption, replyTo = replyTo, threadRoot = thread, thread = summary, reactions = reactionsOf(e.reactions),
                     readBy = reads, album = if (message) albumOf(c, replyTo, false) else null,
                     preview = if (notice != null) notice else previewText(type, c, name, decryption), forwardedFrom = fwd, pinned = id in ctx.pinned,
+                    mentionsMe = sender != me && mentions(c),
                 ),
             )
         }
@@ -216,7 +226,8 @@ internal class Assembler(private val codec: Codec, private val roomId: String, p
         val byEvent = items.filter { it.eventId != null }.associateBy { it.eventId }
         return Built(items, entries.map { e ->
             val it = byEvent[e.te.event.id.full]
-            Slim(e.te.event.id.full, e.te.event.sender.full, it?.key, it != null && it.kind == ItemKind.MESSAGE && !it.redacted)
+            val rel = relatesOf(e.te.content?.getOrNull()) ?: relatesOf(e.te.event.content)
+            Slim(e.te.event.id.full, e.te.event.sender.full, it?.key, it != null && it.kind == ItemKind.MESSAGE && !it.redacted, (rel as? RelatesTo.Thread)?.eventId?.full)
         })
     }
 

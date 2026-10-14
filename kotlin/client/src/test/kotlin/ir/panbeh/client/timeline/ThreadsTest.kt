@@ -108,11 +108,12 @@ class ThreadsTest {
         try {
             val ta = d.timelineA().also { it.open() }
             val txn = d.sa.sendText(d.roomId, "echo")
-            val item = ta.item("echo") { it.content.string("body") == "echo" }
+            val item = ta.echo("echo") { it.content.string("body") == "echo" }
             // while in the outbox it is keyed by its transaction id, and keeps that key once the server echo arrives
             assertEquals(txn, item.txnId ?: txn)
             val sent = eventually("sent") { ta.state.value.items.firstOrNull { it.content.string("body") == "echo" && it.eventId != null && it.sendState == null } }
             assertNotNull(sent.eventId)
+            assertEquals(txn, sent.key) // the row keeps its key from local echo to server echo
             assertFalse(sent.isLocal)
         } finally { d.close() }
     }

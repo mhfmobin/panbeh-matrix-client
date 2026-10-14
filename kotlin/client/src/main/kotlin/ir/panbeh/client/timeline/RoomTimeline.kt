@@ -15,6 +15,8 @@ import de.connect2x.trixnity.client.store.RoomOutboxMessage
 import de.connect2x.trixnity.client.store.TimelineEvent
 import de.connect2x.trixnity.client.store.originTimestamp
 import de.connect2x.trixnity.client.user
+import de.connect2x.trixnity.client.user.getAccountData
+import de.connect2x.trixnity.core.model.events.m.IgnoredUserListEventContent
 import de.connect2x.trixnity.core.model.EventId
 import de.connect2x.trixnity.core.model.RoomId
 import de.connect2x.trixnity.core.model.events.ClientEvent.RoomEvent
@@ -55,6 +57,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration
@@ -86,7 +89,7 @@ sealed interface JumpResult {
 
 private class Snapshot(val entries: List<Entry>, val st: TxState<*>)
 private class Hold(val older: EventId? = null, val newer: EventId? = null, val blockAll: Boolean = false)
-private class Inputs(val snap: Snapshot, val hold: Hold, val ctx: Ctx, val unread: String?)
+private class Inputs(val snap: Snapshot, val hold: Hold, val ctx: Ctx, val unread: String?, val follow: Boolean, val busy: Pair<Boolean, Boolean>)
 
 /**
  * A paged view of one room's timeline (or of one thread's, with [thread] = the root event id): the newest messages at the live end
@@ -145,11 +148,14 @@ class RoomTimeline(
             loadOlder()
             return
         }
-        val last = client.room.getById(room).filterNotNull().first { it.lastEventId != null }.lastEventId!!
+        val last = withTimeout(30.seconds) { client.room.getById(room).filterNotNull().first { it.lastEventId != null } }.lastEventId!!
         startPipeline()
         tl.init(room, last, { fetchTimeout = 30.seconds; decryptionTimeout = options.decryptionTimeout }, { decryptionTimeout = options.decryptionTimeout }, { decryptionTimeout = options.decryptionTimeout })
         follow.value = true
         _state.first { it.initialized }
+        // a handful of messages doesn't fill the screen (and without overflow nothing asks for more): page back
+        var tries = 0
+        while (tries++ < 5 && _state.value.canLoadOlder && (lastBuilt?.items?.count { it.kind == ItemKind.MESSAGE } ?: 0) < 20) loadOlder()
         placeUnreadMarker()
     }
 
@@ -186,7 +192,8 @@ class RoomTimeline(
 
     private fun startPipeline() {
         val j1 = scope.launch {
-            combine(snapshots(), hold, context(), unread) { s, h, c, u -> Inputs(s, h, c, u) }.conflate().collect { publish(it) }
+            combine(snapshots(), hold, context(), combine(unread, follow, busyOlder, busyNewer) { u, f, o, n -> Triple(u, f, o to n) }) { s, h, c, x -> Inputs(s, h, c, x.first, x.second, x.third) }
+                .conflate().collect { publish(it) }
         }
         val j2 = scope.launch { followLive() }
         jobs = listOf(j1, j2)
@@ -212,7 +219,8 @@ class RoomTimeline(
         client.user.getAllReceipts(room).flattenNotNull(),
         client.room.getOutbox(room).flatten(),
         client.room.getState<PinnedEventsEventContent>(room).map { s -> s?.content?.pinned?.map { it.full }?.toSet() ?: emptySet() },
-    ) { m, r, o, p -> Ctx(m, r, o.filterIsInstance<RoomOutboxMessage<*>>(), p) }
+        client.user.getAccountData<IgnoredUserListEventContent>().map { c -> c?.ignoredUsers?.keys?.map { it.full }?.toSet() ?: emptySet() },
+    ) { m, r, o, p, i -> Ctx(m, r, o.filterIsInstance<RoomOutboxMessage<*>>(), p, i) }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun snapshots(): Flow<Snapshot> =
@@ -275,10 +283,10 @@ class RoomTimeline(
         val cur = _state.value
         _state.value = cur.copy(
             items = items, rows = rows, unreadAfter = inp.unread, initialized = thread != null || st.isInitialized,
-            loadingOlder = busyOlder.value, loadingNewer = busyNewer.value,
+            loadingOlder = inp.busy.first, loadingNewer = inp.busy.second,
             canLoadOlder = if (thread != null) threadMore.value else st.canLoadBefore,
-            canLoadNewer = thread == null && st.canLoadAfter && !follow.value,
-            atLive = thread != null || !st.canLoadAfter || follow.value,
+            canLoadNewer = thread == null && st.canLoadAfter && !inp.follow,
+            atLive = thread != null || !st.canLoadAfter || inp.follow,
             focus = focus, focusSeq = focusSeq, windowSeq = windowSeq,
         )
     }
@@ -371,7 +379,11 @@ class RoomTimeline(
      * ways); finding a very old event pages the history back to it. A thread reply isn't in the main timeline: [JumpResult.InThread].
      */
     suspend fun jump(eventId: String): JumpResult {
-        if (lastBuilt?.slim?.any { it.id == eventId } == true) { setFocus(eventId); return JumpResult.Found }
+        lastBuilt?.slim?.firstOrNull { it.id == eventId }?.let { e ->
+            if (thread == null && e.thread != null) return JumpResult.InThread(e.thread)
+            setFocus(eventId)
+            return JumpResult.Found
+        }
         val te = loader.raw(eventId) ?: return JumpResult.NotFound
         val rel = ((te.content?.getOrNull() ?: te.event.content) as? MessageEventContent)?.relatesTo ?: (te.event.content as? MessageEventContent)?.relatesTo
         if (thread == null && rel is RelatesTo.Thread) return JumpResult.InThread(rel.eventId.full)
@@ -382,7 +394,14 @@ class RoomTimeline(
             setFocus(eventId)
             return JumpResult.Found
         }
-        return if (reinit(EventId(eventId), eventId)) JumpResult.Found else JumpResult.NotFound
+        if (!reinit(EventId(eventId), eventId)) return JumpResult.NotFound
+        awaitLoaded(eventId)
+        return JumpResult.Found
+    }
+
+    /** Waits (a few seconds at most) until the pipeline has built a state that contains [eventId]. */
+    private suspend fun awaitLoaded(eventId: String) {
+        withTimeoutOrNull(10.seconds) { while (lastBuilt?.slim?.any { it.id == eventId } != true) delay(50) }
     }
 
     private fun setFocus(id: String?) {
