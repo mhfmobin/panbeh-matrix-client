@@ -110,10 +110,10 @@ fun LoginScreen(initialError: String? = null, onCancel: (() -> Unit)? = null) {
                 Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Image(painterResource(R.mipmap.ic_launcher_round), null, Modifier.size(72.dp))
                     Text("ورود به ماتریکس", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    LtrField("سرور", server, { server = it; error = "" }, "matrix.example.org:8448", KeyboardType.Uri, ImeAction.Go, ::submit)
+                    LtrField("سرور", server, { server = it; error = "" }, "matrix.example.org:8448", KeyboardType.Uri, ImeAction.Go, onIme = ::submit)
                     if (mode == Mode.PASSWORD) {
                         LtrField("نام کاربری", user, { user = it }, "alice", KeyboardType.Text, ImeAction.Next) {}
-                        LtrField("رمز عبور", password, { password = it }, null, KeyboardType.Password, ImeAction.Go, ::submit, secret = true)
+                        LtrField("رمز عبور", password, { password = it }, null, KeyboardType.Password, ImeAction.Go, secret = true, onIme = ::submit)
                     }
                     if (error.isNotEmpty()) Text(error, color = Panbeh.colors.danger)
                     if (inBrowser && error.isEmpty()) Text("ورود را در مرورگر ادامه دهید؛ پس از آن به پنبه برمی‌گردید.", color = Panbeh.colors.muted)
@@ -132,7 +132,7 @@ fun LoginScreen(initialError: String? = null, onCancel: (() -> Unit)? = null) {
 @Composable
 private fun LtrField(
     label: String, value: String, onChange: (String) -> Unit, placeholder: String?, type: KeyboardType, ime: ImeAction,
-    onIme: () -> Unit, secret: Boolean = false,
+    secret: Boolean = false, onIme: () -> Unit,
 ) {
     OutlinedTextField(
         value, onChange, Modifier.fillMaxWidth(), singleLine = true,
