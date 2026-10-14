@@ -13,6 +13,7 @@ import de.connect2x.trixnity.clientserverapi.client.oauth2.ApplicationType
 import de.connect2x.trixnity.clientserverapi.model.authentication.oauth2.ResponseMode
 import de.connect2x.trixnity.core.serialization.events.EventContentSerializerMappings
 import io.ktor.http.Url
+import ir.panbeh.client.calls.callMappings
 import ir.panbeh.client.events.panbehMappings
 import org.koin.dsl.module
 import ir.panbeh.core.text.normalizeServer
@@ -74,7 +75,7 @@ class Accounts(private val platform: Platform) {
     ) {
         name = userKey
         httpClientEngine = platform.httpEngine
-        modulesFactories += { module { single<EventContentSerializerMappings> { panbehMappings } } }
+        modulesFactories += { module { single<EventContentSerializerMappings> { panbehMappings + callMappings } } }
     }
 
     /** "oauth" when the server has next-gen auth (MAS), else "password". Throws when the server can't be reached. */

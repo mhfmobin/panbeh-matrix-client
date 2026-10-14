@@ -379,13 +379,20 @@ class LegacyCall internal constructor(
 }
 
 /** Caches the homeserver's TURN credentials (waits for them like the web app's checkTurnServers; empty when there are none). */
-class TurnProvider(private val client: MatrixClient, private val timeoutMs: Long = 10_000, private val now: () -> Long = System::currentTimeMillis) {
+class TurnProvider(
+    private val fetch: suspend () -> List<IceServer>,
+    private val timeoutMs: Long = 10_000,
+    private val now: () -> Long = System::currentTimeMillis,
+    private val cacheMs: Long = 10 * 60_000,
+) {
+    constructor(client: MatrixClient, timeoutMs: Long = 10_000, now: () -> Long = System::currentTimeMillis) : this({ client.api.turnServers() }, timeoutMs, now)
+
     private var cached: List<IceServer>? = null
     private var fetchedAt = 0L
 
     suspend fun get(): List<IceServer> {
-        cached?.let { if (now() - fetchedAt < 10 * 60_000) return it }
-        val l = withTimeoutOrNull(timeoutMs) { runCatching { client.api.turnServers() }.getOrNull() } ?: return cached.orEmpty()
+        cached?.let { if (now() - fetchedAt < cacheMs) return it }
+        val l = withTimeoutOrNull(timeoutMs) { runCatching { fetch() }.getOrNull() } ?: return cached.orEmpty()
         cached = l; fetchedAt = now()
         return l
     }
@@ -428,14 +435,17 @@ class LegacyCalls(
     fun start(): Job = scope.launch { events.collect { runCatching { onEvent(it) } } }
 
     /** Calls the other person in a DM. Throws with the reason (no mic, no TURN…) when it can't start; the call is then ended. */
-    suspend fun place(roomId: RoomId, video: Boolean): LegacyCall {
+    suspend fun place(roomId: RoomId, video: Boolean): LegacyCall = placing.withLock {
         check(_current.value == null) { "already in a call" }
         val peerUser = client.api.room.getJoinedMembers(roomId).getOrThrow().joined.keys.firstOrNull { it.full != me }?.full
         val c = LegacyCall(this, roomId, newCallId(), peerUser ?: "", false, null, null, "1", video, config.lifetimeMs, config.now())
         calls[c.callId] = c; _current.value = c
         c.place(video, peerUser)
-        return c
+        c
     }
+
+    /** held while a call is being placed, so an invite that crosses ours is seen as glare and not as a second call */
+    private val placing = Mutex()
 
     private fun newCallId() = java.util.UUID.randomUUID().toString().replace("-", "").take(16)
 
@@ -488,6 +498,7 @@ class LegacyCalls(
     }
 
     private suspend fun onInvite(ev: RoomCallEvent, inv: CallEventContent.Invite) {
+        placing.withLock { }
         if (ev.sender == me && inv.partyId == client.deviceId) return
         val mine = _current.value
         // glare: both sides called at once in this room. The call with the larger id gives way (and answers the other).

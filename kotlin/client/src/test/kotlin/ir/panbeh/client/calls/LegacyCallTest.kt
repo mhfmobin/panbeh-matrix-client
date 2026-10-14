@@ -1,6 +1,7 @@
 package ir.panbeh.client.calls
 
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -193,6 +194,28 @@ class LegacyCallTest {
         assertNull(lb.fromInvite(ev))
         kotlinx.coroutines.delay(500)
         assertNull(lb.current.value)
+        a.close(); b.close()
+    }
+
+    @Test
+    fun `rejecting a version 0 invite sends a hangup`() = runBlocking {
+        testServer ?: return@runBlocking
+        val a = peer(login("l0a")); val b = peer(login("l0b"))
+        val room = roomOf(a.client, b.client)
+        val lb = legacyOf(b, FakePeers())
+        val incoming = async { withTimeout(30_000) { lb.incoming.first() } }
+        val hangup = async { withTimeout(30_000) { a.events.first { it.type == "m.call.hangup" } } }
+        delay(300)
+        a.client.sendRoomEvent(room, de.connect2x.trixnity.core.model.events.m.call.CallEventContent.Invite(
+            "0", "old-call-1", a.client.deviceId, null, 60_000,
+            de.connect2x.trixnity.core.model.events.m.call.CallEventContent.Invite.Offer("v=0\r\nm=audio 9", de.connect2x.trixnity.core.model.events.m.call.CallEventContent.Invite.OfferType.OFFER), null))
+        val c = incoming.await()
+        c.reject()
+        assertEquals(LegacyEnd.REJECTED_BY_ME, c.state.value.end)
+        val h = hangup.await()
+        assertEquals(b.client.userId.full, h.sender)
+        assertEquals("old-call-1", (h.typed as de.connect2x.trixnity.core.model.events.m.call.CallEventContent.Hangup).callId)
+        assertEquals("0", (h.typed as de.connect2x.trixnity.core.model.events.m.call.CallEventContent.Hangup).version)
         a.close(); b.close()
     }
 }

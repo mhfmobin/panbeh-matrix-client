@@ -8,6 +8,8 @@ import de.connect2x.trixnity.client.room.getAccountData
 import de.connect2x.trixnity.client.room.getState
 import de.connect2x.trixnity.client.room.getTimeline
 import de.connect2x.trixnity.client.room.getTimelineEventReplaceAggregation
+import de.connect2x.trixnity.client.room.GetTimelineEventConfig
+import de.connect2x.trixnity.client.room.GetTimelineEventsConfig
 import de.connect2x.trixnity.client.room.SimpleTimeline
 import de.connect2x.trixnity.client.roomEventEncryptionServices
 import de.connect2x.trixnity.client.room.decrypt
@@ -136,6 +138,10 @@ class RoomTimeline(
     private var threadToken: String? = null
     private val threadMore = MutableStateFlow(true)
 
+    private val startCfg: GetTimelineEventConfig.() -> Unit = { fetchTimeout = 30.seconds; decryptionTimeout = options.decryptionTimeout }
+    private val beforeCfg: GetTimelineEventsConfig.() -> Unit = { maxSize = options.pageSize; fetchSize = 100; decryptionTimeout = options.decryptionTimeout }
+    private val afterCfg: GetTimelineEventsConfig.() -> Unit = { maxSize = options.pageSize; fetchSize = 100; decryptionTimeout = options.decryptionTimeout }
+
     // ---------- opening ----------
 
     /** Starts the timeline at the read point: the unread divider is placed once, from m.fully_read / my receipt / my last event. */
@@ -150,7 +156,7 @@ class RoomTimeline(
         }
         val last = withTimeout(30.seconds) { client.room.getById(room).filterNotNull().first { it.lastEventId != null } }.lastEventId!!
         startPipeline()
-        tl.init(room, last, { fetchTimeout = 30.seconds; decryptionTimeout = options.decryptionTimeout }, { decryptionTimeout = options.decryptionTimeout }, { decryptionTimeout = options.decryptionTimeout })
+        tl.init(room, last, startCfg, beforeCfg, afterCfg)
         follow.value = true
         _state.first { it.initialized }
         // a handful of messages doesn't fill the screen (and without overflow nothing asks for more): page back
@@ -312,16 +318,19 @@ class RoomTimeline(
         val st = _state.value
         if (!st.initialized || !st.canLoadOlder || !busyOlder.compareAndSet(false, true)) return
         refresh { copy(loadingOlder = true) }
+        var released: String? = null
         try {
             val first = lastBuilt?.slim?.firstOrNull()?.id
             if (first != null) hold.value = Hold(older = EventId(first), newer = hold.value.newer)
             val ch = tl.loadBefore { fetchSize = options.pageSize; maxSize = options.pageSize; fetchTimeout = 30.seconds; decryptionTimeout = options.decryptionTimeout }
             awaitDecrypted(ch.addedElements)
+            released = ch.addedElements.firstOrNull()?.first()?.event?.id?.full
         } finally {
             hold.value = Hold(newer = hold.value.newer)
             busyOlder.value = false
             refresh { copy(loadingOlder = false) }
         }
+        released?.let { awaitLoaded(it) }
     }
 
     /** In a window around an old event: loads the next newer page, until the window meets the live end. */
@@ -330,24 +339,27 @@ class RoomTimeline(
         val st = _state.value
         if (!st.initialized || !st.canLoadNewer || !busyNewer.compareAndSet(false, true)) return
         refresh { copy(loadingNewer = true) }
+        var released: String? = null
         try {
             val last = lastBuilt?.slim?.lastOrNull()?.id
             if (last != null) hold.value = Hold(older = hold.value.older, newer = EventId(last))
             val ch = tl.loadAfter { fetchSize = options.pageSize; maxSize = options.pageSize; fetchTimeout = 30.seconds; decryptionTimeout = options.decryptionTimeout }
             awaitDecrypted(ch.addedElements)
+            released = ch.addedElements.lastOrNull()?.first()?.event?.id?.full
         } finally {
             hold.value = Hold(older = hold.value.older)
             busyNewer.value = false
             if (!tl.state.first().canLoadAfter) follow.value = true
             refresh { copy(loadingNewer = false) }
         }
+        released?.let { awaitLoaded(it) }
     }
 
     /** Drops a window and shows the newest messages again. */
     suspend fun jumpToLive() {
         if (thread != null) return
         val last = client.room.getById(room).filterNotNull().first { it.lastEventId != null }.lastEventId!!
-        reinit(last, null)
+        if (reinit(last, null)) awaitLoaded(last.full)
     }
 
     private suspend fun loadOlderThread() {
@@ -415,7 +427,7 @@ class RoomTimeline(
         hold.value = Hold(blockAll = true)
         try {
             val ok = withTimeoutOrNull(options.jumpTimeout) {
-                tl.init(room, start, { fetchTimeout = options.jumpTimeout; decryptionTimeout = options.decryptionTimeout }, { decryptionTimeout = options.decryptionTimeout }, { decryptionTimeout = options.decryptionTimeout })
+                tl.init(room, start, { fetchSize = 100; fetchTimeout = options.jumpTimeout; decryptionTimeout = options.decryptionTimeout }, beforeCfg, afterCfg)
                 true
             } ?: false
             if (!ok) return false

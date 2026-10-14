@@ -96,3 +96,20 @@ class SfuTest {
         assertEquals("M_NOT_FOUND", e.errcode)
     }
 }
+
+class TurnProviderTest {
+    @Test
+    fun `waits for the credentials, caches them, and gives none when the server has none or is slow`() = runBlocking {
+        var calls = 0
+        var clock = 0L
+        val turn = IceServer(listOf("turn:t:3478"), "u", "p")
+        val p = TurnProvider({ calls++; kotlinx.coroutines.delay(100); listOf(turn) }, timeoutMs = 2000, now = { clock }, cacheMs = 1000)
+        assertEquals(listOf(turn), p.get()); assertEquals(listOf(turn), p.get()); assertEquals(1, calls)
+        clock = 5000
+        p.get(); assertEquals(2, calls) // expired
+        val slow = TurnProvider({ kotlinx.coroutines.delay(10_000); listOf(turn) }, timeoutMs = 200)
+        assertTrue(slow.get().isEmpty())
+        val broken = TurnProvider({ error("no turn") }, timeoutMs = 200)
+        assertTrue(broken.get().isEmpty())
+    }
+}

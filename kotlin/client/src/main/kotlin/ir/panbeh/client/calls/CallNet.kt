@@ -1,6 +1,7 @@
 package ir.panbeh.client.calls
 
 import de.connect2x.trixnity.clientserverapi.client.MatrixClientServerApiClient
+import de.connect2x.trixnity.core.model.RoomId
 import de.connect2x.trixnity.core.model.UserId
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
@@ -26,15 +27,31 @@ private val rawJson = Json { ignoreUnknownKeys = true }
 
 internal suspend fun MatrixClientServerApiClient.rawGet(vararg path: String) = raw(io.ktor.http.HttpMethod.Get, *path)
 
-private suspend fun MatrixClientServerApiClient.raw(method: io.ktor.http.HttpMethod, vararg path: String, body: JsonObject? = null): JsonObject {
+private suspend fun MatrixClientServerApiClient.raw(method: io.ktor.http.HttpMethod, vararg path: String, body: JsonObject? = null, query: Map<String, String> = emptyMap()): JsonObject {
     val r = baseClient.baseClient.ktorRequest {
         this.method = method
-        url { appendPathSegments(*path) }
+        url { appendPathSegments(*path); query.forEach { (k, v) -> parameters.append(k, v) } }
         if (body != null) { header(HttpHeaders.ContentType, ContentType.Application.Json.toString()); setBody(body.toString()) }
     }
     val o = runCatching { rawJson.parseToJsonElement(r.bodyAsText()).jsonObject }.getOrDefault(JsonObject(emptyMap()))
     if (!r.status.isSuccess()) throw CallHttpException(r.status.value, o.string("errcode"), o.string("error") ?: "HTTP ${r.status.value}")
     return o
+}
+
+/**
+ * A state event that the server sends by itself after [delayMs] unless restarted or cancelled (MSC4140), as matrix-js-sdk does
+ * it (`org.matrix.msc4140.delay` on the ordinary state PUT; Trixnity's own delayed-event endpoints are another draft and Synapse
+ * doesn't have them). Returns the delay id, or null when the server doesn't support delayed events.
+ */
+suspend fun MatrixClientServerApiClient.sendDelayedState(roomId: RoomId, type: String, stateKey: String, content: JsonObject, delayMs: Long): String? =
+    runCatching {
+        raw(io.ktor.http.HttpMethod.Put, "_matrix", "client", "v3", "rooms", roomId.full, "state", type, stateKey, body = content,
+            query = mapOf("org.matrix.msc4140.delay" to delayMs.toString())).string("delay_id")
+    }.getOrNull()
+
+/** restart, cancel or send a delayed event (MSC4140). Fails when the event is gone. */
+suspend fun MatrixClientServerApiClient.delayedAction(delayId: String, action: String) {
+    raw(io.ktor.http.HttpMethod.Post, "_matrix", "client", "unstable", "org.matrix.msc4140", "delayed_events", delayId, body = buildJsonObject { put("action", action) })
 }
 
 /** An OpenID token (user/{id}/openid/request_token), passed as is to lk-jwt-service. */

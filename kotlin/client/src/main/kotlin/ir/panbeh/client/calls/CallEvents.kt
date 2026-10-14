@@ -69,6 +69,7 @@ fun callEventOf(roomId: RoomId, eventId: String?, sender: String, ts: Long, stat
         is RtcDecline -> CallTypes.RTC_DECLINE to content.raw
         is RtcDeclineStable -> CallTypes.RTC_DECLINE_STABLE to content.raw
         is CallReaction -> CallTypes.CALL_REACTION to content.raw
+        is EncryptionKeysMessage -> CallTypes.ENCRYPTION_KEYS to content.raw
         is Reaction -> "m.reaction" to content.raw
         is CallEventContent -> legacyJson(content)
         is UnknownEventContent -> content.eventType to content.raw

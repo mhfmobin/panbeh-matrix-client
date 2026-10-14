@@ -72,3 +72,11 @@ suspend fun MatrixClient.callHistory(rooms: Collection<RoomId>, limitPerRoom: In
 fun MatrixClient.callHistoryFlow(rooms: Collection<RoomId>, events: Flow<RoomCallEvent>, limitPerRoom: Int = 300): Flow<List<CallRow>> =
     events.filter { isCallStart(it.type) || it.type == "m.call.answer" || it.type == "m.call.hangup" || it.type == "m.call.reject" || it.type == CallTypes.MEMBER || it.type.endsWith("rtc.decline") }
         .map { }.onStart { emit(Unit) }.map { callHistory(rooms, limitPerRoom) }
+
+/** A 1:1 call's line in the timeline (src/ui/common.tsx callLine): who called, and how it went. [kind] is "تماس صوتی" / "تماس تصویری". */
+fun callLine(mine: Boolean, who: String, kind: String, o: CallOutcome): String = when (o.state) {
+    CallState.ENDED -> "$who $kind گرفت · ${fmtDuration(o.duration ?: 0)}"
+    CallState.MISSED -> if (mine) "$kind بی‌پاسخ" else "$kind از دست رفته از $who"
+    CallState.DECLINED -> if (mine) "$kind رد شد" else "$kind $who را رد کردید"
+    else -> "$who $kind گرفت"
+}

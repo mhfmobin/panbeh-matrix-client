@@ -52,4 +52,15 @@ class CallHistoryTest {
         val r2 = rows.single { it.eventId == "\$i2" }
         assertEquals(CallState.DECLINED, r2.outcome.state); assertEquals("رد شده صوتی", r2.text); assertTrue(r2.missed)
     }
+
+    @Test
+    fun `timeline call lines`() {
+        val k = "تماس صوتی"
+        assertEquals("$k بی‌پاسخ", callLine(true, "علی", k, ir.panbeh.core.calls.CallOutcome(CallState.MISSED)))
+        assertEquals("$k از دست رفته از علی", callLine(false, "علی", k, ir.panbeh.core.calls.CallOutcome(CallState.MISSED)))
+        assertEquals("$k رد شد", callLine(true, "علی", k, ir.panbeh.core.calls.CallOutcome(CallState.DECLINED)))
+        assertEquals("$k علی را رد کردید", callLine(false, "علی", k, ir.panbeh.core.calls.CallOutcome(CallState.DECLINED)))
+        assertEquals("علی $k گرفت", callLine(false, "علی", k, ir.panbeh.core.calls.CallOutcome(CallState.RINGING)))
+        assertTrue(callLine(false, "علی", k, ir.panbeh.core.calls.CallOutcome(CallState.ENDED, 65_000)).startsWith("علی $k گرفت · "))
+    }
 }

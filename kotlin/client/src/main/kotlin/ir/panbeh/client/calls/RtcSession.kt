@@ -5,13 +5,9 @@ import de.connect2x.trixnity.client.room
 import de.connect2x.trixnity.client.room.getAllState
 import de.connect2x.trixnity.client.room.getState
 import de.connect2x.trixnity.client.store.RoomOutboxMessage
-import de.connect2x.trixnity.clientserverapi.model.room.DelayedEventAction
-import de.connect2x.trixnity.core.MSC4140
-import de.connect2x.trixnity.core.MSC4354
 import de.connect2x.trixnity.core.model.EventId
 import de.connect2x.trixnity.core.model.RoomId
 import de.connect2x.trixnity.core.model.events.ClientEvent
-import de.connect2x.trixnity.core.model.events.DelayId
 import de.connect2x.trixnity.core.model.events.MessageEventContent
 import de.connect2x.trixnity.core.model.events.m.RelationType
 import de.connect2x.trixnity.core.model.events.m.room.EncryptionEventContent
@@ -83,7 +79,6 @@ class MatrixRtc(
     fun session(roomId: RoomId): CallSession = sessions.getOrPut(roomId) { CallSession(this, roomId) }
 }
 
-@OptIn(MSC4140::class, MSC4354::class)
 class CallSession internal constructor(private val rtc: MatrixRtc, val roomId: RoomId) {
     private val client = rtc.client
     private val scope = rtc.scope
@@ -116,7 +111,7 @@ class CallSession internal constructor(private val rtc: MatrixRtc, val roomId: R
 
     private val _joined = MutableStateFlow<Join?>(null)
     private class Join(val intent: CallIntent, val focus: LivekitFocus, val createdTs: Long, val jobs: MutableList<Job>, val keys: CallKeyManager?) {
-        var delayId: DelayId? = null
+        var delayId: String? = null
         var eventId: EventId? = null
         var refreshAt = 0L
         var ringEventId: EventId? = null
@@ -169,21 +164,22 @@ class CallSession internal constructor(private val rtc: MatrixRtc, val roomId: R
         SfuConnection(token.url, token.jwt, "$me:$device", sfu, keys)
     }
 
-    private fun content(j: Join) = CallMember(memberContent(device, j.intent, j.focus, roomId.full, j.createdTs, cfg.membershipExpiresMs))
+    // expires is relative to created_ts, so a refresh later on extends it by the time passed since joining
+    private fun content(j: Join) = CallMember(memberContent(device, j.intent, j.focus, roomId.full, j.createdTs, cfg.now() - j.createdTs + cfg.membershipExpiresMs))
 
     private suspend fun send(j: Join) {
         j.eventId = client.api.room.sendStateEvent(roomId, content(j), memberStateKey(me, device)).getOrThrow()
         j.refreshAt = cfg.now() + cfg.membershipExpiresMs * 4 / 5
     }
 
-    private suspend fun startDelayedLeave(): DelayId? =
-        client.api.room.sendDelayedStateEvent(roomId, CallMember(JsonObject(emptyMap())), memberStateKey(me, device), delayMs = cfg.delayedLeaveMs).getOrNull()
+    private suspend fun startDelayedLeave(): String? =
+        client.api.sendDelayedState(roomId, CallTypes.MEMBER, memberStateKey(me, device), JsonObject(emptyMap()), cfg.delayedLeaveMs)
 
     private suspend fun keepAlive(j: Join) {
         while (currentCoroutineContext().isActive) {
             delay(cfg.delayRestartMs)
             val id = j.delayId
-            if (id != null && client.api.room.delayedEventAction(id, DelayedEventAction.Action.RESTART).isFailure) {
+            if (id != null && runCatching { client.api.delayedAction(id, "restart") }.isFailure) {
                 j.delayId = startDelayedLeave()
                 runCatching { send(j) } // the delayed leave may have fired: rejoin
             }
@@ -231,7 +227,7 @@ class CallSession internal constructor(private val rtc: MatrixRtc, val roomId: R
         j.keys?.stop()
         withContext(NonCancellable) {
             client.api.room.sendStateEvent(roomId, CallMember(JsonObject(emptyMap())), memberStateKey(me, device))
-            j.delayId?.let { client.api.room.delayedEventAction(it, DelayedEventAction.Action.CANCEL) }
+            j.delayId?.let { runCatching { client.api.delayedAction(it, "cancel") } }
         }
         hands.value = emptyMap()
     }

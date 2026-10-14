@@ -3,6 +3,7 @@ package ir.panbeh.client.calls
 import ir.panbeh.client.testServer
 import ir.panbeh.core.calls.isRing
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -94,6 +95,44 @@ class RtcSessionTest {
 
         sa.toggleHand()
         withTimeout(30_000) { sb.raisedHands.first { !it.containsKey(mid) } }
+        sa.leave()
+        a.close(); b.close()
+    }
+}
+
+class RtcLifecycleTest {
+    @Test
+    fun `a crashed client drops out through the delayed leave event`() = runBlocking {
+        testServer ?: return@runBlocking
+        val cfg = RtcConfig(delayedLeaveMs = 2500, delayRestartMs = 800)
+        val a = peer(login("da"), cfg); val b = peer(login("db"))
+        val room = roomOf(a.client, b.client)
+        val sb = b.rtc.session(room)
+        a.rtc.session(room).join(CallIntent.AUDIO, ring = false)
+        withTimeout(30_000) { sb.memberships.first { it.isNotEmpty() } }
+        // still there well past the delay while the keep-alive restarts it
+        kotlinx.coroutines.delay(4000)
+        assertEquals(1, sb.memberships.value.size)
+        // the app dies: no leave, no more restarts
+        a.close()
+        withTimeout(30_000) { sb.memberships.first { it.isEmpty() } }
+        b.close()
+    }
+
+    @Test
+    fun `the membership is refreshed before it expires`() = runBlocking {
+        testServer ?: return@runBlocking
+        val cfg = RtcConfig(membershipExpiresMs = 5000, delayRestartMs = 500)
+        val a = peer(login("ea"), cfg); val b = peer(login("eb"))
+        val room = roomOf(a.client, b.client)
+        val sa = a.rtc.session(room); val sb = b.rtc.session(room)
+        sa.join(CallIntent.AUDIO, ring = false)
+        val first = withTimeout(30_000) { sb.memberships.first { it.isNotEmpty() } }.single()
+        val second = withTimeout(30_000) { sb.memberships.first { it.isNotEmpty() && it.single().eventId != first.eventId } }.single()
+        assertEquals(first.createdTs, second.createdTs) // still the same join: the oldest-membership order holds
+        assertTrue(second.expiresAt!! > first.expiresAt!!)
+        delay(6000)
+        assertEquals(1, sb.memberships.value.size) // well past the first expiry, still in
         sa.leave()
         a.close(); b.close()
     }

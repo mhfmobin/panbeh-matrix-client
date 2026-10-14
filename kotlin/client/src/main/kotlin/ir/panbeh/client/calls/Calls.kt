@@ -163,7 +163,7 @@ class Calls(
 
     private fun watch(a: ActiveCall) {
         if (!autoHangup) return
-        fun end(r: CallEndReason) = scope.launch { _ended.emit(r); hangup() }
+        fun end(r: CallEndReason) = scope.launch { hangup(); _ended.emit(r) }
         when (a) {
             is ActiveCall.Rtc -> watchers += scope.launch {
                 a.session.signals.collect { s ->
