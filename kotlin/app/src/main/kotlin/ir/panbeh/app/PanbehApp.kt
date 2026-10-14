@@ -41,6 +41,9 @@ class PanbehApp : Application(), SingletonImageLoader.Factory {
         )
         accounts = Accounts(platform)
         state = AppState(this)
+        ir.panbeh.app.sync.SyncControl.attach(this)
+        ir.panbeh.app.notify.NotificationEngine.start(this)
+        ir.panbeh.app.system.Updater.start(this)
         state.boot()
     }
 

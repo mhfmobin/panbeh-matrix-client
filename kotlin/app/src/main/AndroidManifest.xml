@@ -7,6 +7,16 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- self-update: hand a downloaded release APK to the system installer -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- ringing over the lock screen -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <application
         android:name=".PanbehApp"
@@ -60,5 +70,40 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+
+        <!-- keeps the process syncing and notifying in the background -->
+        <service
+            android:name=".sync.SyncService"
+            android:exported="false"
+            android:foregroundServiceType="remoteMessaging|microphone|camera" />
+
+        <!-- reply / mark as read / mute on a message notification -->
+        <receiver
+            android:name=".notify.NotifyReceiver"
+            android:exported="false" />
+
+        <!-- "decline" on the incoming-call notification -->
+        <receiver
+            android:name=".notify.CallReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".sync.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

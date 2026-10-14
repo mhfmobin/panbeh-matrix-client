@@ -30,8 +30,8 @@ class MainActivity : FragmentActivity() {
         handle(intent)
     }
 
-    override fun onResume() { super.onResume(); visible = true }
-    override fun onPause() { super.onPause(); visible = false }
+    override fun onResume() { super.onResume(); visible = true; ir.panbeh.app.sync.SyncControl.visible.value = true }
+    override fun onPause() { super.onPause(); visible = false; ir.panbeh.app.sync.SyncControl.visible.value = false }
     override fun onStart() { super.onStart(); AppLock.onShown() }
     override fun onStop() { super.onStop(); AppLock.onHidden() }
 

@@ -49,10 +49,8 @@ class AppState(private val app: PanbehApp) {
         )
     }
 
-    private suspend fun start(c: MatrixClient): Phase {
-        c.startSync(presence = null)
-        return Phase.Ready(c)
-    }
+    // SyncControl starts and stops the sync for whichever client is current
+    private fun start(c: MatrixClient): Phase = Phase.Ready(c)
 
     /** After a successful login (or account switch). */
     fun ready(c: MatrixClient) = app.scope.launch {
@@ -70,6 +68,7 @@ class AppState(private val app: PanbehApp) {
 
     fun logout() = app.scope.launch {
         _phase.value = Phase.Boot
+        ir.panbeh.app.notify.Notifier.cancelAll(app)
         val next = runCatching { app.accounts.logout() }.getOrNull()
         _phase.value = if (next == null) Phase.Login else start(next)
     }
