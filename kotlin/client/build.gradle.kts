@@ -18,6 +18,7 @@ tasks.test { useJUnitPlatform() }
 dependencies {
     testImplementation(libs.trixnity.vodozemac)
     testImplementation(libs.ktor.okhttp)
+    testImplementation(libs.ktor.mock)
 }
 
 // integration tests run against PANBEH_TEST_HS (e.g. a local Synapse with open registration); skipped without it
