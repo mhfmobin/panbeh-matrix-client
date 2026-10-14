@@ -53,11 +53,14 @@ class EventLoader(private val client: MatrixClient, private val roomId: String) 
     suspend fun load(eventId: String): TimelineItem? = lock.withLock {
         if (eventId in cache) return cache[eventId]
         val te = raw(eventId) ?: return null
-        val sender = te.event.sender
-        val member = client.user.getById(RoomId(roomId), sender).first()
-        val ctx = Ctx(members = listOfNotNull(member).associateBy { it.userId })
-        val item = asm.build(listOf(Entry(te)), ctx, null, true, all = true).items.firstOrNull()
+        val item = item(te)
         if (item != null && item.decryption == Decryption.OK) cache[eventId] = item
         item
+    }
+
+    /** A [TimelineItem] for an event the caller already has (a server search result ...). */
+    suspend fun item(te: TimelineEvent): TimelineItem? {
+        val member = client.user.getById(RoomId(roomId), te.event.sender).first()
+        return asm.build(listOf(Entry(te)), Ctx(members = listOfNotNull(member).associateBy { it.userId }), null, true, all = true).items.firstOrNull()
     }
 }

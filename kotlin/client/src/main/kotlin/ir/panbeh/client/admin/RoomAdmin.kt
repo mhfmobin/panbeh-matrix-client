@@ -7,6 +7,7 @@ import de.connect2x.trixnity.client.room.getAllState
 import de.connect2x.trixnity.client.room.getState
 import de.connect2x.trixnity.client.user
 import de.connect2x.trixnity.client.user.PowerLevel
+import de.connect2x.trixnity.clientserverapi.client.getStateEventContent
 import de.connect2x.trixnity.clientserverapi.model.room.DirectoryVisibility
 import de.connect2x.trixnity.clientserverapi.model.server.Capability
 import de.connect2x.trixnity.core.model.RoomAliasId
@@ -122,6 +123,8 @@ class RoomAdmin(private val client: MatrixClient, roomId: String) {
 
     private inline fun <reified C : StateEventContent> state(key: String = ""): Flow<C?> = client.room.getState<C>(room, key).map { it?.content }
     private suspend inline fun <reified C : StateEventContent> now(key: String = ""): C? = state<C>(key).first()
+    // read-modify-write goes to the server: the local store only follows after the sync echo, so back-to-back edits would undo each other
+    private suspend inline fun <reified C : StateEventContent> fresh(key: String = ""): C? = api.getStateEventContent<C>(room, key).getOrNull()
 
     private val pl: Flow<PowerLevelsEventContent?> = state()
     private val myLevel: Flow<Double> = client.user.getPowerLevel(room, me).map { it.toDouble() }
@@ -172,7 +175,7 @@ class RoomAdmin(private val client: MatrixClient, roomId: String) {
 
     /** Sets a member's level. The "this makes them as high as me" confirmation is the UI's job. */
     suspend fun setMemberLevel(userId: String, level: Double) {
-        val cur = now<PowerLevelsEventContent>() ?: PowerLevelsEventContent()
+        val cur = fresh<PowerLevelsEventContent>() ?: PowerLevelsEventContent()
         api.sendStateEvent(room, cur.copy(users = cur.users + (UserId(userId) to level.toLong()))).getOrThrow()
     }
 
@@ -213,7 +216,7 @@ class RoomAdmin(private val client: MatrixClient, roomId: String) {
 
     /** Moves all [keys] of a permission row to [level]. */
     suspend fun setPermission(keys: List<String>, level: Double) {
-        val cur = now<PowerLevelsEventContent>() ?: PowerLevelsEventContent()
+        val cur = fresh<PowerLevelsEventContent>() ?: PowerLevelsEventContent()
         api.sendStateEvent(room, keys.fold(cur) { c, k -> c.withKey(k, level.toLong()) }).getOrThrow()
     }
 
@@ -305,13 +308,13 @@ class RoomAdmin(private val client: MatrixClient, roomId: String) {
 
     /** Removes the canonical alias and tries to delete it on the server (it may belong to someone else). */
     suspend fun deleteAlias() {
-        val alias = now<CanonicalAliasEventContent>()?.alias
+        val alias = fresh<CanonicalAliasEventContent>()?.alias
         setCanonical(null)
         if (alias != null) api.deleteRoomAlias(alias)
     }
 
     private suspend fun setCanonical(alias: RoomAliasId?) {
-        val cur = now<CanonicalAliasEventContent>() ?: CanonicalAliasEventContent()
+        val cur = fresh<CanonicalAliasEventContent>() ?: CanonicalAliasEventContent()
         api.sendStateEvent(room, cur.copy(alias = alias)).getOrThrow()
     }
 

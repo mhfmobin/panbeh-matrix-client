@@ -3,6 +3,7 @@ package ir.panbeh.client.account
 import de.connect2x.trixnity.client.MatrixClient
 import de.connect2x.trixnity.client.user
 import de.connect2x.trixnity.client.user.getAccountData
+import de.connect2x.trixnity.clientserverapi.client.getAccountData as serverAccountData
 import de.connect2x.trixnity.core.model.UserId
 import de.connect2x.trixnity.core.model.events.m.IgnoredUserListEventContent
 import kotlinx.coroutines.flow.Flow
@@ -18,7 +19,7 @@ class Blocking(private val client: MatrixClient) {
     suspend fun isBlocked(userId: String) = userId in blocked.first()
 
     suspend fun setBlocked(userId: String, blocked: Boolean) {
-        val ids = LinkedHashMap<UserId, JsonObject>(client.user.getAccountData<IgnoredUserListEventContent>().first()?.ignoredUsers.orEmpty())
+        val ids = LinkedHashMap<UserId, JsonObject>(client.api.user.serverAccountData<IgnoredUserListEventContent>(client.userId).getOrNull()?.ignoredUsers.orEmpty())
         ids.remove(UserId(userId))
         if (blocked) ids[UserId(userId)] = JsonObject(emptyMap())
         client.api.user.setAccountData(IgnoredUserListEventContent(ids), client.userId).getOrThrow()

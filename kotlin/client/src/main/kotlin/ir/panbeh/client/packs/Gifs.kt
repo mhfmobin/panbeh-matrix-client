@@ -3,6 +3,7 @@ package ir.panbeh.client.packs
 import de.connect2x.trixnity.client.MatrixClient
 import de.connect2x.trixnity.client.user
 import de.connect2x.trixnity.client.user.getAccountData
+import de.connect2x.trixnity.clientserverapi.client.getAccountData as serverAccountData
 import ir.panbeh.client.KeyValueStore
 import ir.panbeh.client.events.SavedGifs
 import ir.panbeh.core.util.string
@@ -45,7 +46,8 @@ class Gifs(private val client: MatrixClient) {
 
     private fun parse(c: SavedGifs?): List<Gif> = (c?.raw?.get("gifs") as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
 
-    private suspend fun current() = parse(client.user.getAccountData<SavedGifs>().first())
+    // from the server: the local store lags behind our own writes until the sync echo
+    private suspend fun current() = parse(client.api.user.serverAccountData<SavedGifs>(client.userId).getOrNull())
 
     private suspend fun put(l: List<Gif>) {
         client.api.user.setAccountData(SavedGifs(buildJsonObject { put("gifs", JsonArray(l)) }), client.userId).getOrThrow()

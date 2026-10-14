@@ -6,6 +6,8 @@ import de.connect2x.trixnity.client.room.getAllState
 import de.connect2x.trixnity.client.room.getState
 import de.connect2x.trixnity.client.user
 import de.connect2x.trixnity.client.user.getAccountData
+import de.connect2x.trixnity.clientserverapi.client.getAccountData as serverAccountData
+import de.connect2x.trixnity.clientserverapi.client.getStateEventContent
 import de.connect2x.trixnity.core.model.RoomId
 import de.connect2x.trixnity.core.model.events.m.room.Membership
 import de.connect2x.trixnity.core.model.events.m.room.PowerLevelsEventContent
@@ -96,7 +98,7 @@ class Packs(private val client: MatrixClient) {
 
     /** Switches a room pack on or off for every chat. */
     suspend fun setGlobal(p: PackRef, on: Boolean) {
-        val raw = client.user.getAccountData<EmoteRooms>().first()?.raw ?: EMPTY
+        val raw = api.user.serverAccountData<EmoteRooms>(client.userId).getOrNull()?.raw ?: EMPTY
         val rooms = ((raw["rooms"] as? JsonObject).orEmpty()).toMutableMap()
         val packs = ((rooms[p.roomId!!] as? JsonObject).orEmpty()).toMutableMap()
         if (on) packs[p.stateKey!!] = EMPTY else packs.remove(p.stateKey!!)
@@ -137,9 +139,10 @@ class Packs(private val client: MatrixClient) {
 
     // ---------- reading and writing one pack ----------
 
+    // from the server, not the local store: that only follows after the sync echo, so back-to-back edits would undo each other
     private suspend fun read(ref: PackRef): JsonObject =
-        if (ref.roomId == null) client.user.getAccountData<UserEmotes>().first()?.raw ?: EMPTY
-        else client.room.getState<RoomEmotes>(RoomId(ref.roomId), ref.stateKey!!).first()?.content?.raw ?: EMPTY
+        if (ref.roomId == null) api.user.serverAccountData<UserEmotes>(client.userId).getOrNull()?.raw ?: EMPTY
+        else api.room.getStateEventContent<RoomEmotes>(RoomId(ref.roomId), ref.stateKey!!).getOrNull()?.raw ?: EMPTY
 
     private suspend fun write(ref: PackRef, raw: JsonObject) {
         if (ref.roomId == null) api.user.setAccountData(UserEmotes(raw), client.userId).getOrThrow()

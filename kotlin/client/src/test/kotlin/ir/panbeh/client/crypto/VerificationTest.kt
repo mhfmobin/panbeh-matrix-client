@@ -66,3 +66,34 @@ class VerificationTest {
         } finally { scope.cancel() }
     }
 }
+
+class UserVerificationTest {
+    @Test
+    fun `verifying another user in a direct chat`() = runBlocking {
+        val hs = testServer ?: return@runBlocking
+        val (a, pa, ca) = newUser(hs, "a")
+        val (b, pb, cb) = newUser(hs, "b")
+        Recovery(ca).setup(password = pa)
+        Recovery(cb).setup(password = pb)
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        try {
+            val va = Verification(ca, scope)
+            val vb = Verification(cb, scope)
+            val devs = Devices(ca)
+            withTimeout(30_000) { devs.userTrust("@$b:localhost").first { it.known } }
+            assertEquals(false, devs.userTrust("@$b:localhost").first().verified)
+            va.verifyUser("@$b:localhost")
+            val req = withTimeout(60_000) { vb.incoming.first() }
+            assertEquals(false, req.self)
+            assertEquals("@$a:localhost", req.otherUserId)
+            vb.accept()
+            val x = withTimeout(60_000) { va.current.first { it?.phase is VerifyPhase.Compare } }!!.phase as VerifyPhase.Compare
+            val y = withTimeout(60_000) { vb.current.first { it?.phase is VerifyPhase.Compare } }!!.phase as VerifyPhase.Compare
+            assertEquals(x.emoji, y.emoji)
+            va.confirmMatch(); vb.confirmMatch()
+            assertIs<VerifyPhase.Done>(withTimeout(60_000) { va.current.first { it?.finished == true } }!!.phase)
+            assertIs<VerifyPhase.Done>(withTimeout(60_000) { vb.current.first { it?.finished == true } }!!.phase)
+            assertTrue(withTimeout(30_000) { devs.userTrust("@$b:localhost").first { it.verified } }.verified)
+        } finally { scope.cancel() }
+    }
+}
