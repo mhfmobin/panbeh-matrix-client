@@ -1604,3 +1604,15 @@ img.tint {
 .ie-hue::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: transparent; border: 3px solid #fff; }
 
 .ie-emoji .emoji-panel { position: fixed; z-index: 60; top: auto; bottom: calc(8px + env(safe-area-inset-bottom)); inset-inline: 8px; width: auto; max-width: 420px; height: min(420px, 62vh); margin: 0 auto; transform-origin: bottom center; }
+
+/* floating emoji effects: reactions and 🎉 in a message drift up over the room */
+.live-layer { position: fixed; inset: 0; z-index: 18; pointer-events: none; overflow: hidden; }
+.live-emoji { position: absolute; bottom: -12vh; opacity: 0; animation: live-float ease-in forwards; will-change: transform, opacity; user-select: none; }
+.live-confetti { position: absolute; top: -4vh; width: 8px; height: 13px; border-radius: 2px; animation: live-fall linear forwards; }
+@keyframes live-float {
+  0% { opacity: 0; transform: translateX(-50%) translateY(4vh) scale(0.4) }
+  14% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1) }
+  55% { transform: translateX(calc(-50% + var(--sway, 0vw) * 0.4)) translateY(-58vh) scale(1.03) }
+  100% { opacity: 0; transform: translateX(calc(-50% + var(--sway, 0vw))) translateY(-116vh) scale(1.05) }
+}
+@keyframes live-fall { to { transform: translate3d(var(--dx, 0vw), 114vh, 0) rotate(var(--rot, 540deg)) } }

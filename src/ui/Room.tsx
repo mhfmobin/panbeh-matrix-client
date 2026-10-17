@@ -8,6 +8,7 @@ import { clock, neshanUrl, num, stamp } from "../logic.ts";
 import { geoClick } from "../native.ts";
 import { bdi, Dots, errText, me, RoomAvatar, senderName } from "./common.tsx";
 import { Timeline, type Jumper } from "./Timeline.tsx";
+import { LiveEmojis } from "./LiveEmoji.tsx";
 import { PinnedBar } from "./Pinned.tsx";
 import { NowPlaying } from "./Voice.tsx";
 import { CallBar, CallButtons } from "./Call.tsx";
@@ -210,6 +211,7 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
       {profile && <UserProfile userId={profile} room={room} onClose={() => setProfile(null)} />}
       {forwarding && <ForwardSheet evs={forwarding} onClose={() => setForwarding(null)} onSent={() => setSel(null)} />}
       {viewing && <MediaViewer items={timelineMedia(room, viewing)} start={viewing} onClose={() => setViewing(null)} onJump={(ev) => jump(ev.getId()!)} />}
+      <LiveEmojis room={room} />
     </section>
   );
 }
