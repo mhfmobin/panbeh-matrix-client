@@ -964,7 +964,7 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
   display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--panel); border-radius: 14px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18); animation: pop 0.14s;
 }
-.react-picker .emoji-panel { position: fixed; inset: 0; margin: auto; width: min(360px, calc(100vw - 32px)); }
+.react-picker .emoji-panel { position: fixed; top: var(--top); left: var(--left); bottom: auto; width: min(360px, calc(100vw - 32px)); height: min(380px, calc(100vh - 16px)); } /* under the button that opened it */
 .emoji-panel .muted { margin: 0; padding: 16px; text-align: center; }
 .emoji-search { flex: none; width: 100%; padding: 8px 14px; border: 0; outline: none; border-radius: 999px; background: var(--hover); }
 /* Telegram's bottom bar: the tabs pill and ⌫ float over the grid, translucent, and slide away while scrolling down */
@@ -1133,12 +1133,19 @@ img.tint {
 }
 .msg-menu { z-index: 46; min-width: 220px; max-width: calc(100vw - 16px); padding: 6px; }
 .msg-menu:focus { outline: none; }
-.msg-menu .quick-react { position: static; margin-bottom: 4px; padding: 2px; box-shadow: none; background: transparent; animation: none; justify-content: space-between; }
-.msg-menu .quick-react button { width: 38px; height: 38px; padding: 0; justify-content: center; border-radius: 50%; } /* not a menu row: no row padding pushing the emoji off its circle */
 .msg-menu-backdrop { z-index: 45; background: rgba(0, 0, 0, 0.25); touch-action: none; }
-@media (max-width: 700px) { /* bottom sheet */
-  .msg-menu { left: 0 !important; right: 0; top: auto !important; bottom: 0; width: 100%; max-width: none; border-radius: 18px 18px 0 0; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); animation: sheet-up 0.2s ease-out; }
-  .msg-menu > button[role="menuitem"] { padding: 12px; }
+/* Message menu (MessageMenu): the reactions above the press, the actions below it. The wrapper lets taps through around them. */
+.msg-menu-backdrop { padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+.msg-float { position: fixed; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: calc(100vw - 16px); pointer-events: none; outline: none; animation: pop 0.14s ease-out; }
+.msg-float > * { margin-right: auto; pointer-events: auto; animation: none; } /* hang from the press: left-aligned, or right-aligned when flipped */
+.msg-float.flip > * { margin-right: 0; margin-left: auto; }
+.msg-menu-react { position: relative; inset: auto; }
+.msg-menu-react button.more { width: 30px; height: 30px; margin: 3px; background: var(--hover); }
+.quick-react button.on { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.msg-menu-actions { position: static; overflow-y: auto; overscroll-behavior: contain; }
+.msg-menu-backdrop.closing > .msg-float { animation: pop-out 0.15s ease-in forwards; }
+@media (max-width: 700px) { /* form dropdowns */
+  .select-menu { left: 0 !important; right: 0; top: auto !important; bottom: 0; width: 100%; max-width: none; border-radius: 18px 18px 0 0; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); animation: sheet-up 0.2s ease-out; }
 }
 @keyframes sheet-up { from { transform: translateY(40px); opacity: 0; } }
 .msg.selecting { padding-inline-start: 44px; cursor: pointer; }
@@ -1391,7 +1398,7 @@ img.tint {
 .timeline-wrap { margin-bottom: var(--emoji-gap, 0px); } /* the docked emoji panel's space: the chat ends above it, as above a keyboard */
 .emoji-dock .emoji-panel, .emoji-dock .emoji-panel.closing { top: 8px; bottom: auto; inset-inline: 0; width: auto; height: calc(var(--emoji-h) - 8px); animation: none; }
 @media (max-width: 700px) {
-  .chat-menu-backdrop.closing > .msg-menu { animation: sheet-down 0.18s ease-in forwards; }
+  .chat-menu-backdrop.closing > .select-menu { animation: sheet-down 0.18s ease-in forwards; }
 }
 
 /* lightbox */
