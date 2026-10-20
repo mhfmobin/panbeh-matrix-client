@@ -16,7 +16,7 @@ import { mergeAutoDl, num, stamp, type AutoDl, type DlKind } from "../logic.ts";
 import { decryptKeyFile, encryptKeyFile } from "../keyfile.ts";
 import { showVerification } from "./Verify.tsx";
 import { appVersion, canUpdate, checkUpdate, downloadUpdate, getAutostart, getAutoUpdate, installUpdate, isDesktop, setAutostart, setAutoUpdate, useUpdate, type Update } from "../desktop.ts";
-import { isNative, nativeCancelAll, nativeStatus, openNotifySettings, requestBatteryExemption, requestFullScreen, requestNotifyPermission, saveFile, setBackgroundInterval, setBackgroundService } from "../native.ts";
+import { isBazaar, isNative, nativeCancelAll, nativeStatus, openNotifySettings, requestBatteryExemption, requestFullScreen, requestNotifyPermission, saveFile, setBackgroundInterval, setBackgroundService } from "../native.ts";
 import { alertDialog, confirmDialog, editAvatar } from "./dialog.tsx";
 import { LinkSheet } from "./LinkSheet.tsx";
 import { MyPacks } from "./Packs.tsx";
@@ -408,6 +408,7 @@ const ver = (v = "") => v.replace(/\d+/g, (d) => num(+d));
 
 /** What clicking an update offer does: download, or restart into the new version, each asked first. False if declined. */
 async function actOnUpdate(u: Update) {
+  if (isBazaar) { downloadUpdate(); return false; } // opens Bazaar's update sheet, which asks; the banner then waits until restart
   const yes = u.status === "available" ? await confirmDialog(t("update.downloadQ", { v: ver(u.version) }), { ok: t("update.download") })
     : !isDesktop ? await confirmDialog(t("update.installQ", { v: ver(u.version) }), { ok: t("update.install") })
     : await confirmDialog(t("update.restartQ", { v: ver(u.version) }), { ok: t("update.restart") });
@@ -421,17 +422,23 @@ function Updates() {
   const u = useUpdate();
   const [auto, setAuto] = useState<boolean>();
   const [version, setVersion] = useState("");
-  useEffect(() => { getAutoUpdate().then(setAuto, () => {}); appVersion().then(setVersion); }, []);
+  useEffect(() => { // auto re-read on coming back: the Bazaar build's switch is set in Bazaar
+    const refresh = () => { if (document.visibilityState === "visible") getAutoUpdate().then(setAuto, () => {}); };
+    refresh();
+    appVersion().then(setVersion);
+    document.addEventListener("visibilitychange", refresh);
+    return () => document.removeEventListener("visibilitychange", refresh);
+  }, []);
   const status: Record<Update["status"], string> = {
     idle: t("update.check"), checking: t("update.checking"), none: t("update.none"),
-    available: t("update.available", { v: ver(u.version) }), downloading: t("update.downloading", { v: ver(u.version), pct: t("poll.pct", { n: u.percent ?? 0 }) }),
+    available: isBazaar ? t("update.bazaarAvailable") : t("update.available", { v: ver(u.version) }), downloading: t("update.downloading", { v: ver(u.version), pct: t("poll.pct", { n: u.percent ?? 0 }) }),
     ready: t(isDesktop ? "update.readyRestart" : "update.readyInstall", { v: ver(u.version) }), error: t("update.error"),
   };
   const click = () => (u.status === "available" || u.status === "ready" ? void actOnUpdate(u) : checkUpdate());
   return (
     <>
       {auto !== undefined && (
-        <label className="switch-row"><span>{t("update.auto")}<small>{t("update.autoHint")}</small></span>
+        <label className="switch-row"><span>{t(isBazaar ? "update.bazaarAuto" : "update.auto")}<small>{t(isBazaar ? "update.bazaarAutoHint" : "update.autoHint")}</small></span>
           <input type="checkbox" role="switch" checked={auto} onChange={(e) => setAutoUpdate(e.target.checked).then(setAuto, (err) => alertDialog(errText(err)))} /></label>
       )}
       <button className="user-row" disabled={u.status === "checking" || u.status === "downloading"} onClick={click}>
@@ -456,7 +463,7 @@ export function UpdateBanner() {
   const go = async () => { if (!await actOnUpdate(u) && u.status === "available") setLater(u.status + u.version); };
   return (
     <button className="banner" onClick={() => void go()}>
-      <Icon name="download" size={16} /> {u.status === "ready" ? t("update.bannerReady", { v: ver(u.version) }) : t("update.bannerNew", { v: ver(u.version) })}
+      <Icon name="download" size={16} /> {u.status === "ready" ? t("update.bannerReady", { v: ver(u.version) }) : isBazaar ? t("update.bazaarBanner") : t("update.bannerNew", { v: ver(u.version) })}
     </button>
   );
 }

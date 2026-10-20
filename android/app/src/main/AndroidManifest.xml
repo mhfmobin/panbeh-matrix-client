@@ -105,6 +105,11 @@
         </provider>
     </application>
 
+    <!-- the Cafe Bazaar build asks Bazaar about updates (PanbehPlugin.bazaarCheck) -->
+    <queries>
+        <package android:name="com.farsitel.bazaar" />
+    </queries>
+
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />

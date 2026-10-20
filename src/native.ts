@@ -60,6 +60,9 @@ interface PanbehPlugin {
   setLanguage(p: { lang: string }): Promise<void>;
   updateDownload(p: { url: string }): Promise<void>;
   updateInstall(): Promise<void>;
+  bazaarCheck(): Promise<{ newer: boolean }>;
+  bazaarAutoUpdate(): Promise<{ on: boolean }>;
+  bazaarOpen(p: { page: "details" | "autoupdate" }): Promise<void>;
   addListener(e: "openRoom", f: (d: { roomId: string }) => void): Promise<PluginListenerHandle>;
   addListener(e: "openLink", f: (d: { link: string }) => void): Promise<PluginListenerHandle>;
   addListener(e: "callAction", f: (d: CallAction) => void): Promise<PluginListenerHandle>;
@@ -419,8 +422,31 @@ function downloadUpdate() {
     .finally(() => h.then((x) => x.remove()));
 }
 
+// ---------- the Cafe Bazaar build (VITE_STORE=bazaar): no installing of our own (Bazaar's rule), Bazaar says when there's a newer version and updates it ----------
+export const isBazaar = import.meta.env.VITE_STORE === "bazaar";
+async function bazaarCheck() {
+  if (upd.status === "checking") return;
+  setUpd({ status: "checking" });
+  try { setUpd({ status: (await plugin.bazaarCheck()).newer ? "available" : "none" }); } catch { setUpd({ status: "error" }); }
+}
+
 // CI builds only: a local build has no version and a debug key, so a release can't install over it
-if (isNative && !headless && /^\d+\.\d+\.\d+(-\d+)?$/.test(version)) {
+if (isNative && !headless && isBazaar && /^\d+\.\d+\.\d+(-\d+)?$/.test(version)) {
+  setUpdater({
+    state: async () => upd,
+    onState: (cb) => { updSubs.add(cb); return () => { updSubs.delete(cb); }; },
+    // Bazaar's own auto-update for this app (no switch without Bazaar 26.2+); flipping it opens Bazaar's sheet, Settings re-reads on return
+    auto: async (on) => {
+      if (typeof on === "boolean") await plugin.bazaarOpen({ page: "autoupdate" }).catch(() => {});
+      return plugin.bazaarAutoUpdate().then((r) => r.on, () => undefined);
+    },
+    check: async () => void bazaarCheck(),
+    download: async () => { await plugin.bazaarOpen({ page: "details" }).catch(() => toast(t("update.error"))); },
+    install: async () => {},
+  });
+  void bazaarCheck();
+  setInterval(() => void bazaarCheck(), 6 * 60 * 60 * 1000);
+} else if (isNative && !headless && /^\d+\.\d+\.\d+(-\d+)?$/.test(version)) {
   setUpdater({
     state: async () => upd,
     onState: (cb) => { updSubs.add(cb); return () => { updSubs.delete(cb); }; },
