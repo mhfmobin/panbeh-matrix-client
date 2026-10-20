@@ -759,6 +759,7 @@ export default {
   "msg.addStickerQ": "«{code}» به استیکرهای شما اضافه شود؟",
   "msg.addEmojiQ": "«{code}» به اموجی‌های شما اضافه شود؟",
   "msg.deleteQ": "این پیام برای همه حذف شود؟",
+  "msg.deleteFailed": "حذف نشد",
   "msg.forwardedFrom": "هدایت‌شده از",
   "msg.edited": "ویرایش‌شده",
   "msg.reply": "پاسخ",

@@ -4,6 +4,8 @@
 // Plain text at rest, like drafts. Uploads that failed before their event existed are retried, but not kept.
 import { ClientEvent, EventStatus, RoomEvent, SyncState, type EventTimelineSet, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { client, getUploads, pastFirstSync } from "./matrix.ts";
+import { t } from "./i18n.ts";
+import { toast } from "./ui/common.tsx";
 
 type Item = { roomId: string; threadId: string | null; type: string; content: Record<string, unknown> };
 
@@ -34,7 +36,28 @@ async function resendAll() {
   for (const u of getUploads()) if (u.error) u.retry();
 }
 
-function onEcho(ev: MatrixEvent) {
+/** Not sent back yet, in a thread: the SDK only puts these in the room's sets, where a thread reply doesn't fit. */
+export const pendingIn = (roomId: string, threadId: string) =>
+  [...unsent].filter((e) => e.getRoomId() === roomId && e.threadRootId === threadId && !e.isRedaction());
+
+/** A delete hides the message at once (the SDK only does that in detached ordering); offline it stays hidden until
+ *  it goes out, a refusal brings the message back. */
+function onRedactionEcho(ev: MatrixEvent, room: Room) {
+  const target = room.findEventById(ev.event.redacts ?? ev.getContent().redacts);
+  if (!target || ev.status === null || ev.status === EventStatus.SENT) return;
+  if (ev.status === EventStatus.CANCELLED || (ev.status === EventStatus.NOT_SENT && refused(ev))) {
+    if (!target.isRedacted() || target.getUnsigned().redacted_because !== ev.event) return;
+    target.unmarkLocallyRedacted();
+    room.emit(RoomEvent.RedactionCancelled, ev, room);
+    if (ev.status === EventStatus.NOT_SENT) toast(t("msg.deleteFailed"));
+  } else {
+    target.markLocallyRedacted(ev);
+    room.emit(RoomEvent.Redaction, ev, room, target.threadRootId);
+  }
+}
+
+function onEcho(ev: MatrixEvent, room: Room) {
+  if (ev.isRedaction()) onRedactionEcho(ev, room);
   const txn = ev.getTxnId();
   if (!txn) return;
   if (ev.status === null || ev.status === EventStatus.CANCELLED) unsent.delete(ev); else unsent.add(ev);

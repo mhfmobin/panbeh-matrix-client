@@ -792,6 +792,7 @@ export default {
   "msg.addStickerQ": "Add “{code}” to your stickers?",
   "msg.addEmojiQ": "Add “{code}” to your emoji?",
   "msg.deleteQ": "Delete this message for everyone?",
+  "msg.deleteFailed": "Couldn't delete",
   "msg.forwardedFrom": "Forwarded from",
   "msg.edited": "edited",
   "msg.reply": "Reply",

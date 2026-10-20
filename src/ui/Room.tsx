@@ -92,7 +92,7 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
   const canDel = picked.length > 0 && picked.every((e) => e.getSender() === me() || room.currentState.maySendRedactionForEvent(e, me()));
   const delSel = async () => {
     if (!(await confirmDialog(t("msg.deleteN", { count: picked.length }), { danger: true }))) return;
-    Promise.all(picked.map((e) => client.redactEvent(room.roomId, e.getId()!))).catch((e) => alertDialog(errText(e)));
+    Promise.all(picked.map((e) => client.redactEvent(room.roomId, e.getId()!))).catch(() => {}); // failures: sendQueue.ts
     setSel(null);
   };
 
