@@ -371,7 +371,8 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
       totalListHeightChanged={() => stuck.current && Date.now() > pagingUntil.current && list.current?.scrollToIndex({ index: "LAST", align: "end" })}
       atBottomThreshold={80}
       skipAnimationFrameInResizeObserver // measure and compensate in the same frame; otherwise rows entering above paint one frame at the wrong spot
-      startReached={() => { stuck.current = false; loadOlder(); }} // at the top we're reading history, not following the bottom
+      // at the top we're reading history, not following the bottom; unless it's the bottom too (a few messages loaded)
+      startReached={() => { if (!bottomRef.current) stuck.current = false; loadOlder(); }}
       endReached={() => { loadNewer(); }}
       rangeChanged={({ startIndex, endIndex }) => {
         const r = rows[startIndex - firstItemIndex];
