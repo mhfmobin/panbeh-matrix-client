@@ -1133,12 +1133,58 @@ img.tint {
 }
 .msg-menu { z-index: 46; min-width: 220px; max-width: calc(100vw - 16px); padding: 6px; }
 .msg-menu:focus { outline: none; }
-.msg-menu .quick-react { position: static; margin-bottom: 4px; padding: 2px; box-shadow: none; background: transparent; animation: none; justify-content: space-between; }
-.msg-menu .quick-react button { width: 38px; height: 38px; padding: 0; justify-content: center; border-radius: 50%; } /* not a menu row: no row padding pushing the emoji off its circle */
 .msg-menu-backdrop { z-index: 45; background: rgba(0, 0, 0, 0.25); touch-action: none; }
-@media (max-width: 700px) { /* bottom sheet */
-  .msg-menu { left: 0 !important; right: 0; top: auto !important; bottom: 0; width: 100%; max-width: none; border-radius: 18px 18px 0 0; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); animation: sheet-up 0.2s ease-out; }
-  .msg-menu > button[role="menuitem"] { padding: 12px; }
+/* Message actions float at the press; form dropdowns still use the sheet below. */
+.message-context-backdrop {
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  --message-menu-bg: color-mix(in srgb, color-mix(in srgb, var(--panel) 96%, var(--text)) 94%, transparent);
+}
+.message-context {
+  position: fixed; width: min(320px, calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+  display: flex; flex-direction: column; gap: 12px; outline: none; direction: ltr;
+  transform-origin: center 56px; animation: pop 0.18s var(--ease-out);
+}
+.message-reaction-bar, .message-context-actions {
+  background: var(--message-menu-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.16);
+}
+.message-reaction-bar {
+  position: relative; flex: none; height: 52px; border-radius: 30px; padding: 6px 8px;
+  display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); align-items: center; direction: ltr;
+}
+.message-reaction-bar::before, .message-reaction-bar::after {
+  content: ""; position: absolute; background: var(--message-menu-bg); border-radius: 50%; pointer-events: none;
+}
+.message-reaction-bar::before { width: 17px; height: 17px; right: 44px; bottom: -7px; }
+.message-reaction-bar::after { width: 8px; height: 8px; right: 40px; bottom: -19px; }
+.message-reaction-bar button {
+  display: grid; place-items: center; width: 100%; height: 40px; border-radius: 50%;
+  font-size: 30px; line-height: 1; transition: transform 0.15s var(--ease-spring), background 0.15s;
+}
+.message-reaction-bar button .emoji { width: 1em; height: 1em; }
+.message-reaction-bar button.more {
+  width: 32px; height: 32px; justify-self: center;
+  background: color-mix(in srgb, var(--text) 24%, transparent); color: var(--panel);
+}
+.message-context-actions {
+  flex: 0 1 auto; min-height: 0; width: min(210px, 100%); padding: 0;
+  border-radius: 16px; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+}
+.message-context-actions button {
+  display: flex; align-items: center; gap: 22px; width: 100%; min-height: 50px; padding: 10px 20px;
+  font-size: 17px; font-weight: 400; line-height: 1.5; text-align: start; color: var(--text);
+}
+.message-context-actions svg { flex: none; }
+.message-context-actions span { overflow-wrap: anywhere; }
+.message-context button:focus-visible { outline: none; background: color-mix(in srgb, var(--text) 10%, transparent); }
+.message-context button:active { background: color-mix(in srgb, var(--text) 10%, transparent); }
+@media (hover: hover) {
+  .message-reaction-bar button:not(.more):hover { transform: scale(1.2); }
+  .message-context-actions button:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
+}
+.message-context-backdrop.closing > .message-context { animation: pop-out 0.15s ease-in forwards; pointer-events: none; }
+@media (max-width: 700px) { /* form dropdowns */
+  .select-menu { left: 0 !important; right: 0; top: auto !important; bottom: 0; width: 100%; max-width: none; border-radius: 18px 18px 0 0; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); animation: sheet-up 0.2s ease-out; }
 }
 @keyframes sheet-up { from { transform: translateY(40px); opacity: 0; } }
 .msg.selecting { padding-inline-start: 44px; cursor: pointer; }
@@ -1391,7 +1437,7 @@ img.tint {
 .timeline-wrap { margin-bottom: var(--emoji-gap, 0px); } /* the docked emoji panel's space: the chat ends above it, as above a keyboard */
 .emoji-dock .emoji-panel, .emoji-dock .emoji-panel.closing { top: 8px; bottom: auto; inset-inline: 0; width: auto; height: calc(var(--emoji-h) - 8px); animation: none; }
 @media (max-width: 700px) {
-  .chat-menu-backdrop.closing > .msg-menu { animation: sheet-down 0.18s ease-in forwards; }
+  .chat-menu-backdrop.closing > .select-menu { animation: sheet-down 0.18s ease-in forwards; }
 }
 
 /* lightbox */

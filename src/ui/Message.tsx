@@ -11,14 +11,14 @@ import { usePromise } from "../hooks.ts";
 import { threadUnread } from "../chats.ts";
 import { HASHTAG_SRC, LINK_SRC, blurhashDecode, clock, fmtDuration, isEmojiOnly, isGif, linkHref, neshanUrl, num, parseGeoUri, shouldAutoDl, stamp, textDir, type DlKind, type Usage } from "../logic.ts";
 import { Icon, iconSvg, type IconName } from "../icons.tsx";
-import { Avatar, colorFor, copyText, errText, formatSize, isGroupChat, me, menuPos, senderMember, senderName, stripReplyFallback, toast, useChange, isVoice } from "./common.tsx";
+import { Avatar, colorFor, copyText, errText, formatSize, isGroupChat, me, senderMember, senderName, stripReplyFallback, toast, useChange, isVoice } from "./common.tsx";
 import { AudioPlayer, NoteRing, stopPlayer, trackFor } from "./Voice.tsx";
 import { PollBody } from "./Poll.tsx";
 import { EmojiPanel, PreviewText, ReactionKey, tinted } from "./Emoji.tsx";
 import { LinkPreview } from "./LinkPreview.tsx";
 import { captionOf, EDITABLE } from "./Composer.tsx";
-import { useBackdropHold } from "./useBackdropHold.ts";
-import { reducedMotion, useDismiss } from "./useDismiss.ts";
+import { reducedMotion } from "./useDismiss.ts";
+import { MessageMenu, QUICK_REACTIONS } from "./MessageMenu.tsx";
 import { thumbFor } from "./Media.tsx";
 import { alertDialog, confirmDialog, promptDialog } from "./dialog.tsx";
 import { loadPrefs } from "./Settings.tsx";
@@ -37,8 +37,6 @@ export type Actions = {
   select?: (ev: MatrixEvent) => void; // toggles multi-select membership; absent inside a thread
   selection?: ReadonlySet<string>; // event ids; present = selecting
 };
-
-const QUICK = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 
 const LONG_PRESS = 450, SWIPE_AT = 60, SWIPE_MAX = 80;
 /** The last press was a finger. Touch works like Telegram: a tap on a message opens its menu, holding it selects it. */
@@ -305,14 +303,14 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
           {canDelete && <button title={t("common.delete")} aria-label={t("common.delete")} onClick={() => remove()}><Icon name="trash" size={17} /></button>}
           {picker && (
             <div className="quick-react" onMouseLeave={() => setPicker(false)}>
-              {QUICK.map((k) => <button key={k} onClick={() => { toggleReaction(room, ev, k); setPicker(false); }}>{k}</button>)}
+              {QUICK_REACTIONS.map((k) => <button key={k} onClick={() => { toggleReaction(room, ev, k); setPicker(false); }}>{k}</button>)}
               <button className="more" title={t("msg.moreEmoji")} aria-label={t("msg.moreEmoji")} onClick={() => { setPicker(false); setFullPicker(true); }}><Icon name="plus" size={18} /></button>
             </div>
           )}
         </div>
       )}
       {menu && (
-        <MsgMenu {...menu} onClose={() => setMenu(null)} onReact={(k) => toggleReaction(room, ev, k)} onMore={() => setFullPicker(true)} items={[
+        <MessageMenu {...menu} onClose={() => setMenu(null)} onReact={(k) => toggleReaction(room, ev, k)} onMore={() => setFullPicker(true)} items={[
           { icon: "reply", label: t("msg.reply"), run: () => actions.reply(ev) },
           sel && { icon: "copy", label: t("msg.copySelection"), run: () => void copyMessages(sel) },
           text && { icon: "copy", label: t("common.copy"), run: () => void copyMessages(text) },
@@ -339,40 +337,6 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
         document.body)}
     </div>
   );
-}
-
-type MenuItem = { icon: IconName; label: string; run: () => unknown; danger?: boolean };
-
-/** Message menu: quick reactions + actions. A popup at the touch point, a bottom sheet on narrow screens (CSS). */
-function MsgMenu({ x, y, items, onReact, onMore, onClose }: { x: number; y: number; items: (MenuItem | false | "" | undefined)[];
-  onReact: (k: string) => void; onMore: () => void; onClose: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [closing, close] = useDismiss(onClose, 160);
-  const [pos, setPos] = useState<{ left: number; top: number }>();
-  useEffect(() => { // keep it on screen
-    setPos(menuPos(x, y, ref.current!));
-    ref.current!.focus({ preventScroll: true });
-  }, [x, y]);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); close(); } };
-    addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
-  }, [close]);
-  const act = (fn: () => unknown) => { onClose(); fn(); };
-  const backdrop = useBackdropHold(onClose, ".msg", close); // right-clicking another message switches the menu to it (a finger hold just closes)
-  return createPortal(
-    <div className={"chat-menu-backdrop msg-menu-backdrop" + (closing ? " closing" : "")} {...backdrop}>
-      <div className="chat-menu msg-menu" role="menu" aria-label={t("msg.options")} tabIndex={-1} ref={ref} style={pos ?? { left: x, top: y, visibility: "hidden" }} onClick={(e) => e.stopPropagation()}>
-        <div className="quick-react">
-          {QUICK.map((k) => <button key={k} role="menuitem" onClick={() => act(() => onReact(k))}>{k}</button>)}
-          <button className="more" role="menuitem" title={t("msg.moreEmoji")} aria-label={t("msg.moreEmoji")} onClick={() => act(onMore)}><Icon name="plus" size={18} /></button>
-        </div>
-        {items.map((it) => it && (
-          <button key={it.label} role="menuitem" className={it.danger ? "danger-item" : undefined} onClick={() => act(it.run)}><Icon name={it.icon} /> {it.label}</button>
-        ))}
-      </div>
-    </div>,
-    document.body);
 }
 
 /** Whether media of `kind` downloads by itself in this chat, by the auto-download rules of the network we're on. */
