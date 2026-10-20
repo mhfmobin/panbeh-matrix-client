@@ -1,4 +1,20 @@
 {
+  "0.9.2": {
+    "fa": [
+      "بهبود نمایش منوی ری‌اکشن",
+      "بهبود ارسال پیام در thread ها",
+      "بهبود نمایش thread ها و mention های خوانده نشده",
+      "ذخیره محل خروج از چت و نمایش آن حین ورود مجدد به چت"
+    ],
+    "en": [
+      "Chats reopen exactly where you stopped reading, even after a restart",
+      "Unread mentions and threads show up in the chat, with a jump straight to them",
+      "The message menu is now a solid, Telegram-style floating menu that opens from your press and shows your own reactions",
+      "Deleting a message is instant, and replies still sending show up in threads",
+      "The reaction count is hidden when only one person reacted",
+      "A chat opened with only a few messages loaded now follows new messages"
+    ]
+  },
   "0.9.1": {
     "fa": [
       "ساخت حساب جدید از همان کارت ورود",
