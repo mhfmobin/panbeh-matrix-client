@@ -1124,11 +1124,11 @@ img.tint {
   opacity: var(--sp, 0); transform: scale(calc(0.5 + 0.5 * var(--sp, 0)));
 }
 .msg.snap .swipe-ico { transition: opacity 0.2s, transform 0.2s; }
-/* touch: a long-press opens our menus, so it mustn't also start a text selection (copy is in the menu) */
+/* Touch: the first hold selects the message; only a new press on that selected message enables native text selection. */
 @media (hover: none) {
   body, body * { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
   body input, body textarea, body .emote-input, body .emote-input * { user-select: text; -webkit-user-select: text; }
-  .msg.selected .msg-text, .msg.selected .msg-text * { user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; } /* hold the text to select it */
+  .msg.selected.text-selectable .msg-text, .msg.selected.text-selectable .msg-text * { user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; }
   .recovery-key { user-select: all; -webkit-user-select: all; }
 }
 .msg-menu { z-index: 46; min-width: 220px; max-width: calc(100vw - 16px); padding: 6px; }
@@ -1136,14 +1136,17 @@ img.tint {
 .msg-menu-backdrop { z-index: 45; background: rgba(0, 0, 0, 0.25); touch-action: none; }
 /* Message menu (MessageMenu): the reactions above the press, the actions below it. The wrapper lets taps through around them. */
 .msg-menu-backdrop { padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
-.msg-float { position: fixed; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: calc(100vw - 16px); pointer-events: none; outline: none; animation: pop 0.14s ease-out; }
+.msg-float { position: fixed; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: calc(100vw - 16px); pointer-events: none; outline: none; animation: message-menu-in 0.24s cubic-bezier(0.16, 1, 0.3, 1); }
 .msg-float > * { margin-right: auto; pointer-events: auto; animation: none; } /* hang from the press: left-aligned, or right-aligned when flipped */
 .msg-float.flip > * { margin-right: 0; margin-left: auto; }
 .msg-menu-react { position: relative; inset: auto; }
 .msg-menu-react button.more { width: 30px; height: 30px; margin: 3px; background: var(--hover); }
 .quick-react button.on { background: color-mix(in srgb, var(--accent) 35%, transparent); }
 .msg-menu-actions { position: static; overflow-y: auto; overscroll-behavior: contain; }
-.msg-menu-backdrop.closing > .msg-float { animation: pop-out 0.15s ease-in forwards; }
+.msg-menu-backdrop.closing > .msg-float { animation: message-menu-out 0.16s ease-in forwards; }
+/* Small, anchored movement with a gentle landing; only opacity and transform animate. */
+@keyframes message-menu-in { from { opacity: 0; transform: translateY(5px) scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes message-menu-out { to { opacity: 0; transform: translateY(2px) scale(0.97); } }
 @media (max-width: 700px) { /* form dropdowns */
   .select-menu { left: 0 !important; right: 0; top: auto !important; bottom: 0; width: 100%; max-width: none; border-radius: 18px 18px 0 0; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); animation: sheet-up 0.2s ease-out; }
 }
@@ -1391,6 +1394,8 @@ img.tint {
 :root[dir="ltr"] .attach-menu { transform-origin: bottom left; }
 .emoji-panel { animation: pop 0.18s var(--ease-out); transform-origin: bottom left; } /* end-aligned, over the 😊: the left edge in RTL */
 :root[dir="ltr"] .emoji-panel { transform-origin: bottom right; }
+.react-picker .emoji-panel { animation: message-menu-in 0.24s cubic-bezier(0.16, 1, 0.3, 1); transform-origin: var(--origin-x) var(--origin-y); }
+.react-picker .emoji-panel.closing { animation: message-menu-out 0.16s ease-in forwards; pointer-events: none; }
 /* touch: docked under the row in the keyboard's place. Composer sets --emoji-h (the keyboard's height) and --emoji-gap
    (what the keyboard doesn't cover); with the keyboard still up the panel waits below it, off screen */
 .emoji-dock { position: relative; height: var(--emoji-gap, 0px); }

@@ -1,5 +1,5 @@
 import { rtl, t } from "../i18n.ts";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import DOMPurify from "dompurify";
 import { handleIncomingLink } from "../openTarget.ts";
@@ -17,7 +17,7 @@ import { PollBody } from "./Poll.tsx";
 import { EmojiPanel, PreviewText, ReactionKey, tinted } from "./Emoji.tsx";
 import { LinkPreview } from "./LinkPreview.tsx";
 import { captionOf, EDITABLE } from "./Composer.tsx";
-import { reducedMotion } from "./useDismiss.ts";
+import { reducedMotion, useDismiss } from "./useDismiss.ts";
 import { MessageMenu, QUICK_REACTIONS } from "./MessageMenu.tsx";
 import { thumbFor } from "./Media.tsx";
 import { alertDialog, confirmDialog, promptDialog } from "./dialog.tsx";
@@ -133,6 +133,7 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
   const [fullPicker, setFullPicker] = useState<DOMRect | null>(null); // the button that opened it
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null); // touch screens have no hover: a tap (or right-click) opens this
   const [sel, setSel] = useState(""); // what was selected inside this message when its menu opened (the menu's focus can collapse it)
+  const [textSelectable, setTextSelectable] = useState(false); // enabled only by a new press on an already selected message
   const row = useRef<HTMLDivElement>(null);
   const g = useRef<{ id: number; x: number; y: number; timer: number; lock: boolean; px: number; crossed: boolean } | null>(null);
   const swallow = useRef(false); // the click that follows a swipe / hold
@@ -170,7 +171,10 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
 
   useEffect(() => { // unselected: its text can't be selected any more, nor stay so
     const s = getSelection();
-    if (!selected && s?.anchorNode && row.current?.contains(s.anchorNode)) s.removeAllRanges();
+    if (!selected) {
+      setTextSelectable(false);
+      if (s?.anchorNode && row.current?.contains(s.anchorNode)) s.removeAllRanges();
+    }
   }, [selected]);
 
   const setX = (px: number) => { row.current!.style.setProperty("--sx", `${-px}px`); row.current!.style.setProperty("--sp", String(Math.min(1, px / SWIPE_AT))); };
@@ -190,9 +194,11 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
   // swipe LEFT to reply for both own and others' messages; rows stay physically LTR so -x is left
   const inside = (e: { target: EventTarget }) => row.current!.contains(e.target as Node); // portals (menu, picker) bubble through React
   const down = (e: PointerEvent) => {
+    if (!inside(e)) return;
+    if (e.pointerType === "touch") setTextSelectable(selected);
     const s = getSelection();
     textSel.current = !!s && !s.isCollapsed && !!s.anchorNode?.parentElement?.closest(".msg.selected");
-    if (!inside(e) || e.pointerType !== "touch" || !live || selecting || (e.target as HTMLElement).closest("input,video,audio")) return;
+    if (e.pointerType !== "touch" || !live || selecting || (e.target as HTMLElement).closest("input,video,audio")) return;
     const { clientX: x, clientY: y } = e;
     clearTimeout(g.current?.timer);
     g.current = { id: e.pointerId, x, y, lock: false, px: 0, crossed: false, timer: window.setTimeout(() => {
@@ -223,13 +229,13 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
   };
 
   return (
-    <div ref={row} className={`msg ${mine ? "mine" : "theirs"}${first ? " first" : ""}${last ? " last" : ""}${failed ? " failed" : ""}${flash ? " flash" : ""}${enter ? " enter" : ""}${deleting ? " deleting" : ""}${selecting ? " selecting" : ""}${selected ? " selected" : ""}`}
+    <div ref={row} className={`msg ${mine ? "mine" : "theirs"}${first ? " first" : ""}${last ? " last" : ""}${failed ? " failed" : ""}${flash ? " flash" : ""}${enter ? " enter" : ""}${deleting ? " deleting" : ""}${selecting ? " selecting" : ""}${selected ? " selected" : ""}${selected && textSelectable ? " text-selectable" : ""}`}
       onPointerDown={down} onPointerMove={move} onPointerUp={() => end(false)} onPointerCancel={() => end(true)}
       onContextMenu={(e) => {
         if (!inside(e)) return;
         // Android's own long-press: our hold timer has it. Except on a selected message's text: that's where the system's
         // text selection starts (Telegram's), with its own Copy and Select all.
-        if (touched) return void (selected && (e.target as HTMLElement).closest(".msg-text") || e.preventDefault());
+        if (touched) return void (selected && textSelectable && (e.target as HTMLElement).closest(".msg-text") || e.preventDefault());
         if (!live || selecting) return;
         e.preventDefault();
         openMenu(e.clientX, e.clientY);
@@ -239,7 +245,8 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
         if (swallow.current) { e.preventDefault(); e.stopPropagation(); swallow.current = false; } // first: a hold that just selected
         else if (selecting) { // taps only toggle while selecting; one that ends a text selection does just that
           e.preventDefault(); e.stopPropagation();
-          if (textSel.current) getSelection()?.removeAllRanges(); else select();
+          if (textSel.current) getSelection()?.removeAllRanges();
+          else if (!selectedText(row.current!)) select(); // a hold that just selected text must keep the message selected
         }
       }}
       onClick={(e) => { // touch: a tap anywhere on the row opens the menu (Telegram's), unless on a link, button or media
@@ -309,7 +316,7 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
           )}
         </div>
       )}
-      {menu && (
+      {menu && !fullPicker && (
         <MessageMenu {...menu} onClose={() => setMenu(null)} mine={[...new Set(myReactions(room, ev).map((e) => e.getRelation()!.key!))]}
           onReact={(k) => toggleReaction(room, ev, k)} onMore={setFullPicker} items={[
           { icon: "reply", label: t("msg.reply"), run: () => actions.reply(ev) },
@@ -333,13 +340,19 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
         ]} />
       )}
       {/* portal: .msg-actions fades out when the pointer leaves the message */}
-      {fullPicker && createPortal(
-        <div className="react-picker" style={pickerAt(fullPicker)}>
-          <EmojiPanel room={room} onEmoji={(k, custom) => { toggleReaction(room, ev, custom?.img.url ?? k, custom && k); setFullPicker(null); }} onClose={() => setFullPicker(null)} />
-        </div>,
-        document.body)}
+      {fullPicker && <ReactionPicker at={fullPicker} room={room} onClose={() => setFullPicker(null)}
+        onReact={(k, custom) => { toggleReaction(room, ev, custom?.img.url ?? k, custom && k); setMenu(null); }} />}
     </div>
   );
+}
+
+function ReactionPicker({ at, room, onReact, onClose }: { at: DOMRect; room: Room;
+  onReact: ComponentProps<typeof EmojiPanel>["onEmoji"]; onClose: () => void }) {
+  const [closing, close] = useDismiss(onClose, 160);
+  return createPortal(
+    <div className="react-picker" style={pickerAt(at)}>
+      <EmojiPanel room={room} closing={closing} onEmoji={(...args) => { onReact(...args); close(); }} onClose={close} />
+    </div>, document.body);
 }
 
 /** Whether media of `kind` downloads by itself in this chat, by the auto-download rules of the network we're on. */
@@ -860,7 +873,9 @@ const myReactions = (room: Room, ev: MatrixEvent) => [...(room.relations.getChil
 function pickerAt(r: DOMRect) {
   const w = Math.min(360, innerWidth - 32), h = Math.min(380, innerHeight - 16);
   const below = r.bottom + 6 + h <= innerHeight - 8;
-  return { "--left": `${Math.max(8, Math.min(r.right - w, innerWidth - w - 8))}px`, "--top": `${below ? r.bottom + 6 : Math.max(8, r.top - 6 - h)}px` } as CSSProperties;
+  const left = Math.max(8, Math.min(r.right - w, innerWidth - w - 8));
+  return { "--left": `${left}px`, "--top": `${below ? r.bottom + 6 : Math.max(8, r.top - 6 - h)}px`,
+    "--origin-x": `${Math.max(0, Math.min(w, r.left + r.width / 2 - left))}px`, "--origin-y": below ? "top" : "bottom" } as CSSProperties;
 }
 
 /** `shortcode`: a custom emoji's ":code:" (key is then its mxc), so other clients can name it. */
