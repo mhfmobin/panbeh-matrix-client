@@ -79,6 +79,18 @@ Then go to GitHub → repo Settings → Secrets and variables → Actions and ad
 
 If you lose the key, existing installs can't be updated: you'll have to uninstall and reinstall.
 
+### Cafe Bazaar
+
+A tag also builds `Panbeh-bazaar-v1.0.0.apk`. It shows up only in the run's artifacts, never in the release:
+download it from there and upload it to Bazaar. Bazaar doesn't allow apps that install their own updates, so this
+build has no `REQUEST_INSTALL_PACKAGES`. Instead it asks the Bazaar app whether a newer version is out, and its
+update button opens Bazaar. Settings also has a switch for Bazaar's own auto-update.
+
+It's signed with the same key. The GitHub builds' versionCode is the run number plus 1,000,000, while
+Bazaar's is the plain run number. That way Bazaar never thinks it has a newer version than a GitHub install,
+so it leaves those alone. You can install a GitHub APK over a Bazaar one, but going the other way means
+uninstalling first.
+
 ## Building locally
 
 You need Node 22, JDK 21 and the Android SDK (Android Studio).

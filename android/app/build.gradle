@@ -3,6 +3,9 @@ apply plugin: 'com.android.application'
 android {
     namespace = "ir.panbeh.app"
     compileSdk = rootProject.ext.compileSdkVersion
+    buildFeatures {
+        aidl true // Cafe Bazaar's update-check services, src/main/aidl
+    }
     defaultConfig {
         applicationId "ir.panbeh.app"
         minSdkVersion rootProject.ext.minSdkVersion

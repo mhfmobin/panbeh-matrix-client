@@ -5,12 +5,15 @@ import android.app.Activity;
 import android.app.NotificationManager;
 import android.content.ActivityNotFoundException;
 import android.content.ClipboardManager;
+import android.content.ComponentName;
 import android.content.ClipData;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
@@ -19,6 +22,7 @@ import android.net.ConnectivityManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
+import android.os.IBinder;
 import android.os.PowerManager;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
@@ -45,11 +49,14 @@ import androidx.biometric.BiometricManager;
 import androidx.biometric.BiometricPrompt;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
+import androidx.core.content.pm.PackageInfoCompat;
 import androidx.fragment.app.FragmentActivity;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
+import com.farsitel.bazaar.IAutoUpdateCheckService;
+import com.farsitel.bazaar.IUpdateCheckService;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
@@ -561,6 +568,79 @@ public class PanbehPlugin extends Plugin {
             call.resolve();
         } catch (ActivityNotFoundException e) {
             call.reject("no installer");
+        }
+    }
+
+    // ---------- Cafe Bazaar build: Bazaar's update-check services (src/main/aidl) instead of updateDownload/updateInstall ----------
+    private static final String BAZAAR = "com.farsitel.bazaar";
+
+    private long versionOf(String pkg) {
+        try { return PackageInfoCompat.getLongVersionCode(getContext().getPackageManager().getPackageInfo(pkg, 0)); }
+        catch (PackageManager.NameNotFoundException e) { return 0; }
+    }
+
+    private interface BazaarCall { JSObject run(IBinder b) throws Exception; }
+
+    /** Binds one of Bazaar's services, makes one call off the main thread and unbinds. Rejects "no bazaar" when it isn't installed. */
+    private void bazaarCall(PluginCall call, String action, BazaarCall f) {
+        Context ctx = getContext();
+        ServiceConnection con = new ServiceConnection() {
+            @Override public void onServiceConnected(ComponentName name, IBinder b) {
+                ServiceConnection self = this;
+                new Thread(() -> {
+                    try { call.resolve(f.run(b)); }
+                    catch (Exception e) { call.reject(String.valueOf(e.getMessage())); }
+                    finally { try { ctx.unbindService(self); } catch (IllegalArgumentException ignored) { } }
+                }).start();
+            }
+            @Override public void onServiceDisconnected(ComponentName name) { }
+        };
+        boolean bound;
+        try { bound = ctx.bindService(new Intent(action).setPackage(BAZAAR), con, Context.BIND_AUTO_CREATE); }
+        catch (SecurityException e) { bound = false; }
+        if (!bound) {
+            try { ctx.unbindService(con); } catch (IllegalArgumentException ignored) { } // released even when the bind failed
+            call.reject("no bazaar");
+        }
+    }
+
+    /** { newer }: Bazaar has a higher versionCode than this install. */
+    @PluginMethod
+    public void bazaarCheck(PluginCall call) {
+        String pkg = getContext().getPackageName();
+        boolean remote = versionOf(BAZAAR) >= 2400700; // getRemoteVersionCode: Bazaar 24.7+; older ones only have getVersionCode
+        long own = versionOf(pkg);
+        bazaarCall(call, "com.farsitel.bazaar.service.UpdateCheckService.BIND", b -> {
+            IUpdateCheckService s = IUpdateCheckService.Stub.asInterface(b);
+            long code = remote ? s.getRemoteVersionCode(pkg) : s.getVersionCode(pkg); // -1: no update, or not on Bazaar
+            return new JSObject().put("newer", code > own);
+        });
+    }
+
+    /** { on }: Bazaar auto-updates this app. Rejects on Bazaar older than 26.2, which can't. */
+    @PluginMethod
+    public void bazaarAutoUpdate(PluginCall call) {
+        if (versionOf(BAZAAR) < 2600200) { call.reject("old bazaar"); return; }
+        bazaarCall(call, "com.farsitel.bazaar.service.AutoUpdateCheckService.BIND",
+            b -> new JSObject().put("on", IAutoUpdateCheckService.Stub.asInterface(b).isAutoUpdateEnabled(getContext().getPackageName())));
+    }
+
+    /** Opens Bazaar's sheet for this app: "details" (update) or "autoupdate" (turn auto-update on/off). Without Bazaar, details opens the website. */
+    @PluginMethod
+    public void bazaarOpen(PluginCall call) {
+        String pkg = getContext().getPackageName();
+        String page = "autoupdate".equals(call.getString("page")) ? "autoupdate" : "details";
+        try {
+            try {
+                getContext().startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("bazaar://" + page + "/modal?id=" + pkg))
+                    .setPackage(BAZAAR).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (ActivityNotFoundException e) {
+                if (page.equals("autoupdate")) throw e;
+                getContext().startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://cafebazaar.ir/app/?id=" + pkg)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            }
+            call.resolve();
+        } catch (ActivityNotFoundException e) {
+            call.reject("no bazaar");
         }
     }
 
