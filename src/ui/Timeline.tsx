@@ -12,6 +12,7 @@ import { AudioPlayer } from "./Voice.tsx";
 import { captionOf } from "./Composer.tsx";
 import { useAttentive } from "../desktop.ts";
 import { replyRead, unreadCount, unreadMentions, unreadThreads } from "../chats.ts";
+import { pendingJump } from "./Search.tsx";
 
 const EVENTS = [
   RoomEvent.Timeline, RoomEvent.TimelineReset, RoomEvent.LocalEchoUpdated, RoomEvent.Redaction, RoomEvent.Receipt,
@@ -56,6 +57,23 @@ function unreadAnchor(room: Room, events: MatrixEvent[], thread?: Thread) {
   if (read < 0 || !unreadAfterRead(events, read)) return;
   for (let i = read; i >= 0; i--) if (shown(events[i])) return rowId(events[i]);
 }
+
+// Where the reader left off in each chat: the topmost event on screen, kept per account (local only — a scroll
+// position isn't worth syncing like drafts) so a chat reopens there. Cleared once they reach the latest again.
+const resumeKey = (userId: string) => `panbeh.readpos:${userId}`;
+const loadResume = (userId: string): Record<string, string> => {
+  try { return JSON.parse(localStorage.getItem(resumeKey(userId)) ?? "{}") ?? {}; } catch { return {}; }
+};
+const getResume = (userId: string, roomId: string) => loadResume(userId)[roomId];
+const putResume = (userId: string, roomId: string, eventId: string | null) => {
+  try {
+    const all = loadResume(userId);
+    if (eventId ? all[roomId] === eventId : !all[roomId]) return; // nothing changed
+    if (eventId) all[roomId] = eventId;
+    else delete all[roomId];
+    localStorage.setItem(resumeKey(userId), JSON.stringify(all));
+  } catch { /* full or blocked: memory only */ }
+};
 
 /** The history around an old event, a page each way (the SDK's /context asks for none), decrypted; null if not found.
  *  Shown decrypted like pages: rows turning into hidden events would shift it under the reader. */
@@ -103,15 +121,17 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   // placed once on open and left there while the chat stays open
   // ponytail: a thread still fetching its first page on open gets no divider; re-anchor on its TimelineReset if that bites
   const [unreadAfter, setUnreadAfter] = useState(() => unreadAnchor(room, events, thread));
+  // reopen where the reader left off (their last scroll-up position); threads aren't kept, and a link jump wins
+  const [resume] = useState(() => (!thread && pendingJump.current?.roomId !== room.roomId ? getResume(me(), room.roomId) : undefined));
   // read point older than what's loaded, with unread messages after it: open the history around it (skeleton meanwhile)
-  const [opening] = useState(() => !thread && !unreadAfter && readIndex(room, events) < 0 && unreadAfterRead(events, -1)
+  const [opening] = useState(() => !thread && !unreadAfter && !resume && readIndex(room, events) < 0 && unreadAfterRead(events, -1)
     && (readPoint(room).receipt ?? readPoint(room).marker ?? null));
   const [loading, setLoading] = useState(false);
-  const [atBottom, setAtBottom] = useState(!unreadAfter && !opening); // opening at the divider mustn't mark everything read
+  const [atBottom, setAtBottom] = useState(!unreadAfter && !opening && !resume); // opening at the divider mustn't mark everything read
   const list = useRef<VirtuosoHandle>(null);
   // Pinned to the bottom until the *user* scrolls up; layout changes (thread panel, images, late
   // thread summaries) must not unpin us, which is what Virtuoso's own atBottom would do.
-  const stuck = useRef(!unreadAfter && !opening);
+  const stuck = useRef(!unreadAfter && !opening && !resume);
   const jumpingUntil = useRef(0); // while a jump settles, passing the bottom mustn't re-pin us there
   const pagingUntil = useRef(0); // while older history loads/settles, height changes mustn't drag us to the bottom
   // floating date: label of the topmost visible row while scrolling, hidden 1.2s after it stops
@@ -119,8 +139,10 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   const topLabel = useRef(""); // the topmost visible row's day; "" while a day pill itself is on top (no double pill)
   const topKey = useRef<string | null>(null); // the topmost visible non-day row: what must stay put when rows change above it
   const bottomRef = useRef(false); // Virtuoso's at-bottom, for the scroll handler: reading scroll sizes there forced a layout per event
+  const scroller = useRef<HTMLElement | null>(null);
   const scrollerRef = useCallback((el: HTMLElement | Window | null) => {
     if (!(el instanceof HTMLElement)) return;
+    scroller.current = el;
     let hideT = 0;
     const onScroll = () => {
       if (bottomRef.current) return; // at the very bottom (incl. new-message follow): nothing to show
@@ -150,8 +172,52 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   }
   const rows = buildRows(msgs, undefined, unreadAfter);
 
-  const [opened, setOpened] = useState(!opening);
+  // the topmost visible event, kept so the chat reopens here; only real ids (a local echo's isn't one yet)
+  const readPos = useRef<string | null>(resume ?? null);
+  const saveT = useRef(0);
+  const savePos = () => {
+    // the first row actually on screen: Virtuoso's range starts increaseViewportBy.top above it (one layout read per range change)
+    const sc = scroller.current;
+    const edge = sc?.getBoundingClientRect().top ?? 0;
+    const shownRows = [...(sc?.querySelectorAll<HTMLElement>("[data-index]") ?? [])].filter((n) => n.getBoundingClientRect().bottom > edge);
+    const r = shownRows.map((n) => rows[Number(n.dataset.index)]).find((x) => x && x.type !== "day" && x.type !== "unread");
+    const ids = r ? (r.type === "notice" ? [r.id] : rowEvents(r)) : [];
+    const id = ids.map((x) => byId.get(x)).find((e) => e?.getId()?.startsWith("$"))?.getId() ?? null;
+    if (!id) return; // nothing on screen (the list closing) or only a local echo: keep the last one
+    readPos.current = id;
+    clearTimeout(saveT.current);
+    saveT.current = window.setTimeout(() => putResume(me(), room.roomId, id), 500); // not per scroll tick
+  };
   useEffect(() => {
+    if (thread) return; // a thread shares the room: its close mustn't clear the main timeline's pointer
+    return () => { // the chat closes: keep (or clear) the pointer at once, not half a second later
+      clearTimeout(saveT.current);
+      if (bottomRef.current) readPos.current = null; // left at the latest
+      putResume(me(), room.roomId, readPos.current);
+    };
+  }, []);
+
+  const [opened, setOpened] = useState(!opening && !resume);
+  useEffect(() => {
+    if (resume) { // reopen around the saved position
+      (async () => {
+        // page the live timeline back to it (it lands reliably there, with the history above already in), plus a page
+        // above so none arrives while the list settles; only a spot further back opens as a window
+        const live = room.getLiveTimeline();
+        const above = () => live.getEvents().findIndex((e) => e.getId() === resume);
+        for (let i = 0; i < 5 && above() < 40 && live.getPaginationToken(EventTimeline.BACKWARDS); i++) {
+          if (!(await client.paginateEventTimeline(live, { backwards: true, limit: 100 }).catch(() => false))) break;
+        }
+        await Promise.all(live.getEvents().map((e) => client.decryptEventIfNeeded(e).catch(() => {})));
+        const tl = above() >= 0 ? live : await openWindow(room, resume).catch(() => null);
+        if (tl) { // set before Virtuoso mounts: its at-bottom report on mount mustn't pin a window joined to the live end
+          jumpingUntil.current = resumeUntil.current = Date.now() + 1500;
+          setView({ win: tl === room.getLiveTimeline() ? null : tl, n: 0, at: resume });
+        } else putResume(me(), room.roomId, null); // gone (redacted or pruned): the usual view next time
+        setOpened(true);
+      })();
+      return;
+    }
     if (!opening) return;
     (async () => {
       const tl = await openWindow(room, opening).catch(() => null);
@@ -185,6 +251,7 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
     return true;
   };
   const olderLater = useRef(0), newerLater = useRef(0);
+  const nearTop = useRef(false); // the range starts near the top of what's loaded
   // Virtuoso reports the bottom once on mount, before it has scrolled to the divider or jump target: opened away from the
   // bottom, that mustn't pin us there or mark the chat read until the list has settled
   const [settled, setSettled] = useState(stuck.current);
@@ -198,7 +265,8 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   }, [view.n, opened]);
   const loadOlder = useCallback(async () => {
     const first = chainRef.current[0];
-    if (settling(olderLater, loadOlder)) return;
+    // once settled, only if still near the top: Virtuoso's first range starts at row 0 before it scrolls to where it opens
+    if (settling(olderLater, () => { if (nearTop.current) loadOlder(); })) return;
     if (paging.current || !first.getPaginationToken(EventTimeline.BACKWARDS)) return;
     paging.current = true;
     setLoading(true);
@@ -303,6 +371,23 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
     const t = setTimeout(() => setFlash(null), 1600);
     return () => clearTimeout(t);
   }, [flash]);
+  // reopened at the saved spot: aim again as Virtuoso measures the rows it placed on estimated heights, and as the
+  // deferred first page of older history prepends (as a jump does), for the first moment after opening
+  const resumeUntil = useRef(0);
+  useEffect(() => {
+    if (!opened || !resume || view.at !== resume || Date.now() > resumeUntil.current) return;
+    stuck.current = false;
+    const go = () => {
+      const pos = indexOf(resume);
+      if (pos < 0) return;
+      const sc = scroller.current, row = sc?.querySelector(`[data-index="${pos}"]`);
+      // drawn: put it exactly at the top; not yet: Virtuoso scrolls there on estimated heights
+      if (sc && row) sc.scrollTop += row.getBoundingClientRect().top - sc.getBoundingClientRect().top;
+      else list.current?.scrollToIndex({ index: pos, align: "start" });
+    };
+    const ts = [150, 400, 800].map((ms) => setTimeout(go, ms));
+    return () => ts.forEach(clearTimeout);
+  }, [opened, rows.length]);
 
   const lastIsMine = lastEv?.getSender() === me();
   // Virtuoso asks followOutput on every count increase, prepended history included: follow only when the end changed
@@ -359,7 +444,7 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
       className="timeline"
       data={rows}
       firstItemIndex={firstItemIndex}
-      initialTopMostItemIndex={opensAt >= 0 ? { index: opensAt, align: "center" } : view.n === 0 && divider >= 0 ? { index: divider, align: "start" } : { index: "LAST", align: "end" }}
+      initialTopMostItemIndex={opensAt >= 0 ? { index: opensAt, align: view.at === resume ? "start" : "center" } : view.n === 0 && divider >= 0 ? { index: divider, align: "start" } : { index: "LAST", align: "end" }}
       alignToBottom
       // my message being sent (local echo) follows even when scrolled up; mine arriving otherwise (another device,
       // or a window linking up with the live end) mustn't yank the reader down
@@ -377,7 +462,14 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
         const r = rows[startIndex - firstItemIndex];
         topKey.current = rows.slice(startIndex - firstItemIndex).find((x) => x.type !== "day")?.key ?? null; // day rows move
         topLabel.current = !r || r.type === "day" ? "" : r.type === "unread" ? topLabel.current : dayLabel(byId.get(r.id)!.getTs());
-        if (startIndex - firstItemIndex < 15) loadOlder(); // fetch the next page while there's still some left to read
+        // remember where the reader is: nothing at the latest, the topmost event otherwise. Not while it settles: where it
+        // lands isn't the reader's choice, and Virtuoso reports the bottom on mount before it has scrolled to the saved row
+        if (!thread && Date.now() > jumpingUntil.current) {
+          if (bottomRef.current) { clearTimeout(saveT.current); readPos.current = null; }
+          else savePos();
+        }
+        nearTop.current = startIndex - firstItemIndex < 15;
+        if (nearTop.current) loadOlder(); // fetch the next page while there's still some left to read
         if (rows.length - (endIndex - firstItemIndex) < 15) loadNewer();
       }}
       increaseViewportBy={{ top: 600, bottom: 200 }}
