@@ -804,3 +804,15 @@ let EMOJI_ONLY: RegExp;
 try { EMOJI_ONLY = new RegExp("^\\s*(?:\\p{RGI_Emoji}\\uFE0F?\\s*){1,3}$", "v"); }
 catch { EMOJI_ONLY = /^(?:\p{Extended_Pictographic}\uFE0F?){1,3}$/u; } // an old WebView without the v flag
 export const isEmojiOnly = (s: string) => EMOJI_ONLY.test(s);
+
+/** An "em-*" class so a lone emoji or reaction key gets a small bit of infinite motion (see styles.css), "" = none. */
+const MOTIONS: [RegExp, string][] = [
+  [/❤|❣|💕|💞|💓|💗|💖|💘|💝|🧡|💛|💚|💙|💜|🖤|🤍|🤎|💔/, "em-pulse"],
+  [/😂|🤣/, "em-shake"],
+  [/✨|💫|⭐|🌟|✴|💥|🎆|🎇/, "em-twinkle"],
+  [/🔥/, "em-flicker"],
+  [/👋|🖐|✋/, "em-wave"],
+  [/🎉|🎊/, "em-bounce"],
+  [/😴|💤/, "em-bob"],
+];
+export const emojiMotion = (s: string) => MOTIONS.find(([re]) => re.test(s))?.[1] ?? "";

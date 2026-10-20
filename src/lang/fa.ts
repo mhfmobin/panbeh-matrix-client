@@ -1,6 +1,7 @@
 // Persian, the source language: every key starts here.
 export default {
   "app.name": "پنبه",
+  "web.newBuild": "نسخه‌ی جدید منتشر شده؛ بازخوانی کنید",
   "settings.language": "زبان (Language)",
   "lang.choose": "زبان را انتخاب کنید",
   "lang.switchTo": "تغییر زبان به فارسی",

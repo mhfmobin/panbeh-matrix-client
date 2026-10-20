@@ -1612,3 +1612,20 @@ img.tint {
 .ie-hue::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: transparent; border: 3px solid #fff; }
 
 .ie-emoji .emoji-panel { position: fixed; z-index: 60; top: auto; bottom: calc(8px + env(safe-area-inset-bottom)); inset-inline: 8px; width: auto; max-width: 420px; height: min(420px, 62vh); margin: 0 auto; transform-origin: bottom center; }
+
+/* animated emojis: a lone-emoji message and reaction keys get a small bit of infinite motion by family */
+@keyframes em-pulse { 0%, 100% { transform: scale(1) } 50% { transform: scale(1.09) } }
+@keyframes em-shake { 0%, 100% { transform: rotate(0) } 25% { transform: rotate(-9deg) } 75% { transform: rotate(9deg) } }
+@keyframes em-twinkle { 0%, 100% { opacity: 1; transform: scale(1) } 50% { opacity: 0.72; transform: scale(0.84) rotate(40deg) } }
+@keyframes em-flicker { 0%, 100% { transform: scaleY(1) scaleX(1) } 50% { transform: scaleY(0.88) scaleX(1.05) } }
+@keyframes em-wave { 0%, 100% { transform: rotate(0) } 50% { transform: rotate(-16deg) } }
+@keyframes em-bounce { 0%, 100% { transform: translateY(0) } 40% { transform: translateY(-14%) } 70% { transform: translateY(-2%) } }
+@keyframes em-bob { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-9%) } }
+.em-pulse { animation: em-pulse 1.6s ease-in-out infinite }
+.em-shake { animation: em-shake 0.9s ease-in-out infinite }
+.em-twinkle { animation: em-twinkle 1.8s ease-in-out infinite }
+.em-flicker { animation: em-flicker 1.1s ease-in-out infinite }
+.em-wave { animation: em-wave 1.4s ease-in-out infinite; transform-origin: 50% 88% }
+.em-bounce { animation: em-bounce 1.2s ease-in-out infinite }
+.em-bob { animation: em-bob 2.2s ease-in-out infinite }
+@media (prefers-reduced-motion: reduce) { [class*=" em-"], .em-pulse, .em-shake, .em-twinkle, .em-flicker, .em-wave, .em-bounce, .em-bob { animation: none !important } }

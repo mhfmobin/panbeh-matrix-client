@@ -9,7 +9,7 @@ import { addToMyPack, avatarUrl, inMyPack, BLURHASH, client, isCached, isSavedGi
 import { abortSave, geoClick, isMetered, isNative, openSave, openSaved, rememberSave, writeSave, type SaveTarget } from "../native.ts";
 import { usePromise } from "../hooks.ts";
 import { threadUnread } from "../chats.ts";
-import { HASHTAG_SRC, LINK_SRC, blurhashDecode, clock, fmtDuration, isEmojiOnly, isGif, linkHref, neshanUrl, num, parseGeoUri, shouldAutoDl, stamp, textDir, type DlKind, type Usage } from "../logic.ts";
+import { HASHTAG_SRC, LINK_SRC, blurhashDecode, clock, emojiMotion, fmtDuration, isEmojiOnly, isGif, linkHref, neshanUrl, num, parseGeoUri, shouldAutoDl, stamp, textDir, type DlKind, type Usage } from "../logic.ts";
 import { Icon, iconSvg, type IconName } from "../icons.tsx";
 import { Avatar, colorFor, copyText, errText, formatSize, isGroupChat, me, menuPos, senderMember, senderName, stripReplyFallback, toast, useChange, isVoice } from "./common.tsx";
 import { AudioPlayer, NoteRing, stopPlayer, trackFor } from "./Voice.tsx";
@@ -415,7 +415,7 @@ function Body({ ev, room, onView, onUser, album }: { ev: MatrixEvent; room: Room
     return <div className={"msg-text" + (emote ? " emote" : jumbo ? " jumbo" : "")} dir={textDir(emote + stripReplyFallback(String(c.body ?? "")))}>{emote}<Html html={html} room={room} onUser={onUser} big={jumbo} /></div>;
   }
   const text = emote + stripReplyFallback(String(c.body ?? ""));
-  return <p dir={textDir(text)} className={"msg-text" + (isEmojiOnly(text) ? " jumbo" : "")}>{linkify(text)}</p>;
+  return <p dir={textDir(text)} className={["msg-text", isEmojiOnly(text) && "jumbo", emojiMotion(text)].filter(Boolean).join(" ")}>{linkify(text)}</p>;
 }
 
 /** A formatted_body made safe to show, its reply fallback dropped; pills resolve against `room`. */

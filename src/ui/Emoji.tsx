@@ -7,7 +7,7 @@ import enUrl from "emojibase-data/en/compact.json?url";
 import faUrl from "cldr-annotations-modern/annotations/fa/annotations.json?url";
 import { client, emotesFor, mediaUrl, savedGifs, tintFor, toggleGif, type Emote } from "../matrix.ts";
 import { usePromise, useTick } from "../hooks.ts";
-import { emoteRe, isDarkMono, normalize, type Gif } from "../logic.ts";
+import { emoteRe, emojiMotion, isDarkMono, normalize, type Gif } from "../logic.ts";
 import { confirmDialog } from "./dialog.tsx";
 import { formattedPlain, previewText } from "./common.tsx";
 import { Icon } from "../icons.tsx";
@@ -221,7 +221,7 @@ export function PreviewText({ ev }: { ev: MatrixEvent }) {
 
 /** A reaction's key: a custom emoji's is its mxc, named by com.beeper.reaction.shortcode on the reaction `ev`. */
 export function ReactionKey({ k, ev }: { k: string; ev?: MatrixEvent }) {
-  if (!k.startsWith("mxc://")) return <>{k}</>;
+  if (!k.startsWith("mxc://")) return <span className={emojiMotion(k)}>{k}</span>;
   return <EmoteImg url={k} alt={String(ev?.getContent()["com.beeper.reaction.shortcode"] ?? "")} />;
 }
 

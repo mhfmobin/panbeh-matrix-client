@@ -3,6 +3,7 @@ import type fa from "./fa.ts";
 // Plural forms ride along as "<key>.one" next to the key itself (the "other" form).
 export default {
   "app.name": "Panbeh",
+  "web.newBuild": "A new build is live; reload to update",
   "settings.language": "Language",
   "lang.choose": "Choose your language",
   "lang.switchTo": "Change language to English",

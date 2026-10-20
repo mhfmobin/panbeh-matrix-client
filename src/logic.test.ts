@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applyFolderOrder, moveFolder, byListOrder, endpointOf, inArchive, isUnread, parseStats, fmtStats, AUTO_DL_DEFAULT, mergeAutoDl, shouldAutoDl, blurhashEncode, blurhashDecode, scheduleDays, fmtSpan, scheduleLabel, deriveDraftKey, sealDraft, openDraft } from "./logic.ts";
-import { aliasLocalpart, buildRows, roomName, dayLabel, downsample, fmtDuration, inFolder, isUserId, formatMessage, parseGeoUri, spaceRooms, stamp, normalizeServer, normalize, matchRange, toEvict, hashPin, lockDelay, lastSeen, tallyPoll, fitSize, fitMenu, packImages, codeFrom, freeCode, cleanCode, padToRatio, isDarkMono, tintOf, toggleWrap, prefixLines, deleteBack, cachedSlice, hashtagsOf, soleHashtag, isEmojiOnly, unreadSince, type Msg } from "./logic.ts";
+import { aliasLocalpart, buildRows, roomName, dayLabel, downsample, fmtDuration, inFolder, isUserId, formatMessage, parseGeoUri, spaceRooms, stamp, normalizeServer, normalize, matchRange, toEvict, hashPin, lockDelay, lastSeen, tallyPoll, fitSize, fitMenu, packImages, codeFrom, freeCode, cleanCode, padToRatio, isDarkMono, tintOf, toggleWrap, prefixLines, deleteBack, cachedSlice, hashtagsOf, soleHashtag, isEmojiOnly, emojiMotion, unreadSince, type Msg } from "./logic.ts";
 
 const T = new Date("2026-09-30T12:00:00").getTime();
 const m = (id: string, sender: string, min: number, kind: Msg["kind"] = "msg"): Msg => ({ id, sender, ts: T + min * 60_000, kind });
@@ -527,6 +527,14 @@ test("cachedSlice pages the cache, then hands over to the server's token", () =>
 test("isEmojiOnly: up to 3 emoji, any sequence, nothing else", () => {
   for (const s of ["👍", "❤️", "👍🏽", "🇮🇷", "👨‍👩‍👧", "😂 😂 😂", "1️⃣", "👍\uFE0F", "👎\uFE0F👍\uFE0F"]) assert.ok(isEmojiOnly(s), s);
   for (const s of ["👍👍👍👍", "hi 👍", "1", "#", "", " "]) assert.ok(!isEmojiOnly(s), s);
+});
+
+test("emojiMotion: a motion class per emoji family, none otherwise", () => {
+  assert.equal(emojiMotion("❤️"), "em-pulse");
+  assert.equal(emojiMotion("👍🏽"), "em-pulse"); // tone marker doesn't break family matching
+  assert.equal(emojiMotion("😂"), "em-shake");
+  assert.equal(emojiMotion("🚀"), "");
+  assert.equal(emojiMotion("hello"), "");
 });
 
 test("unreadSince: counted replies after the newest read one; null when the read point isn't loaded", () => {

@@ -8,7 +8,7 @@ import { onNotifyButton, startNotifications } from "./notify.ts";
 import { startSearchIndex } from "./searchIndex.ts";
 import { startSendQueue } from "./sendQueue.ts";
 import { isHeadless, isNative, onCallAction, onNotifyAction, onOpenLink, onOpenRoom, onShare, requestNotifyPermission, setBackgroundService } from "./native.ts";
-import { onNativeCall, startCalls } from "./call.ts";
+import { onNativeCall, getCall, startCalls } from "./call.ts";
 import { startBackButton } from "./back.ts";
 import { drainLinks, handleIncomingLink } from "./openTarget.ts";
 import { isDesktop, onDesktopLink } from "./desktop.ts";
@@ -42,6 +42,23 @@ applyPrefs();
 if (import.meta.env.PROD && !isNative && !isDesktop && "serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 // web: let the browser offer Panbeh for matrix: links; the hash form is picked up by Shell (see parseMatrixHash)
 try { navigator.registerProtocolHandler?.("matrix", location.origin + location.pathname + "#/?uri=%s"); } catch { /* unsupported or not secure */ }
+
+/** Web deploys while the tab is open don't switch bundles on their own; fetch shows a new asset name = time to reload. */
+function NewBuildBanner() {
+  const [stale, setStale] = useState(false);
+  useEffect(() => {
+    if (!location.protocol.startsWith("http")) return; // native/desktop ship assets inside their bundle; desktop has its own updater
+    const mine = document.querySelector<HTMLScriptElement>("script[src*='/assets/']")?.src.split("/").pop() ?? "none";
+    let gone = false;
+    const tick = setInterval(() => fetch("", { cache: "no-store" }).then((r) => r.text()).then((html) => {
+      if (gone || html.includes(mine)) return;
+      // don't yank a live call out from under the user: surprise them only by reloading a hidden, call-free tab
+      if (document.hidden && !getCall()?.active) location.reload(); else setStale(true);
+    }).catch(() => {}), 300_000); // offline or fetch failure: try again later
+    return () => { gone = true; clearInterval(tick); };
+  }, []);
+  return stale ? <button className="banner" onClick={() => location.reload()}>{t("web.newBuild")}</button> : null;
+}
 
 function App() {
   const [phase, setPhase] = useState<"boot" | "login" | "ready" | "error">((savedSession() && !isAdding()) || isOAuthCallback() ? "boot" : "login");
@@ -146,6 +163,7 @@ function Shell() {
         banner={<>
           {(sync === SyncState.Error || sync === SyncState.Reconnecting) && <div className="banner warn">{t("boot.connecting")}</div>}
           <UpdateBanner />
+          <NewBuildBanner />
           {security !== "ok" && (
             <button className="banner" onClick={() => setSettings("privacy")}>
               <Icon name="lock" size={16} /> {security === "unlock" ? t("banner.verify") : t("banner.setupRecovery")}
