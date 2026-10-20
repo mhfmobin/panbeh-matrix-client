@@ -12,8 +12,8 @@ type MenuItem = { icon: IconName; label: string; run: () => unknown; danger?: bo
 type Props = { x: number; y: number; items: (MenuItem | false | "" | undefined)[]; mine: string[];
   onReact: (k: string) => void; onMore: (at: DOMRect) => void; onClose: () => void };
 
-/** Telegram's message menu: the reactions just above the press, the actions below it, both hanging down-left from it
- *  (right / up where there's no room). `mine`: my reactions, lit; one that isn't a quick one takes the first place. */
+/** Telegram's message menu: the reactions just above the press, the actions below it, both hanging down-right from it
+ *  (left / up where there's no room). `mine`: my reactions, lit; one that isn't a quick one takes the first place. */
 export function MessageMenu({ x, y, items, mine, onReact, onMore, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -27,12 +27,12 @@ export function MessageMenu({ x, y, items, mine, onReact, onMore, onClose }: Pro
       const [top0, right0, bottom0, left0] = ["Top", "Right", "Bottom", "Left"].map((s) => parseFloat(pad[`padding${s}` as "paddingTop"]));
       const bar = (el.firstElementChild as HTMLElement).offsetHeight + 8; // not rects: the pop-in starts scaled down
       const w = el.offsetWidth, h = bar + list.current!.scrollHeight;
-      const fits = x - w >= left0, below = y + h - bar <= innerHeight - bottom0; // the actions go up from the press where they don't fit under it
+      const fits = x + w <= innerWidth - right0, below = y + h - bar <= innerHeight - bottom0; // the actions go up from the press where they don't fit under it
       const top = Math.max(top0, Math.min(below ? y - bar : y - h, innerHeight - bottom0 - h));
       setFlip(!fits);
       Object.assign(el.style, {
-        left: `${fits ? x - w : Math.min(x, innerWidth - right0 - w)}px`, top: `${top}px`,
-        transformOrigin: `${fits ? "right" : "left"} ${y - top}px`, visibility: "visible",
+        left: `${fits ? x : Math.max(left0, x - w)}px`, top: `${top}px`,
+        transformOrigin: `${fits ? "left" : "right"} ${y - top}px`, visibility: "visible",
       });
       list.current!.style.maxHeight = `${innerHeight - bottom0 - top - bar}px`;
     };

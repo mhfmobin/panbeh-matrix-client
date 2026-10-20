@@ -1137,8 +1137,8 @@ img.tint {
 /* Message menu (MessageMenu): the reactions above the press, the actions below it. The wrapper lets taps through around them. */
 .msg-menu-backdrop { padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
 .msg-float { position: fixed; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: calc(100vw - 16px); pointer-events: none; outline: none; animation: pop 0.14s ease-out; }
-.msg-float > * { margin-left: auto; pointer-events: auto; animation: none; } /* hang from the press: right-aligned, or left-aligned when flipped */
-.msg-float.flip > * { margin-left: 0; margin-right: auto; }
+.msg-float > * { margin-right: auto; pointer-events: auto; animation: none; } /* hang from the press: left-aligned, or right-aligned when flipped */
+.msg-float.flip > * { margin-right: 0; margin-left: auto; }
 .msg-menu-react { position: relative; inset: auto; }
 .msg-menu-react button.more { width: 30px; height: 30px; margin: 3px; background: var(--hover); }
 .quick-react button.on { background: color-mix(in srgb, var(--accent) 35%, transparent); }
