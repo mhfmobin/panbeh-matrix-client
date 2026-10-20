@@ -17,6 +17,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "node --test src/logic.test.ts src/uri.test.ts src/sdk.test.ts src/i18n.test.ts src/imageEdit.test.ts",
+    "test:ui": "vite --config tests/ui/vite.config.ts --host 127.0.0.1 --port 5174 --strictPort",
     "desktop": "npm run build && electron .",
     "desktop:dev": "electron . --dev",
     "desktop:dist": "npm run build && electron-builder --publish never"

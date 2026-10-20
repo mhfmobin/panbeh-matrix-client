@@ -70,7 +70,7 @@ export function MessageMenu({ x, y, items, mine, onReact, onMore, onClose }: Pro
               onClick={() => act(() => onReact(k))}><ReactionKey k={k} /></button>
           ))}
           <button className="more" role="menuitem" title={t("msg.moreEmoji")} aria-label={t("msg.moreEmoji")}
-            onClick={(e) => { const at = e.currentTarget.getBoundingClientRect(); act(() => onMore(at)); }}><Icon name="down" size={20} /></button>
+            onClick={(e) => onMore(e.currentTarget.getBoundingClientRect())}><Icon name="down" size={20} /></button>
         </div>
         <div className="chat-menu msg-menu-actions" ref={list}>
           {items.map((it) => it && (
