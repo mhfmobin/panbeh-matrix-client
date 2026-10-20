@@ -144,7 +144,7 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
   const remove = () => void confirmDialog(album ? t("msg.deleteN", { count: album.length }) : t("msg.deleteQ"), { danger: true }).then((y) => { // the bubble shrinks away, then the redaction removes the row
     if (!y) return;
     setDeleting(true);
-    setTimeout(() => { Promise.all(items.map((e) => client.redactEvent(room.roomId, e.getId()!))).catch((e) => { setDeleting(false); alertDialog(errText(e)); }); }, reducedMotion() ? 0 : 200);
+    setTimeout(() => { Promise.all(items.map((e) => client.redactEvent(room.roomId, e.getId()!))).catch(() => setDeleting(false)); }, reducedMotion() ? 0 : 200);
   });
   const failed = ev.status === EventStatus.NOT_SENT;
   const group = isGroupChat(room);

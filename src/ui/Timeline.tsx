@@ -12,10 +12,11 @@ import { AudioPlayer } from "./Voice.tsx";
 import { captionOf } from "./Composer.tsx";
 import { useAttentive } from "../desktop.ts";
 import { replyRead, unreadCount, unreadMentions, unreadThreads } from "../chats.ts";
+import { pendingIn } from "../sendQueue.ts";
 import { pendingJump } from "./Search.tsx";
 
 const EVENTS = [
-  RoomEvent.Timeline, RoomEvent.TimelineReset, RoomEvent.LocalEchoUpdated, RoomEvent.Redaction, RoomEvent.Receipt,
+  RoomEvent.Timeline, RoomEvent.TimelineReset, RoomEvent.LocalEchoUpdated, RoomEvent.Redaction, RoomEvent.RedactionCancelled, RoomEvent.Receipt,
   RoomEvent.UnreadNotifications, ThreadEvent.Update, ThreadEvent.NewReply, "Event.decrypted", "Event.replaced", "Event.status",
   RoomStateEvent.Members, // late-loaded profiles
   ClientEvent.AccountData, // block list
@@ -107,7 +108,8 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   chainRef.current = chain;
   let events = chain.flatMap((t) => t.getEvents());
   if (thread) { // some servers return thread relations newest-first; also show the root on top
-    events = [...events].sort((a, b) => a.getTs() - b.getTs());
+    const sending = pendingIn(room.roomId, thread.id).filter((p) => !events.some((e) => e.getId() === p.getId()));
+    events = [...events, ...sending].sort((a, b) => a.getTs() - b.getTs());
     if (thread.rootEvent && !events.some((e) => e.getId() === thread.id)) events.unshift(thread.rootEvent);
   }
   // An older page shows up only once all of it is decrypted. Shown at once, its rows above the reader changed
