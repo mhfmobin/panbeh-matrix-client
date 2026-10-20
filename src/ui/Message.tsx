@@ -1,5 +1,5 @@
 import { rtl, t } from "../i18n.ts";
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import DOMPurify from "dompurify";
 import { handleIncomingLink } from "../openTarget.ts";
@@ -130,7 +130,7 @@ type Props = { ev: MatrixEvent; room: Room; first: boolean; last: boolean; actio
 
 export function Message({ ev, room, first, last, actions, flash, enter, album }: Props) {
   const [picker, setPicker] = useState(false);
-  const [fullPicker, setFullPicker] = useState(false);
+  const [fullPicker, setFullPicker] = useState<DOMRect | null>(null); // the button that opened it
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null); // touch screens have no hover: a tap (or right-click) opens this
   const [sel, setSel] = useState(""); // what was selected inside this message when its menu opened (the menu's focus can collapse it)
   const row = useRef<HTMLDivElement>(null);
@@ -304,13 +304,14 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
           {picker && (
             <div className="quick-react" onMouseLeave={() => setPicker(false)}>
               {QUICK_REACTIONS.map((k) => <button key={k} onClick={() => { toggleReaction(room, ev, k); setPicker(false); }}>{k}</button>)}
-              <button className="more" title={t("msg.moreEmoji")} aria-label={t("msg.moreEmoji")} onClick={() => { setPicker(false); setFullPicker(true); }}><Icon name="plus" size={18} /></button>
+              <button className="more" title={t("msg.moreEmoji")} aria-label={t("msg.moreEmoji")} onClick={(e) => { setPicker(false); setFullPicker(e.currentTarget.getBoundingClientRect()); }}><Icon name="plus" size={18} /></button>
             </div>
           )}
         </div>
       )}
       {menu && (
-        <MessageMenu {...menu} onClose={() => setMenu(null)} onReact={(k) => toggleReaction(room, ev, k)} onMore={() => setFullPicker(true)} items={[
+        <MessageMenu {...menu} onClose={() => setMenu(null)} mine={[...new Set(myReactions(room, ev).map((e) => e.getRelation()!.key!))]}
+          onReact={(k) => toggleReaction(room, ev, k)} onMore={setFullPicker} items={[
           { icon: "reply", label: t("msg.reply"), run: () => actions.reply(ev) },
           sel && { icon: "copy", label: t("msg.copySelection"), run: () => void copyMessages(sel) },
           text && { icon: "copy", label: t("common.copy"), run: () => void copyMessages(text) },
@@ -333,7 +334,9 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
       )}
       {/* portal: .msg-actions fades out when the pointer leaves the message */}
       {fullPicker && createPortal(
-        <div className="react-picker"><EmojiPanel room={room} onEmoji={(k, custom) => { toggleReaction(room, ev, custom?.img.url ?? k, custom && k); setFullPicker(false); }} onClose={() => setFullPicker(false)} /></div>,
+        <div className="react-picker" style={pickerAt(fullPicker)}>
+          <EmojiPanel room={room} onEmoji={(k, custom) => { toggleReaction(room, ev, custom?.img.url ?? k, custom && k); setFullPicker(null); }} onClose={() => setFullPicker(null)} />
+        </div>,
         document.body)}
     </div>
   );
@@ -850,10 +853,19 @@ async function report(room: Room, ev: MatrixEvent) {
 
 const shortcodeOf = (reaction?: MatrixEvent) => String(reaction?.getContent()["com.beeper.reaction.shortcode"] ?? "");
 
+const myReactions = (room: Room, ev: MatrixEvent) => [...(room.relations.getChildEventsForEvent(ev.getId()!, RelationType.Annotation, EventType.Reaction)
+  ?.getAnnotationsBySender()?.[me()] ?? [])].filter((e) => !e.isRedacted());
+
+/** Where the full reaction picker goes: hanging down-left from the button that opened it, above it where it doesn't fit. */
+function pickerAt(r: DOMRect) {
+  const w = Math.min(360, innerWidth - 32), h = Math.min(380, innerHeight - 16);
+  const below = r.bottom + 6 + h <= innerHeight - 8;
+  return { "--left": `${Math.max(8, Math.min(r.right - w, innerWidth - w - 8))}px`, "--top": `${below ? r.bottom + 6 : Math.max(8, r.top - 6 - h)}px` } as CSSProperties;
+}
+
 /** `shortcode`: a custom emoji's ":code:" (key is then its mxc), so other clients can name it. */
 export function toggleReaction(room: Room, ev: MatrixEvent, key: string, shortcode?: string) {
-  const rel = room.relations.getChildEventsForEvent(ev.getId()!, RelationType.Annotation, EventType.Reaction);
-  const existing = [...(rel?.getAnnotationsBySender()?.[me()] ?? [])].find((e) => e.getRelation()?.key === key && !e.isRedacted());
+  const existing = myReactions(room, ev).find((e) => e.getRelation()?.key === key);
   if (existing) return client.redactEvent(room.roomId, existing.getId()!);
   client.sendEvent(room.roomId, ev.threadRootId && ev.threadRootId !== ev.getId() ? ev.threadRootId : null, EventType.Reaction, {
     "m.relates_to": { rel_type: RelationType.Annotation, event_id: ev.getId()!, key },

@@ -964,7 +964,7 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
   display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--panel); border-radius: 14px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18); animation: pop 0.14s;
 }
-.react-picker .emoji-panel { position: fixed; inset: 0; margin: auto; width: min(360px, calc(100vw - 32px)); }
+.react-picker .emoji-panel { position: fixed; top: var(--top); left: var(--left); bottom: auto; width: min(360px, calc(100vw - 32px)); height: min(380px, calc(100vh - 16px)); } /* under the button that opened it */
 .emoji-panel .muted { margin: 0; padding: 16px; text-align: center; }
 .emoji-search { flex: none; width: 100%; padding: 8px 14px; border: 0; outline: none; border-radius: 999px; background: var(--hover); }
 /* Telegram's bottom bar: the tabs pill and ⌫ float over the grid, translucent, and slide away while scrolling down */
@@ -1134,55 +1134,16 @@ img.tint {
 .msg-menu { z-index: 46; min-width: 220px; max-width: calc(100vw - 16px); padding: 6px; }
 .msg-menu:focus { outline: none; }
 .msg-menu-backdrop { z-index: 45; background: rgba(0, 0, 0, 0.25); touch-action: none; }
-/* Message actions float at the press; form dropdowns still use the sheet below. */
-.message-context-backdrop {
-  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
-  --message-menu-bg: color-mix(in srgb, color-mix(in srgb, var(--panel) 96%, var(--text)) 94%, transparent);
-}
-.message-context {
-  position: fixed; width: min(320px, calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)));
-  display: flex; flex-direction: column; gap: 12px; outline: none; direction: ltr;
-  transform-origin: center 56px; animation: pop 0.18s var(--ease-out);
-}
-.message-reaction-bar, .message-context-actions {
-  background: var(--message-menu-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.16);
-}
-.message-reaction-bar {
-  position: relative; flex: none; height: 52px; border-radius: 30px; padding: 6px 8px;
-  display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); align-items: center; direction: ltr;
-}
-.message-reaction-bar::before, .message-reaction-bar::after {
-  content: ""; position: absolute; background: var(--message-menu-bg); border-radius: 50%; pointer-events: none;
-}
-.message-reaction-bar::before { width: 17px; height: 17px; right: 44px; bottom: -7px; }
-.message-reaction-bar::after { width: 8px; height: 8px; right: 40px; bottom: -19px; }
-.message-reaction-bar button {
-  display: grid; place-items: center; width: 100%; height: 40px; border-radius: 50%;
-  font-size: 30px; line-height: 1; transition: transform 0.15s var(--ease-spring), background 0.15s;
-}
-.message-reaction-bar button .emoji { width: 1em; height: 1em; }
-.message-reaction-bar button.more {
-  width: 32px; height: 32px; justify-self: center;
-  background: color-mix(in srgb, var(--text) 24%, transparent); color: var(--panel);
-}
-.message-context-actions {
-  flex: 0 1 auto; min-height: 0; width: min(210px, 100%); padding: 0;
-  border-radius: 16px; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
-}
-.message-context-actions button {
-  display: flex; align-items: center; gap: 22px; width: 100%; min-height: 50px; padding: 10px 20px;
-  font-size: 17px; font-weight: 400; line-height: 1.5; text-align: start; color: var(--text);
-}
-.message-context-actions svg { flex: none; }
-.message-context-actions span { overflow-wrap: anywhere; }
-.message-context button:focus-visible { outline: none; background: color-mix(in srgb, var(--text) 10%, transparent); }
-.message-context button:active { background: color-mix(in srgb, var(--text) 10%, transparent); }
-@media (hover: hover) {
-  .message-reaction-bar button:not(.more):hover { transform: scale(1.2); }
-  .message-context-actions button:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
-}
-.message-context-backdrop.closing > .message-context { animation: pop-out 0.15s ease-in forwards; pointer-events: none; }
+/* Message menu (MessageMenu): the reactions above the press, the actions below it. The wrapper lets taps through around them. */
+.msg-menu-backdrop { padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+.msg-float { position: fixed; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: calc(100vw - 16px); pointer-events: none; outline: none; animation: pop 0.14s ease-out; }
+.msg-float > * { margin-left: auto; pointer-events: auto; animation: none; } /* hang from the press: right-aligned, or left-aligned when flipped */
+.msg-float.flip > * { margin-left: 0; margin-right: auto; }
+.msg-menu-react { position: relative; inset: auto; }
+.msg-menu-react button.more { width: 30px; height: 30px; margin: 3px; background: var(--hover); }
+.quick-react button.on { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.msg-menu-actions { position: static; overflow-y: auto; overscroll-behavior: contain; }
+.msg-menu-backdrop.closing > .msg-float { animation: pop-out 0.15s ease-in forwards; }
 @media (max-width: 700px) { /* form dropdowns */
   .select-menu { left: 0 !important; right: 0; top: auto !important; bottom: 0; width: 100%; max-width: none; border-radius: 18px 18px 0 0; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); animation: sheet-up 0.2s ease-out; }
 }
