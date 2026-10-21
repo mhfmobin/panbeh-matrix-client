@@ -5,7 +5,7 @@ import DOMPurify from "dompurify";
 import { handleIncomingLink } from "../openTarget.ts";
 import { matrixToLink, parseMatrixLink, viaServers } from "../uri.ts";
 import { EventStatus, EventType, M_POLL_START, RelationType, type MatrixEvent, type Room } from "matrix-js-sdk";
-import { addToMyPack, avatarUrl, inMyPack, BLURHASH, client, isCached, isSavedGif, loadEvent, mediaUrl, pinnedIds, prefetch, seenBy, toggleGif, togglePin } from "../matrix.ts";
+import { addToMyPack, avatarUrl, inMyPack, BLURHASH, client, isCached, isSavedGif, loadEvent, mediaUrl, pinnedIds, prefetch, quickReaction, seenBy, toggleGif, togglePin } from "../matrix.ts";
 import { abortSave, geoClick, isMetered, isNative, openSave, openSaved, rememberSave, writeSave, type SaveTarget } from "../native.ts";
 import { usePromise } from "../hooks.ts";
 import { threadUnread } from "../chats.ts";
@@ -38,6 +38,7 @@ export type Actions = {
   selection?: ReadonlySet<string>; // event ids; present = selecting
 };
 
+const DOUBLE_TAP = 250; // touch: how long a tap waits for a second one before opening the menu
 const LONG_PRESS = 450, SWIPE_AT = 60, SWIPE_MAX = 80;
 /** The last press was a finger. Touch works like Telegram: a tap on a message opens its menu, holding it selects it. */
 let touched = false;
@@ -137,6 +138,8 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
   const g = useRef<{ id: number; x: number; y: number; timer: number; lock: boolean; px: number; crossed: boolean } | null>(null);
   const swallow = useRef(false); // the click that follows a swipe / hold
   const textSel = useRef(false); // touch: this press began while text in a selected message was selected; its tap only clears that
+  const tap = useRef<{ x: number; y: number; timer: number } | null>(null); // touch: a first tap, waiting to see if it's a double
+  useEffect(() => () => clearTimeout(tap.current?.timer), []);
   const openMenu = (x: number, y: number) => { setSel(selectedText(row.current!)); setMenu((m) => m ?? { x, y }); };
   const mine = ev.getSender() === me();
   const [deleting, setDeleting] = useState(false);
@@ -189,6 +192,10 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
   };
   // swipe LEFT to reply for both own and others' messages; rows stay physically LTR so -x is left
   const inside = (e: { target: EventTarget }) => row.current!.contains(e.target as Node); // portals (menu, picker) bubble through React
+  /** A tap / click on the message itself, not on a link, button or media. */
+  const onBody = (e: MouseEvent) => live && inside(e) && !(e.target as HTMLElement).closest("a,button,input,video,audio,[role=button],[data-mx-spoiler]");
+  /** Double-tap / double-click: the reaction chosen in settings. */
+  const quick = () => { const q = quickReaction(); if (!q.off) void toggleReaction(room, ev, q.key, q.shortcode); };
   const down = (e: PointerEvent) => {
     const s = getSelection();
     textSel.current = !!s && !s.isCollapsed && !!s.anchorNode?.parentElement?.closest(".msg.selected");
@@ -242,10 +249,17 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
           if (textSel.current) getSelection()?.removeAllRanges(); else select();
         }
       }}
-      onClick={(e) => { // touch: a tap anywhere on the row opens the menu (Telegram's), unless on a link, button or media
-        const t = e.target as HTMLElement;
-        if (touched && live && inside(e) && !t.closest("a,button,input,video,audio,[role=button],[data-mx-spoiler]")) openMenu(e.clientX, e.clientY);
-      }}>
+      onClick={(e) => { // touch: a tap anywhere on the row opens the menu (Telegram's), unless on a link, button or media; two react
+        if (!touched || !onBody(e)) return;
+        const { clientX: x, clientY: y } = e, p = tap.current;
+        if (quickReaction().off) return openMenu(x, y);
+        clearTimeout(p?.timer);
+        tap.current = null;
+        if (p && Math.hypot(x - p.x, y - p.y) < 30) return quick();
+        tap.current = { x, y, timer: window.setTimeout(() => { tap.current = null; openMenu(x, y); }, DOUBLE_TAP) };
+      }}
+      onMouseDown={(e) => { if (e.detail === 2 && !touched && !selecting && onBody(e) && !quickReaction().off) e.preventDefault(); }} // the double-click reacts: no word selected
+      onDoubleClick={(e) => { if (!touched && !selecting && onBody(e)) quick(); }}>
       {selecting && <span className="sel-check" aria-hidden>{selected && <Icon name="check" size={14} />}</span>}
       {swipeOk && <span className="swipe-ico" aria-hidden><Icon name="reply" size={20} /></span>}
       {!mine && group && (
@@ -857,7 +871,7 @@ const myReactions = (room: Room, ev: MatrixEvent) => [...(room.relations.getChil
   ?.getAnnotationsBySender()?.[me()] ?? [])].filter((e) => !e.isRedacted());
 
 /** Where the full reaction picker goes: hanging down-left from the button that opened it, above it where it doesn't fit. */
-function pickerAt(r: DOMRect) {
+export function pickerAt(r: DOMRect) {
   const w = Math.min(360, innerWidth - 32), h = Math.min(380, innerHeight - 16);
   const below = r.bottom + 6 + h <= innerHeight - 8;
   return { "--left": `${Math.max(8, Math.min(r.right - w, innerWidth - w - 8))}px`, "--top": `${below ? r.bottom + 6 : Math.max(8, r.top - 6 - h)}px` } as CSSProperties;

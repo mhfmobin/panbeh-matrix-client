@@ -793,6 +793,17 @@ export function loadEvent(room: Room, id: string): Promise<MatrixEvent> {
   return p;
 }
 
+// ---------- quick reaction ----------
+const QUICK = "app.panbeh.quick_reaction";
+/** `off` keeps the emoji, so turning it back on brings that one back. `shortcode`: a custom emoji's (key is its mxc). */
+export type Quick = { key: string; shortcode?: string; off?: boolean };
+/** What a double-tap on a message reacts with; no choice yet = ❤️. */
+export const quickReaction = (): Quick => {
+  const c = client.getAccountData(QUICK as never)?.getContent<Quick>();
+  return c?.key ? c : { key: "❤️", off: c?.off };
+};
+export const setQuickReaction = (q: Quick) => client.setAccountData(QUICK as never, q as never);
+
 // ---------- saved gifs ----------
 /** Marks an uploaded video as a gif: autoplays, loops, muted, no controls (mautrix's flags). */
 export const GIF_INFO = { "fi.mau.gif": true, "fi.mau.loop": true, "fi.mau.autoplay": true, "fi.mau.hide_controls": true, "fi.mau.no_audio": true };
