@@ -81,8 +81,11 @@ If you lose the key, existing installs can't be updated: you'll have to uninstal
 
 ### Cafe Bazaar
 
-A tag also builds `Panbeh-bazaar-v1.0.0.apk`. It shows up only in the run's artifacts, never in the release:
-download it from there and upload it to Bazaar. Bazaar doesn't allow apps that install their own updates, so this
+A tag also builds `Panbeh-bazaar-v1.0.0.apk`. It shows up only in the run's artifacts, never in the release.
+The job sends it to Bazaar through the Pishkhan API, using the `BAZAAR_API_TOKEN` secret (Pishkhan › your app ›
+«API پیشخان بازار»). It deletes any uncommitted draft, creates a release with the APK and the version's
+`src/releaseNotes.json` entry as the changelog, and sends it for review at 100%. Once approved, it publishes
+itself. If the upload fails, the GitHub release still goes out. Bazaar doesn't allow apps that install their own updates, so this
 build has no `REQUEST_INSTALL_PACKAGES`. Instead it asks the Bazaar app whether a newer version is out, and its
 update button opens Bazaar. Settings also has a switch for Bazaar's own auto-update.
 
