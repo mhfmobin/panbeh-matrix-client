@@ -76,14 +76,18 @@ export function useUploads(roomId: string, threadId: string | null) {
   return useMemo(() => all.filter((u) => u.roomId === roomId && u.threadId === threadId), [all, roomId, threadId]);
 }
 
+// what each promise came to: a promise that has settled before shows its value on the first render, with no blank frame
+const settled = new WeakMap<Promise<unknown>, unknown>();
+
 export function usePromise<T>(p: Promise<T> | null | undefined): T | undefined {
   const [v, setV] = useState<{ p: unknown; v: T }>();
   useEffect(() => {
+    if (!p || settled.has(p)) return;
     let live = true;
-    p?.then((v) => live && setV({ p, v }), () => {});
+    p.then((v) => { settled.set(p, v); if (live) setV({ p, v }); }, () => {});
     return () => { live = false; };
   }, [p]);
-  return v && v.p === p ? v.v : undefined;
+  return p && settled.has(p) ? settled.get(p) as T : v && v.p === p ? v.v : undefined;
 }
 
 /** Who else is typing in `room`; re-renders only for typing in this room, not the client's every typing event. */

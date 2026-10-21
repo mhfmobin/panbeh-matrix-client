@@ -11,7 +11,7 @@ import { emoteRe, isDarkMono, normalize, type Gif } from "../logic.ts";
 import { confirmDialog } from "./dialog.tsx";
 import { formattedPlain, previewText } from "./common.tsx";
 import { Icon } from "../icons.tsx";
-import { emojiUrl, missing } from "../jsx/jsx-runtime.ts";
+import { emojiUrl, keep } from "../jsx/jsx-runtime.ts";
 
 type Emoji = { u: string; name: string; search: string; custom?: Emote };
 type Raw = { unicode: string; label: string; tags?: string[]; group?: number; order?: number };
@@ -26,7 +26,6 @@ const GROUPS: [number, string, string][] = [
 const IRAN = "🇮🇷", ISRAEL = "🇮🇱";
 const strip = (s: string) => s.replace(/️/g, ""); // CLDR keys drop the emoji variation selector
 let data: Promise<Map<number, Emoji[]>> | null = null;
-const held: HTMLImageElement[] = [];
 
 function loadEmoji() {
   data ??= Promise.all([fetch(enUrl).then((r) => r.json()), (lang === "fa" ? fetch(faUrl).then((r) => r.json()) : { annotations: { annotations: {} } })]).then(([en, fa]: [Raw[], any]) => {
@@ -42,9 +41,8 @@ function loadEmoji() {
     }
     const flags = groups.get(9) ?? [], ir = flags.findIndex((e) => e.u === IRAN);
     if (ir > 0) flags.unshift(...flags.splice(ir, 1));
-    // every picture at once, and held (~12 MB), so each group shows whole the moment it's opened; the disk keeps them
-    // for the next launch (jsDelivr caches for a year)
-    for (const g of groups.values()) for (const e of g) held.push(Object.assign(new Image(), { src: emojiUrl(e.u), onerror: () => { if (navigator.onLine) missing.add(e.u); } }));
+    // every picture kept on the device the first time the panel opens, so each group shows whole from then on
+    for (const g of groups.values()) for (const e of g) keep(emojiUrl(e.u));
     return groups;
   });
   data.catch(() => { data = null; }); // retry next time the panel opens
@@ -177,11 +175,13 @@ function EmojiGrid({ room, onPick }: { room?: Room; onPick: (e: Emoji) => void }
 }
 
 const looks = new Map<string, Promise<boolean>>(); // mxc → isDarkMono, read once
+// the same promise each time, so usePromise knows it's settled and a remount shows the emoji at once
+const YES = Promise.resolve(true), NO = Promise.resolve(false);
 
 /** Whether a custom emoji (`src`: its blob URL) takes the text color: its pack's say, else how it looks (an animated one's first frame). */
 export function tinted(mxc: string, src: string): Promise<boolean> {
   const t = tintFor(mxc);
-  if (t !== "auto") return Promise.resolve(t === "always");
+  if (t !== "auto") return t === "always" ? YES : NO;
   let p = looks.get(mxc);
   if (!p) {
     p = fetch(src).then((r) => r.blob()).then((b) => createImageBitmap(b)).then((bmp) => {
@@ -199,8 +199,8 @@ export function tinted(mxc: string, src: string): Promise<boolean> {
 
 /** A custom emoji or sticker: the whole file, not a server thumbnail, so animated ones play. `sticker`: never tinted. */
 export function EmoteImg({ url, alt, className = "emote", sticker }: { url: string; alt: string; className?: string; sticker?: boolean }) {
-  const src = usePromise(mediaUrl({ url }));
-  const tint = usePromise(useMemo(() => (src ? (sticker ? Promise.resolve(false) : tinted(url, src)) : null), [url, src, sticker, tintFor(url)]));
+  const src = usePromise(mediaUrl({ url }, undefined, undefined, undefined, true));
+  const tint = usePromise(src ? (sticker ? NO : tinted(url, src)) : null);
   // held back until the tint is known, so a black emoji doesn't flash before it turns white
   return src && tint !== undefined
     ? <img className={className + (tint ? " tint" : "")} style={tint ? { "--src": `url("${src}")` } as never : undefined} src={src} alt={alt} title={alt || undefined} draggable={false} />
