@@ -2,11 +2,13 @@
   "0.9.4": {
     "fa": [
       "واکنش سریع: با دو ضربه روی پیام، شکلک دلخواهتان را بگذارید (در تنظیمات › گفتگوها و ظاهر قابل تغییر یا خاموش کردن است)",
-      "شکلک‌ها و شکلک‌های سفارشی یک بار دانلود و روی دستگاه نگه داشته می‌شوند و دیگر هر بار دوباره بارگذاری نمی‌شوند"
+      "شکلک‌ها و شکلک‌های سفارشی فقط یک بار دانلود و روی دستگاه نگه داشته می‌شوند؛ دیگر با هر بار باز کردن پنل شکلک یا دیدن پیام دوباره بارگذاری نمی‌شوند",
+      "رفع مشکل چت‌هایی که هنگام باز شدن روی حالت بارگذاری می‌ماندند و پیامی نشان نمی‌دادند"
     ],
     "en": [
       "Quick reaction: double-tap a message to react with your chosen emoji (change it or turn it off in Settings › Chats & appearance)",
-      "Emoji and custom emoji are downloaded once and kept on the device, instead of loading again every time"
+      "Emoji and custom emoji are downloaded once and kept on the device; they no longer load again each time the emoji panel opens or a message shows them",
+      "Fixed chats that stayed on the loading placeholder when opened and never showed their messages"
     ]
   },
   "0.9.3": {
