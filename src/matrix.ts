@@ -434,13 +434,14 @@ async function fetchProgress(url: URL, onProgress: (loaded: number, total: numbe
 }
 
 /** Blob URL for an mxc (authenticated media, decrypting if needed). Cached for the session.
- *  `onProgress` reports bytes for the download this call starts (not for one already cached or running); `signal` cancels it. */
-export function mediaUrl(c: FileContent, thumb?: { w: number; h: number }, onProgress?: (loaded: number, total: number) => void, signal?: AbortSignal): Promise<string> | null {
+ *  `onProgress` reports bytes for the download this call starts (not for one already cached or running); `signal` cancels it.
+ *  `keep`: kept on the device for good, outside the media cache's size cap (custom emoji and stickers). */
+export function mediaUrl(c: FileContent, thumb?: { w: number; h: number }, onProgress?: (loaded: number, total: number) => void, signal?: AbortSignal, keep?: boolean): Promise<string> | null {
   const cacheKey = mediaKey(c, thumb);
   if (!cacheKey) return null;
   let p = mediaCache.get(cacheKey);
   if (!p) {
-    p = mediaBytes(c, thumb, onProgress, signal)
+    p = mediaBytes(c, thumb, onProgress, signal, keep)
       // typed so <audio>/<video> don't have to sniff; thumbnails may be another image type, so leave those untyped
       .then(async (buf) => URL.createObjectURL(new Blob([c.file ? await decryptAttachment(buf, c.file) : buf],
         { type: thumb ? "" : c.info?.mimetype ?? c.file?.mimetype ?? "" })));
@@ -454,7 +455,7 @@ export function mediaUrl(c: FileContent, thumb?: { w: number; h: number }, onPro
 const fetching = new Map<string, Promise<ArrayBuffer>>();
 
 /** An mxc's bytes as stored (still encrypted): from the media cache, else downloaded and kept there. */
-function mediaBytes(c: FileContent, thumb?: { w: number; h: number }, onProgress?: (loaded: number, total: number) => void, signal?: AbortSignal) {
+function mediaBytes(c: FileContent, thumb?: { w: number; h: number }, onProgress?: (loaded: number, total: number) => void, signal?: AbortSignal, keep?: boolean) {
   const key = mediaKey(c, thumb)!;
   let p = fetching.get(key);
   if (!p) {
@@ -466,7 +467,7 @@ function mediaBytes(c: FileContent, thumb?: { w: number; h: number }, onProgress
     const viaSdk = () => client.http.authedRequest<Blob>(Method.Get, http.pathname, Object.fromEntries(http.searchParams), undefined,
       { baseUrl: http.origin, prefix: "", rawResponseBody: true }).then((b) => b.arrayBuffer());
     const download = () => (onProgress ? fetchProgress(http, onProgress, (c.info as { size?: number } | undefined)?.size, signal).then((b) => b ?? viaSdk()) : viaSdk())
-      .then((buf) => { cachePut(key, buf); return buf; });
+      .then((buf) => { cachePut(key, buf, keep); return buf; });
     p = cacheGet(key).then((hit) => hit ?? download()).finally(() => fetching.delete(key));
     fetching.set(key, p);
   }
