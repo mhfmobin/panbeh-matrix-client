@@ -791,10 +791,12 @@ export async function openDraft<T>(key: CryptoKey, roomId: string, c: { iv: stri
 
 /** One page of cached history (historyCache.ts) from `older`: what's kept before the page's start, newest first, one past
  *  the page if there is more. Then the next page starts at a cache token; at the cache's end, at the server's token
- *  where the cached run stops (none: the start of the chat). */
-export function cachedSlice<T extends { id: string }>(older: T[], n: number, back: string | null, prefix: string): { chunk: T[]; end?: string } {
+ *  where the cached run stops (none: the start of the chat). null: ask the server — the run's token is the one paged from,
+ *  so its kept rows aren't really before it, and the SDK reads an end equal to the start as the start of the chat. */
+export function cachedSlice<T extends { id: string }>(older: T[], n: number, back: string | null, prefix: string, from: string): { chunk: T[]; end?: string } | null {
   const chunk = older.slice(0, n);
   if (older.length > n) return { chunk, end: prefix + chunk.at(-1)!.id };
+  if (back === from) return null;
   return back ? { chunk, end: back } : { chunk };
 }
 
