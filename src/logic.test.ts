@@ -518,10 +518,11 @@ test("deleteBack: selection, grapheme, custom emoji", () => {
 
 test("cachedSlice pages the cache, then hands over to the server's token", () => {
   const r = (...ids: string[]) => ids.map((id) => ({ id }));
-  assert.deepEqual(cachedSlice(r("c", "b", "a"), 2, "srv", "pb."), { chunk: r("c", "b"), end: "pb.b" }); // more cached
-  assert.deepEqual(cachedSlice(r("b", "a"), 2, "srv", "pb."), { chunk: r("b", "a"), end: "srv" }); // the cache ends here
-  assert.deepEqual(cachedSlice(r("a"), 2, null, "pb."), { chunk: r("a") }); // the start of the chat
-  assert.deepEqual(cachedSlice([], 2, "srv", "pb."), { chunk: [], end: "srv" });
+  assert.deepEqual(cachedSlice(r("c", "b", "a"), 2, "srv", "pb.", "from"), { chunk: r("c", "b"), end: "pb.b" }); // more cached
+  assert.deepEqual(cachedSlice(r("b", "a"), 2, "srv", "pb.", "from"), { chunk: r("b", "a"), end: "srv" }); // the cache ends here
+  assert.deepEqual(cachedSlice(r("a"), 2, null, "pb.", "from"), { chunk: r("a") }); // the start of the chat
+  assert.deepEqual(cachedSlice([], 2, "srv", "pb.", "from"), { chunk: [], end: "srv" });
+  assert.equal(cachedSlice(r("a"), 2, "srv", "pb.", "srv"), null); // ends on the token paged from: the server's page instead
 });
 
 test("isEmojiOnly: up to 3 emoji, any sequence, nothing else", () => {

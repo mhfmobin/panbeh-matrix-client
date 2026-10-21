@@ -188,7 +188,9 @@ export async function cachedPage(url: string): Promise<Response | null> {
       back = (await client.http.authedRequest<{ start?: string }>(Method.Get, `/rooms/${encodeURIComponent(roomId)}/context/${encodeURIComponent(oldest.id)}`, { limit: "0" })).start ?? null;
       if (back && run) await put("runs", { ...run, back });
     }
-    const { chunk, end } = cachedSlice(older, n, back, PREFIX);
+    const page = cachedSlice(older, n, back, PREFIX, from);
+    if (!page) return null;
+    const { chunk, end } = page;
     return new Response(JSON.stringify({ chunk: chunk.map((r) => r.raw), start: from, ...(end && { end }) }), { headers: { "Content-Type": "application/json" } });
   } catch (e) {
     console.warn("history cache read failed", e);
