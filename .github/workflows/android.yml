@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false # a failed Bazaar build doesn't hold up the GitHub release
       matrix:
-        # bazaar: the Cafe Bazaar upload, tags only. An artifact to upload by hand, never in the release (see ANDROID.md)
+        # bazaar: the Cafe Bazaar build, tags only. Sent to Bazaar for review, never in the release (see ANDROID.md)
         store: ${{ startsWith(github.ref, 'refs/tags/v') && fromJSON('["github","bazaar"]') || fromJSON('["github"]') }}
     steps:
       - uses: actions/checkout@v4
@@ -93,6 +93,23 @@ jobs:
         with:
           path: Panbeh*.apk
           archive: false # the artifact is the raw Panbeh.apk, not a zip
+
+      # Pishkhan API: drop a leftover draft, create a release, add the APK, send it for review; it publishes once approved
+      - name: Upload to Bazaar
+        if: startsWith(github.ref, 'refs/tags/v') && matrix.store == 'bazaar'
+        env:
+          TOKEN: ${{ secrets.BAZAAR_API_TOKEN }}
+        run: |
+          api() { curl -sS --fail-with-body -H "CAFEBAZAAR-PISHKHAN-API-SECRET: $TOKEN" "$@"; echo; }
+          url=https://api.pishkhan.cafebazaar.ir/v1/apps/releases
+          api -X DELETE "$url/" || true # 400 when there's no draft
+          api -X POST "$url/"
+          api -X POST "$url/upload/" -F architecture=all -F "apk=@Panbeh-bazaar-$GITHUB_REF_NAME.apk;type=application/vnd.android.package-archive"
+          jq -n --arg v "${GITHUB_REF_NAME#v}" --slurpfile n src/releaseNotes.json '($n[0][$v] // {}) as $r | {
+            changelog_fa: ($r.fa // [] | map("- " + .) | join("\n")),
+            changelog_en: ($r.en // [] | map("- " + .) | join("\n")),
+            staged_rollout_percentage: 100, auto_publish: true}' > commit.json
+          api -X POST "$url/commit/" -H 'Content-Type: application/json' -d @commit.json
 
       # src/releaseNotes.json, Persian then English; this workflow only (the desktop one has no checkout and keeps the body)
       - name: Release notes
