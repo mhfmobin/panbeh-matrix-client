@@ -1,9 +1,10 @@
 import { LANGS, LOCALE, lang, setLang, t } from "../i18n.ts";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { SystemBars, SystemBarsStyle } from "@capacitor/core";
 import { ClientEvent, PushRuleActionName, PushRuleKind, RuleId, TweakName, type PushRuleAction } from "matrix-js-sdk";
 import { CryptoEvent, type DeviceVerificationStatus } from "matrix-js-sdk/lib/crypto-api/index.js";
-import { accountManageUrl, addAccount, client, sessions, switchAccount, deleteDevices, deviceManageUrl, isOAuth, logout, NeedsPassword, recoveryState, setBlocked, setMyAvatar, setShareLastSeen, setupRecovery, unlock, withPassword } from "../matrix.ts";
+import { accountManageUrl, addAccount, client, sessions, switchAccount, deleteDevices, deviceManageUrl, isOAuth, logout, NeedsPassword, quickReaction, recoveryState, setBlocked, setMyAvatar, setQuickReaction, setShareLastSeen, setupRecovery, unlock, withPassword, type Quick } from "../matrix.ts";
 import { useTick } from "../hooks.ts";
 import { Icon, type IconName } from "../icons.tsx";
 import { Avatar, errText, formatSize, me, Select, Sheet } from "./common.tsx";
@@ -20,6 +21,8 @@ import { isBazaar, isNative, nativeCancelAll, nativeStatus, openNotifySettings, 
 import { alertDialog, confirmDialog, editAvatar } from "./dialog.tsx";
 import { LinkSheet } from "./LinkSheet.tsx";
 import { MyPacks } from "./Packs.tsx";
+import { EmojiPanel, ReactionKey } from "./Emoji.tsx";
+import { pickerAt } from "./Message.tsx";
 import { matrixToLink } from "../uri.ts";
 import NOTES from "../releaseNotes.json";
 
@@ -109,6 +112,12 @@ export function Settings({ start = "main", security, onClose, onSecurityChange }
     localStorage.setItem("panbeh.prefs", JSON.stringify(next));
     applyPrefs(next);
   };
+  const [quick, setQuick] = useState(quickReaction); // synced (account data), not a pref
+  const [quickPick, setQuickPick] = useState<DOMRect | null>(null); // the row that opened the picker
+  const saveQuick = (q: Quick) => {
+    setQuick(q);
+    setQuickReaction(q).catch((e) => { setQuick(quickReaction()); void alertDialog(errText(e)); });
+  };
 
   const [view, setView] = useState<View>(start);
   const pill = useSlider<HTMLDivElement>();
@@ -153,6 +162,15 @@ export function Settings({ start = "main", security, onClose, onSecurityChange }
         <input type="checkbox" role="switch" checked={prefs.enterSends} onChange={(e) => set({ enterSends: e.target.checked })} /></label>
       {isNative && <label className="switch-row"><span>{t("set.askSave")}<small>{t("set.askSaveHint")}</small></span>
         <input type="checkbox" role="switch" checked={prefs.askSave} onChange={(e) => set({ askSave: e.target.checked })} /></label>}
+      <label className="switch-row"><span>{t("set.quickReact")}<small>{t("set.quickReactHint")}</small></span>
+        <input type="checkbox" role="switch" checked={!quick.off} onChange={(e) => saveQuick({ ...quick, off: !e.target.checked })} /></label>
+      {!quick.off && <button className="select-row" onClick={(e) => setQuickPick(e.currentTarget.getBoundingClientRect())}>
+        {t("set.quickReactEmoji")}<span className="quick-emoji"><ReactionKey k={quick.key} /></span></button>}
+      {quickPick && createPortal(
+        <div className="react-picker over-sheet" style={pickerAt(quickPick)}>
+          <EmojiPanel onEmoji={(k, custom) => { saveQuick(custom ? { key: custom.img.url, shortcode: k } : { key: k }); setQuickPick(null); }} onClose={() => setQuickPick(null)} />
+        </div>,
+        document.body)}
       <h3>{t("packs.both")}</h3>
       <Row icon="smile" label={t("packs.both")} hint={t("set.emojiHint")} onClick={() => setView("emoji")} />
     </>);

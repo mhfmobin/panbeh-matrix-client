@@ -965,6 +965,9 @@ div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparen
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18); animation: pop 0.14s;
 }
 .react-picker .emoji-panel { position: fixed; top: var(--top); left: var(--left); bottom: auto; width: min(360px, calc(100vw - 32px)); height: min(380px, calc(100vh - 16px)); } /* under the button that opened it */
+.over-sheet .menu-backdrop, .over-sheet .emoji-panel { z-index: 46; } /* opened from settings */
+button.select-row { width: 100%; }
+.quick-emoji { font-size: 24px; line-height: 1; color: var(--text); }
 .emoji-panel .muted { margin: 0; padding: 16px; text-align: center; }
 .emoji-search { flex: none; width: 100%; padding: 8px 14px; border: 0; outline: none; border-radius: 999px; background: var(--hover); }
 /* Telegram's bottom bar: the tabs pill and ⌫ float over the grid, translucent, and slide away while scrolling down */
