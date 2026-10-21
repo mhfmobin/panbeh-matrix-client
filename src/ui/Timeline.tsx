@@ -275,14 +275,17 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   // Virtuoso reports the bottom once on mount, before it has scrolled to the divider or jump target: opened away from the
   // bottom, that mustn't pin us there or mark the chat read until the list has settled
   const [settled, setSettled] = useState(stuck.current);
+  // the list is up; the skeleton has no Virtuoso to settle (nor ranges to page from), so paging then mustn't wait on it
+  const mounted = opened && rows.length > 0;
   useEffect(() => {
+    if (!mounted) return;
     mountedAt.current = Date.now();
     if (stuck.current) return;
     setSettled(false);
     jumpingUntil.current = Date.now() + 700;
     const t = setTimeout(() => setSettled(true), 700);
     return () => clearTimeout(t);
-  }, [view.n, opened]);
+  }, [view.n, mounted]);
   const loadOlder = useCallback(async () => {
     const first = chainRef.current[0];
     // once settled, only if still near the top: Virtuoso's first range starts at row 0 before it scrolls to where it opens
@@ -326,10 +329,10 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   // events (no overflow = startReached never fires again); one try per event count, so a failing request can't loop.
   const triedAt = useRef(-1);
   useEffect(() => {
-    if (loading || msgs.length >= 20 || triedAt.current === events.length) return;
+    if (!opened || loading || msgs.length >= 20 || triedAt.current === events.length) return; // not while reopening pages itself
     triedAt.current = events.length;
     loadOlder();
-  }, [view.n, events.length, loading]);
+  }, [view.n, events.length, loading, opened]);
 
   // read receipt for the newest event while someone is looking at it (re-checked when they're back)
   const attentive = useAttentive();
