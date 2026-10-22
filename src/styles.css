@@ -185,6 +185,9 @@ button:disabled { opacity: 0.6; cursor: default; }
   background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); font-size: 14px; font-weight: 500; text-align: start;
 }
 .banner.warn { background: color-mix(in srgb, #f5a623 18%, transparent); color: #c77700; }
+.banner.danger { background: color-mix(in srgb, #e53935 15%, transparent); color: #d32f2f; }
+.banner.identity span { flex: 1; }
+.banner.identity button { color: inherit; font-weight: 600; white-space: nowrap; }
 .banner.live-loc span { flex: 1; }
 .banner.live-loc button { color: inherit; font-weight: 600; }
 .banner.update { position: relative; overflow: hidden; }
@@ -1075,6 +1078,10 @@ img.tint {
 /* ---------- verification / account ---------- */
 .trust { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); }
 .trust.ok { color: #4fae4e; }
+.trust.bad { color: #d32f2f; }
+/* an encrypted message we can't vouch for (Message.tsx Shield); nothing when all is well */
+.msg-meta .shield { display: inline-flex; padding: 0; color: #d32f2f; }
+.msg-meta .shield.grey { color: inherit; opacity: 0.8; }
 .user-row small.trust { display: block; }
 .row-btn { flex: none; padding: 6px 10px; border-radius: 10px; color: var(--accent); font-weight: 500; }
 .row-btn:hover { background: var(--hover); }

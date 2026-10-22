@@ -1,12 +1,15 @@
 import { lang, t } from "../i18n.ts";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { renderSVG } from "uqr";
+import { RoomStateEvent, type Room } from "matrix-js-sdk";
 import { CryptoEvent, VerificationPhase, VerificationRequestEvent, VerifierEvent, type ShowQrCodeCallbacks, type ShowSasCallbacks, type UserVerificationStatus, type VerificationRequest } from "matrix-js-sdk/lib/crypto-api/index.js";
 import { client } from "../matrix.ts";
 import { useTick } from "../hooks.ts";
 import { num } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 import { bdi, errText, Sheet } from "./common.tsx";
+import { alertDialog } from "./dialog.tsx";
+import { resendAll } from "../sendQueue.ts";
 import { QrScan } from "./QrScan.tsx";
 
 // ---------- the one verification on screen (incoming or started from Settings/Profile) ----------
@@ -37,16 +40,68 @@ export function VerificationListener({ onTrustChange }: { onTrustChange: () => v
   return req ? <VerificationSheet key={req.transactionId ?? ""} req={req} /> : null;
 }
 
+// ---------- trust changes: one client listener for every shield and banner on screen ----------
+let trustVer = 0;
+const trustSubs = new Set<() => void>();
+const onTrust = () => { trustVer++; trustSubs.forEach((f) => f()); };
+const TRUST_EVENTS = [CryptoEvent.UserTrustStatusChanged, CryptoEvent.DevicesUpdated] as const;
+/** A number that changes whenever someone's identity or devices do: a dependency for re-checking trust. */
+export const useTrustVersion = () => useSyncExternalStore((f) => {
+  if (!trustSubs.size) TRUST_EVENTS.forEach((e) => client.on(e, onTrust));
+  trustSubs.add(f);
+  return () => { trustSubs.delete(f); if (!trustSubs.size) TRUST_EVENTS.forEach((e) => client.off(e, onTrust)); };
+}, () => trustVer);
+
 /** Cross-signing trust of a user, refreshed when it changes; undefined while loading. */
 export function useUserTrust(userId: string) {
   const [s, setS] = useState<UserVerificationStatus>();
-  useEffect(() => {
-    const check = () => { client.getCrypto()?.getUserVerificationStatus(userId).then(setS, () => {}); };
-    check();
-    client.on(CryptoEvent.UserTrustStatusChanged, check);
-    return () => { client.off(CryptoEvent.UserTrustStatusChanged, check); };
-  }, [userId]);
+  const ver = useTrustVersion();
+  useEffect(() => { client.getCrypto()?.getUserVerificationStatus(userId).then(setS, () => {}); }, [userId, ver]);
   return s;
+}
+
+/** Their identity changed since we first saw it (pinning), or since we verified them: worth stopping for. */
+export const identityChanged = (s?: UserVerificationStatus) => !!s && (s.needsUserApproval || (s.wasCrossSigningVerified() && !s.isCrossSigningVerified()));
+
+/** Someone in an encrypted chat has a new identity: could be a new phone, could be someone (or the server) posing as them.
+ *  Says so until it's accepted or verified. A verified contact's change pauses sending until then (the SDK refuses). */
+export function IdentityBanner({ room, onVerify }: { room: Room; onVerify: (userId: string) => void }) {
+  const ver = useTrustVersion();
+  useTick(room, [RoomStateEvent.Members]);
+  const ids = room.hasEncryptionStateEvent() ? [...room.getMembersWithMembership("join"), ...room.getMembersWithMembership("invite")].map((m) => m.userId).filter((id) => id !== client.getUserId()) : [];
+  const key = ids.join();
+  const [who, setWho] = useState<{ id: string; verified: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let live = true;
+    const crypto = client.getCrypto();
+    // ponytail: one status call per member, in turn; batch or cap if very large encrypted rooms get slow
+    void (async () => {
+      for (const id of crypto ? ids : []) {
+        const s = await crypto!.getUserVerificationStatus(id).catch(() => undefined);
+        if (!live) return;
+        if (identityChanged(s)) return setWho({ id, verified: s!.wasCrossSigningVerified() });
+      }
+      if (live) setWho(null);
+    })();
+    return () => { live = false; };
+  }, [room, key, ver]);
+  if (!who) return null;
+  const name = room.getMember(who.id)?.name ?? who.id;
+  const accept = () => {
+    setBusy(true);
+    const crypto = client.getCrypto()!;
+    (who.verified ? crypto.withdrawVerificationRequirement(who.id) : crypto.pinCurrentUserIdentity(who.id))
+      .then(() => resendAll(), (e) => alertDialog(errText(e))).finally(() => setBusy(false));
+  };
+  return (
+    <div className={"banner identity" + (who.verified ? " danger" : " warn")} role="alert">
+      <Icon name="shield" size={16} />
+      <span>{who.verified ? t("trust.violation", { name }) : t("trust.reset", { name })}</span>
+      <button disabled={busy} onClick={() => onVerify(who.id)}>{t("trust.verify")}</button>
+      <button disabled={busy} onClick={accept}>{who.verified ? t("trust.withdraw") : t("common.ok")}</button>
+    </div>
+  );
 }
 
 const started = new WeakSet<object>(); // verify() once per verifier

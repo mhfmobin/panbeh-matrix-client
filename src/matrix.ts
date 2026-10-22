@@ -1,6 +1,6 @@
 import { t } from "./i18n.ts";
 import { ClientEvent, RoomStateEvent, createClient, UNSTABLE_MSC4140_DELAYED_EVENTS, Direction, EventTimeline, EventType, Filter, SearchOrderBy, HttpApiEvent, IndexedDBStore, MatrixEvent, Method, OAuth2, Preset, SetPresence, SyncState, Visibility, type ICreateRoomStateEvent, type MatrixClient, type MatrixError, type Room } from "matrix-js-sdk";
-import { decodeRecoveryKey, deriveRecoveryKeyFromPassphrase } from "matrix-js-sdk/lib/crypto-api/index.js";
+import { AllDevicesIsolationMode, decodeRecoveryKey, deriveRecoveryKeyFromPassphrase, OnlySignedDevicesIsolationMode } from "matrix-js-sdk/lib/crypto-api/index.js";
 import { decryptAttachment, encryptAttachment, type IEncryptedFile } from "matrix-encrypt-attachment";
 import { blurhashEncode, cleanCode, endpointOf, fitSize, fmtSpan, freeCode, hasGif, isGif, normalizeServer, num, PACK_CAP, packImages, padToRatio, roomName, tintOf, withGif, withoutGif, type Gif, type PackContent, type PackImage, type Tint, type Usage } from "./logic.ts";
 import { isHeadless, isNative, nativeCancelAll, nativeLog, nativeSyncState, onKick, setBackgroundService } from "./native.ts";
@@ -151,6 +151,7 @@ export async function start(s: Session) {
   c.once(HttpApiEvent.SessionLoggedOut, () => logout());
   c.on(ClientEvent.Room, (r) => { if (r.getMyMembership() === "invite") r.recalculate(); });
   await c.initRustCrypto({ cryptoDatabasePrefix: dbNames(s).crypto });
+  applyIsolation();
   firstSyncDone = false;
   c.on(ClientEvent.Sync, (state) => { if (state === SyncState.Prepared || state === SyncState.Syncing) firstSyncDone = true; });
   if (isNative) {
@@ -660,6 +661,19 @@ export function dmPeer(room: Room) {
   const direct = client.getAccountData(EventType.Direct)?.getContent<Record<string, string[]>>() ?? {};
   return Object.entries(direct).find(([, ids]) => ids.includes(room.roomId))?.[0]
     ?? room.getJoinedMembers().find((m) => m.userId !== client.getSafeUserId())?.userId;
+}
+
+/** MSC4153 "exclude insecure devices": message keys only go to, and messages are only shown from, devices their owner
+ *  cross-signed, so a device a homeserver slips in reads nothing. Off (Settings › Privacy), keys go to every device, but
+ *  sending still stops when a verified contact's identity changes. Kept in prefs (localStorage) for the headless page too. */
+export const signedOnly = () => { try { return JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}").signedOnly !== false; } catch { return true; } };
+export function applyIsolation(on = signedOnly()) {
+  const crypto = client.getCrypto();
+  if (!crypto) return;
+  crypto.setDeviceIsolationMode(on ? new OnlySignedDevicesIsolationMode() : new AllDevicesIsolationMode(true));
+  // messages the stricter mode hid show at once when it's turned off (the SDK only retries when new keys arrive)
+  for (const r of client.getRooms()) for (const e of r.getLiveTimeline().getEvents())
+    if (e.isDecryptionFailure()) void e.attemptDecryption(crypto as Parameters<MatrixEvent["attemptDecryption"]>[0], { isRetry: true }).catch(() => {});
 }
 
 // presence: others see us as offline when off. Kept in prefs (localStorage) so it applies at startup too.

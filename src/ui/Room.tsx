@@ -25,6 +25,7 @@ import { liveBeacons, onBeaconChange, sharingIn, stopSharing, useLiveLocation } 
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 import { useExit } from "./useDismiss.ts";
 import { overlayOpen, pushBack } from "../back.ts";
+import { IdentityBanner } from "./Verify.tsx";
 
 export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
   useTick(client, ["Room.myMembership", "Room.name"]);
@@ -193,6 +194,7 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
                 {myShare && <button onClick={() => stopSharing(client, room.roomId).catch((e) => alertDialog(errText(e)))}>{t("loc.stop")}</button>}
               </div>
             )}
+            <IdentityBanner room={room} onVerify={actions.profile} />
             <PinnedBar room={room} onJump={jump} />
             <Timeline room={room} actions={actions} jumpRef={jumper} />
             <Upgraded room={room}><Composer room={room} threadId={null} mode={mode} setMode={setMode} files={files} setFiles={setFiles} /></Upgraded>

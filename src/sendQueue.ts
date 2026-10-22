@@ -22,7 +22,8 @@ const unsent = new Set<MatrixEvent>(); // local echoes the server hasn't sent ba
 const refused = (ev: MatrixEvent) => { const s = ev.error?.httpStatus; return !!s && s >= 400 && s < 500 && s !== 429; };
 
 let resending = false;
-async function resendAll() {
+/** Resends what failed; also after a blocked contact is accepted (Verify.tsx IdentityBanner). */
+export async function resendAll() {
   if (resending) return;
   resending = true;
   try {

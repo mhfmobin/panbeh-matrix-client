@@ -6,7 +6,7 @@ import { usePresence, usePromise, useTick } from "../hooks.ts";
 import { Icon } from "../icons.tsx";
 import { Avatar, errText, me, Sheet } from "./common.tsx";
 import { MemberAdmin } from "./Admin.tsx";
-import { showVerification, useUserTrust } from "./Verify.tsx";
+import { identityChanged, showVerification, useUserTrust } from "./Verify.tsx";
 import { alertDialog, confirmDialog } from "./dialog.tsx";
 import { start as startCall } from "./Call.tsx";
 import { PhotoViewer } from "./Media.tsx";
@@ -59,8 +59,9 @@ export function UserProfile({ userId, room, onClose, onOpened }: { userId: strin
         <bdi dir="ltr" className="muted">{userId}</bdi>
         {userId !== me() && seen.text && <span className={seen.online ? "typing" : "muted"}>{seen.text}</span>}
         {other && trust?.known && (
-          <span className={"trust" + (trust.isCrossSigningVerified() ? " ok" : "")}>
-            <Icon name="lock" size={14} /> {trust.isCrossSigningVerified() ? t("profile.verified") : t("profile.unverified")}
+          <span className={"trust" + (identityChanged(trust) ? " bad" : trust.isCrossSigningVerified() ? " ok" : "")}>
+            <Icon name={identityChanged(trust) ? "shield" : "lock"} size={14} />
+            {identityChanged(trust) ? t("profile.identityChanged") : trust.isCrossSigningVerified() ? t("profile.verified") : t("profile.unverified")}
           </span>
         )}
       </div>
