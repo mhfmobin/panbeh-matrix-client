@@ -1016,7 +1016,7 @@ img.emoji { width: 1.2em; height: 1.2em; vertical-align: -0.25em; }
 /* custom emoji (MSC2545): text-sized wherever they sit — messages, reactions, pickers; jumbo messages scale them with the font */
 .emote { display: inline-block; vertical-align: middle; }
 img.emote, span.emote img { height: 1.5em; width: auto; max-width: 4em; object-fit: contain; vertical-align: middle; }
-.emote.shimmer { width: 1.5em; height: 1.5em; border-radius: 6px; }
+.emote.shimmer { position: relative; width: 1.5em; height: 1.5em; border-radius: 6px; } /* in the text, not .shimmer's inset: 0 */
 .room-preview img.emote, .reply-quote img.emote, .composer-mode img.emote, .pinned-text img.emote, .pinned-row img.emote { height: 1.25em; }
 .room-preview .emote.shimmer, .reply-quote .emote.shimmer, .composer-mode .emote.shimmer, .pinned-text .emote.shimmer, .pinned-row .emote.shimmer { width: 1.25em; height: 1.25em; }
 span.emote[data-mxc] { cursor: pointer; }

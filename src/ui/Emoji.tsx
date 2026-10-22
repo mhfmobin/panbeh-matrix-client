@@ -199,8 +199,10 @@ export function tinted(mxc: string, src: string): Promise<boolean> {
 
 /** A custom emoji or sticker: the whole file, not a server thumbnail, so animated ones play. `sticker`: never tinted. */
 export function EmoteImg({ url, alt, className = "emote", sticker }: { url: string; alt: string; className?: string; sticker?: boolean }) {
-  const src = usePromise(mediaUrl({ url }, undefined, undefined, undefined, true));
+  // null: no file to be had (a bad mxc, a refusal), so the :code: shows instead of a shimmer that never ends
+  const src = usePromise(useMemo(() => mediaUrl({ url }, undefined, undefined, undefined, true)?.catch(() => null) ?? Promise.resolve(null), [url]));
   const tint = usePromise(src ? (sticker ? NO : tinted(url, src)) : null);
+  if (src === null) return <>{alt}</>;
   // held back until the tint is known, so a black emoji doesn't flash before it turns white
   return src && tint !== undefined
     ? <img className={className + (tint ? " tint" : "")} style={tint ? { "--src": `url("${src}")` } as never : undefined} src={src} alt={alt} title={alt || undefined} draggable={false} />
