@@ -846,9 +846,12 @@ div.msg-text pre { direction: ltr; text-align: left; }
 div.msg-text pre { position: relative; padding-right: 34px; }
 .code-copy { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 6px; color: inherit; opacity: 0.55; }
 .code-copy:hover { opacity: 1; background: rgba(127, 127, 127, 0.18); }
+div.msg-text table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+div.msg-text :is(th, td) { padding: 2px 8px; border: 1px solid rgba(127, 127, 127, 0.3); }
+div.msg-text summary { cursor: pointer; }
 div.msg-text blockquote { color: color-mix(in srgb, currentColor 85%, transparent); border-radius: 2px; }
 [data-mx-spoiler] { cursor: pointer; border-radius: 4px; background: rgba(127, 127, 127, 0.45); color: transparent; filter: blur(3px); transition: filter 0.15s; }
-[data-mx-spoiler] * { color: transparent; }
+[data-mx-spoiler]:not(.revealed), [data-mx-spoiler]:not(.revealed) * { color: transparent !important; } /* over a sender's data-mx-color */
 [data-mx-spoiler].revealed { background: rgba(127, 127, 127, 0.15); color: inherit; filter: none; }
 [data-mx-spoiler].revealed * { color: inherit; }
 

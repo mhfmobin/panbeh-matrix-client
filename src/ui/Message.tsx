@@ -74,13 +74,39 @@ export const copyMessages = (text: string) => copyText(text).then(() => toast(t(
 
 let pillRoom: Room | null = null; // the room being rendered; sanitize() is synchronous
 
+// The Matrix spec's allowlist (client-server API, m.room.message formatting), not DOMPurify's permissive defaults: no
+// style, forms, media, SVG or app classes from the sender. <img> is listed nowhere: the hook below replaces it.
+const PURIFY = {
+  ALLOWED_TAGS: ["font", "del", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "p", "a", "ul", "ol", "sup", "sub", "li", "b", "i", "u",
+    "strong", "em", "s", "code", "hr", "br", "div", "table", "thead", "tbody", "tr", "th", "td", "caption", "pre", "span", "details", "summary"],
+  // class is narrowed by a hook; data-mxc/data-code are the emote span the <img> hook makes
+  ALLOWED_ATTR: ["href", "start", "alt", "title", "color", "data-mx-color", "data-mx-bg-color", "data-mx-spoiler", "class", "data-mxc", "data-code"],
+  ALLOW_DATA_ATTR: false,
+  ALLOW_ARIA_ATTR: false,
+  ALLOWED_URI_REGEXP: /^(?:https?|ftp|mailto|magnet|matrix):/i,
+  // DOMPurify checks every other attribute's value against that regexp too: these aren't URLs
+  ADD_URI_SAFE_ATTR: ["start", "color", "data-mx-color", "data-mx-bg-color", "data-mx-spoiler", "data-mxc", "data-code"],
+};
+const HEX = /^#[0-9a-f]{6}$/i;
+
+// only our own classes: a code block's language and the emote span
+DOMPurify.addHook("uponSanitizeAttribute", (n, data) => {
+  if (data.attrName === "class") data.keepAttr = (n.tagName === "CODE" && /^language-[\w+-]+$/.test(data.attrValue)) || (n.tagName === "SPAN" && data.attrValue === "emote");
+});
+
 // links in formatted messages must not navigate the app away; matrix.to user/room links become pills
 DOMPurify.addHook("afterSanitizeAttributes", (n) => {
+  // the spec's colours are the only inline style a message gets, and only as #rrggbb
+  const fg = n.getAttribute("data-mx-color") ?? n.getAttribute("color"), bg = n.getAttribute("data-mx-bg-color");
+  n.removeAttribute("color");
+  if (fg && HEX.test(fg)) (n as HTMLElement).style.color = fg;
+  if (bg && HEX.test(bg)) (n as HTMLElement).style.backgroundColor = bg;
   if (n.tagName !== "A") return;
   n.setAttribute("target", "_blank");
   n.setAttribute("rel", "noreferrer noopener");
-  const m = /^https:\/\/matrix\.to\/#\/([@#!][^/?]+)$/.exec(n.getAttribute("href") ?? "");
-  if (!m || !pillRoom) return;
+  const href = n.getAttribute("href") ?? "";
+  const m = /^https:\/\/matrix\.to\/#\/([@#!][^/?]+)$/.exec(href);
+  if (!m || !pillRoom) { if (href) n.setAttribute("title", href); return; } // where it really goes, whatever the text says
   let id = m[1];
   try { id = decodeURIComponent(id); } catch { /* keep as is */ }
   const name = id.startsWith("@") ? pillRoom.getMember(id)?.name : linkedRoom(id)?.name;
@@ -380,7 +406,7 @@ function Body({ ev, room, onView, onUser, album }: { ev: MatrixEvent; room: Room
 /** A formatted_body made safe to show, its reply fallback dropped; pills resolve against `room`. */
 function cleanHtml(html: string, room: Room) {
   pillRoom = room;
-  try { return tagHtml(DOMPurify.sanitize(html.replace(/<mx-reply>[\s\S]*?<\/mx-reply>/, ""), { FORBID_TAGS: ["style", "img"] })); }
+  try { return tagHtml(DOMPurify.sanitize(html.replace(/<mx-reply>[\s\S]*?<\/mx-reply>/, ""), PURIFY)); }
   finally { pillRoom = null; }
 }
 
@@ -445,7 +471,7 @@ function Html({ html, room, onUser, big = false }: { html: string; room: Room; o
         av.replaceChildren(img);
       }, () => {});
     });
-    ref.current?.querySelectorAll<HTMLElement>("span.emote[data-mxc]").forEach((s) => {
+    ref.current?.querySelectorAll<HTMLElement>('span.emote[data-mxc^="mxc://"]').forEach((s) => {
       mediaUrl({ url: s.dataset.mxc! })?.then(async (u) => {
         const img = document.createElement("img");
         img.src = u;
@@ -475,7 +501,7 @@ function Html({ html, room, onUser, big = false }: { html: string; room: Room; o
       void copyMessages((pre.querySelector("code") ?? pre).textContent ?? "");
       return;
     }
-    const em = t.closest<HTMLElement>("span.emote[data-mxc]");
+    const em = t.closest<HTMLElement>('span.emote[data-mxc^="mxc://"]');
     if (em) {
       e.preventDefault();
       e.stopPropagation();
