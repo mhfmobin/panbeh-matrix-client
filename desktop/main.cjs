@@ -10,6 +10,8 @@ const OAUTH_SCHEME = "ir.panbeh.app";
 // `npm run desktop:dev`: the vite server instead of dist/
 const DEV_URL = process.env.PANBEH_DEV_URL ?? (process.argv.includes("--dev") ? "http://localhost:5173/" : undefined);
 const DIST = path.join(__dirname, "..", "dist");
+// index.html's policy without its inline scripts (only Capacitor's bridge and Vite's dev server need them), F-06, csp.test.ts
+const CSP = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https://cdn.jsdelivr.net https://tile.openstreetmap.org; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' blob: data: https: wss: http: ws:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const RELEASES = "https://github.com/mhfmobin/panbeh-matrix-client/releases/latest";
 const isMac = process.platform === "darwin", isWin = process.platform === "win32";
 
@@ -350,7 +352,13 @@ app.whenReady().then(() => {
     const file = path.normalize(path.join(DIST, decodeURIComponent(pathname)));
     // anything that isn't a built file (or tries to leave dist/) gets the app itself
     const ok = file.startsWith(DIST + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile();
-    return net.fetch(pathToFileURL(ok ? file : path.join(DIST, "index.html")).toString());
+    const target = ok ? file : path.join(DIST, "index.html");
+    if (!target.endsWith(".html")) return net.fetch(pathToFileURL(target).toString());
+    return net.fetch(pathToFileURL(target).toString()).then((res) => {
+      const headers = new Headers(res.headers);
+      headers.set("Content-Security-Policy", CSP);
+      return new Response(res.body, { status: res.status, headers });
+    });
   });
 
   // mic/camera for voice messages and calls, screen sharing, notifications, location; only for the app itself
