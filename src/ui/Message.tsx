@@ -18,7 +18,7 @@ import { EmojiPanel, PreviewText, ReactionKey, tinted } from "./Emoji.tsx";
 import { LinkPreview } from "./LinkPreview.tsx";
 import { captionOf, EDITABLE } from "./Composer.tsx";
 import { reducedMotion } from "./useDismiss.ts";
-import { MessageMenu, QUICK_REACTIONS } from "./MessageMenu.tsx";
+import { MessageMenu } from "./MessageMenu.tsx";
 import { thumbFor } from "./Media.tsx";
 import { alertDialog, confirmDialog, promptDialog } from "./dialog.tsx";
 import { loadPrefs } from "./Settings.tsx";
@@ -130,7 +130,6 @@ function openRoomPill(a: HTMLAnchorElement) {
 type Props = { ev: MatrixEvent; room: Room; first: boolean; last: boolean; actions: Actions; flash?: boolean; enter?: boolean; album?: MatrixEvent[] };
 
 export function Message({ ev, room, first, last, actions, flash, enter, album }: Props) {
-  const [picker, setPicker] = useState(false);
   const [fullPicker, setFullPicker] = useState<DOMRect | null>(null); // the button that opened it
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null); // touch screens have no hover: a tap (or right-click) opens this
   const [sel, setSel] = useState(""); // what was selected inside this message when its menu opened (the menu's focus can collapse it)
@@ -303,26 +302,6 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
           <button title={t("common.delete")} aria-label={t("common.delete")} onClick={() => client.cancelPendingEvent(ev)}><Icon name="trash" size={17} /></button>
         </div>
       )}
-      {!ev.isDecryptionFailure() && ev.status == null && (
-        <div className="msg-actions">
-          <button title={t("msg.react")} aria-label={t("msg.react")} onClick={() => setPicker((p) => !p)}><Icon name="smile" size={17} /></button>
-          <button title={t("msg.reply")} aria-label={t("msg.reply")} onClick={() => actions.reply(ev)}><Icon name="reply" size={17} /></button>
-          {ev.getId() && !M_POLL_START.matches(ev.getType()) && <button title={t("msg.forward")} aria-label={t("msg.forward")} onClick={forward}><Icon name="forward" size={17} /></button>}
-          {ev.getId() && <button title={t("common.copyLink")} aria-label={t("common.copyLink")} onClick={copyLink}><Icon name="link" size={17} /></button>}
-          {actions.thread && <button title={t("msg.replyThread")} aria-label={t("msg.replyThread")} onClick={() => actions.thread!(ev)}><Icon name="thread" size={17} /></button>}
-          {mine && <button title={t("msg.seenBy")} aria-label={t("msg.seenBy")} onClick={() => actions.info(ev)}><Icon name="info" size={17} /></button>}
-          {canPin && <button title={pinned ? t("msg.unpin") : t("msg.pin")} aria-label={pinned ? t("msg.unpin") : t("msg.pin")}
-            onClick={() => togglePin(room, ev.getId()!).catch((e) => alertDialog(errText(e)))}><Icon name="pin" size={17} /></button>}
-          {mine && EDITABLE.includes(content.msgtype ?? "") && <button title={t("msg.edit")} aria-label={t("msg.edit")} onClick={() => actions.edit(ev)}><Icon name="edit" size={17} /></button>}
-          {canDelete && <button title={t("common.delete")} aria-label={t("common.delete")} onClick={() => remove()}><Icon name="trash" size={17} /></button>}
-          {picker && (
-            <div className="quick-react" onMouseLeave={() => setPicker(false)}>
-              {QUICK_REACTIONS.map((k) => <button key={k} onClick={() => { toggleReaction(room, ev, k); setPicker(false); }}>{k}</button>)}
-              <button className="more" title={t("msg.moreEmoji")} aria-label={t("msg.moreEmoji")} onClick={(e) => { setPicker(false); setFullPicker(e.currentTarget.getBoundingClientRect()); }}><Icon name="plus" size={18} /></button>
-            </div>
-          )}
-        </div>
-      )}
       {menu && (
         <MessageMenu {...menu} onClose={() => setMenu(null)} mine={[...new Set(myReactions(room, ev).map((e) => e.getRelation()!.key!))]}
           onReact={(k) => toggleReaction(room, ev, k)} onMore={setFullPicker} items={[
@@ -346,7 +325,6 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
           canDelete && { icon: "trash", label: t("common.delete"), danger: true, run: remove },
         ]} />
       )}
-      {/* portal: .msg-actions fades out when the pointer leaves the message */}
       {fullPicker && createPortal(
         <div className="react-picker" style={pickerAt(fullPicker)}>
           <EmojiPanel room={room} onEmoji={(k, custom) => { toggleReaction(room, ev, custom?.img.url ?? k, custom && k); setFullPicker(null); }} onClose={() => setFullPicker(null)} />
@@ -871,9 +849,17 @@ function Reactions({ ev, room }: { ev: MatrixEvent; room: Room }) {
   // chips present when the message mounted don't animate (scrolling a row back into view); ones added later pop in
   const initial = useRef<Set<string>>(null);
   if (!initial.current) initial.current = new Set(list?.map(([k]) => k));
+  // reacting grows the row: keep my new chip in view (above the composer), like Telegram
+  const box = useRef<HTMLDivElement>(null);
+  const mine = list?.filter(([, set]) => [...set].some((e) => e.getSender() === me())).length ?? 0;
+  const mineBefore = useRef(mine);
+  useEffect(() => {
+    if (mine > mineBefore.current) box.current?.scrollIntoView({ block: "nearest" });
+    mineBefore.current = mine;
+  }, [mine]);
   if (!list?.length) return null;
   return (
-    <div className="reactions">
+    <div className="reactions" ref={box}>
       {list.map(([key, set]) => (
         <ReactionChip key={key} room={room} ev={ev} emoji={key} users={[...set]} added={!initial.current!.has(key)} />
       ))}

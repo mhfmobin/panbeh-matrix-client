@@ -4,7 +4,7 @@ import { client, getFolderOrder, spaceChildren, getUploads, setFolderOrder, subs
 import { byListOrder, lastSeen, spaceRooms, type RoomInfo } from "./logic.ts";
 import { ARCHIVED, hasTag, isMarkedUnread, PINNED, unreadCount } from "./chats.ts";
 import { isMuted } from "./notify.ts";
-import { draftPreview, useDrafts, type Draft } from "./drafts.ts";
+import { draftPreview, draftTs, useDrafts, type Draft } from "./drafts.ts";
 
 /** The run of linked timelines `tl` belongs to, oldest first. A window opened around an old event (a pin, a reply)
  *  is its own timeline until paging forwards reaches the live one; the SDK links them then. */
@@ -136,7 +136,7 @@ export function useRooms() {
       room,
       last,
       // a draft newer than the last message brings the chat up, like Telegram
-      ts: Math.max(last?.getTs() ?? room.getLastActiveTimestamp(), draft?.ts ?? 0),
+      ts: Math.max(last?.getTs() ?? room.getLastActiveTimestamp(), invite ? 0 : draftTs(room.roomId)),
       invite,
       draft,
       isDM: dmIds.has(room.roomId) || !!room.getDMInviter(),

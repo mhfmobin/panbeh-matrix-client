@@ -31,15 +31,18 @@ const emit = () => { version++; subs.forEach((f) => f()); };
 const subscribe = (f: () => void) => (subs.add(f), () => void subs.delete(f));
 export const useDrafts = () => useSyncExternalStore(subscribe, () => version);
 
-let open: { roomId: string; onRemote: (d: Draft) => void } | null = null;
+let open: { roomId: string; onRemote: (d: Draft) => void; ts: number } | null = null;
 /** The composer of `roomId`'s main chat is showing: its draft leaves the list, and another device's update goes to `onRemote`. */
 export function showingDraft(roomId: string, onRemote: (d: Draft) => void) {
-  const me = { roomId, onRemote };
+  const me = { roomId, onRemote, ts: draftTs(roomId) };
   open = me;
   emit();
   return () => { if (open === me) { open = null; emit(); } };
 }
 export const getDraft = (key: string) => all().get(key);
+/** When `roomId`'s draft was last changed, for the list order; the open chat keeps the time it had when opened, so it doesn't
+ * drop (preview hidden) or jump (typing) while open, and moves once it's left. */
+export const draftTs = (roomId: string) => (open?.roomId === roomId ? open.ts : all().get(roomId)?.body ? all().get(roomId)!.ts : 0);
 /** The draft to show in the chat list, unless that chat is open. */
 export const draftPreview = (roomId: string) => (open?.roomId === roomId ? undefined : all().get(roomId)?.body ? all().get(roomId) : undefined);
 

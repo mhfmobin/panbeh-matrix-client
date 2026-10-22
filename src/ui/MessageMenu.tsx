@@ -6,7 +6,7 @@ import { ReactionKey } from "./Emoji.tsx";
 import { useBackdropHold } from "./useBackdropHold.ts";
 import { useDismiss } from "./useDismiss.ts";
 
-export const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 
 type MenuItem = { icon: IconName; label: string; run: () => unknown; danger?: boolean };
 type Props = { x: number; y: number; items: (MenuItem | false | "" | undefined)[]; mine: string[];
