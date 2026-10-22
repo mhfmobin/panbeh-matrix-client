@@ -3,12 +3,12 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { renderSVG } from "uqr";
 import { RoomStateEvent, type Room } from "matrix-js-sdk";
 import { CryptoEvent, VerificationPhase, VerificationRequestEvent, VerifierEvent, type ShowQrCodeCallbacks, type ShowSasCallbacks, type UserVerificationStatus, type VerificationRequest } from "matrix-js-sdk/lib/crypto-api/index.js";
-import { client } from "../matrix.ts";
+import { applyIsolation, client } from "../matrix.ts";
 import { useTick } from "../hooks.ts";
 import { num } from "../logic.ts";
 import { Icon } from "../icons.tsx";
 import { bdi, errText, Sheet } from "./common.tsx";
-import { alertDialog } from "./dialog.tsx";
+import { alertDialog, confirmDialog } from "./dialog.tsx";
 import { resendAll } from "../sendQueue.ts";
 import { QrScan } from "./QrScan.tsx";
 
@@ -88,18 +88,20 @@ export function IdentityBanner({ room, onVerify }: { room: Room; onVerify: (user
   }, [room, key, ver]);
   if (!who) return null;
   const name = room.getMember(who.id)?.name ?? who.id;
-  const accept = () => {
+  // no emoji check possible (they're not around): take the new identity as theirs, unverified, so chatting goes on
+  const accept = async () => {
+    if (who.verified && !await confirmDialog(t("trust.acceptQ", { name }), { danger: true, ok: t("trust.accept") })) return;
     setBusy(true);
     const crypto = client.getCrypto()!;
     (who.verified ? crypto.withdrawVerificationRequirement(who.id) : crypto.pinCurrentUserIdentity(who.id))
-      .then(() => resendAll(), (e) => alertDialog(errText(e))).finally(() => setBusy(false));
+      .then(() => { applyIsolation(); resendAll(); }, (e) => alertDialog(errText(e))).finally(() => setBusy(false)); // applyIsolation: their hidden messages show
   };
   return (
     <div className={"banner identity" + (who.verified ? " danger" : " warn")} role="alert">
       <Icon name="shield" size={16} />
       <span>{who.verified ? t("trust.violation", { name }) : t("trust.reset", { name })}</span>
       <button disabled={busy} onClick={() => onVerify(who.id)}>{t("trust.verify")}</button>
-      <button disabled={busy} onClick={accept}>{who.verified ? t("trust.withdraw") : t("common.ok")}</button>
+      <button disabled={busy} onClick={accept}>{who.verified ? t("trust.accept") : t("common.ok")}</button>
     </div>
   );
 }

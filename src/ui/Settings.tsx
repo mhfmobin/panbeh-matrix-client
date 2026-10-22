@@ -90,18 +90,30 @@ const Row = ({ icon, label, hint, onClick }: { icon: IconName; label: string; hi
 const VERSION = import.meta.env.VITE_APP_VERSION ?? "dev";
 
 // ---------- release notes (src/releaseNotes.json, by version) ----------
-const notes: string[] | undefined = (NOTES as Record<string, Record<string, string[]>>)[VERSION.replace(/^v/, "")]?.[lang];
+const ALL_NOTES = NOTES as Record<string, Record<string, string[]>>;
+const BARE = VERSION.replace(/^v/, "");
+const notes: string[] | undefined = ALL_NOTES[BARE]?.[lang];
 const NOTES_SEEN = "panbeh.notesSeen";
-const showNotes = () => notes && alertDialog(t("notes.title", { v: ver(VERSION.replace(/^v/, "")) }) + "\n\n• " + notes.join("\n• "));
+const newer = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }) > 0;
+/** The notes of every version after `seen` up to this one, newest first; just this one's with nothing to compare. */
+const showNotes = (seen = "") => {
+  const vs = seen ? Object.keys(ALL_NOTES).filter((v) => newer(v, seen) && !newer(v, BARE) && ALL_NOTES[v][lang]).sort((a, b) => b.localeCompare(a, undefined, { numeric: true })) : [BARE];
+  if (notes) alertDialog(t("notes.title", { v: ver(BARE) }), { body: vs.map((v) => <section key={v} className="notes">
+    <h2>{t("notes.title", { v: ver(v) })}</h2>
+    <ul dir="auto">{ALL_NOTES[v][lang].map((n, i) => <li key={i}>{n}</li>)}</ul>
+  </section>) });
+};
 /** A new install has nothing to compare with: its version's notes count as read. */
 export const skipNotes = () => { try { localStorage.setItem(NOTES_SEEN, VERSION); } catch { /* no storage */ } };
-/** This version's notes, once, after an update. */
+/** After an update, once: what's new in every version since the last one opened. */
 export function notesAfterUpdate() {
+  let seen;
   try {
-    if (!notes || localStorage.getItem(NOTES_SEEN) === VERSION) return;
+    seen = localStorage.getItem(NOTES_SEEN);
+    if (!notes || seen === VERSION) return;
     localStorage.setItem(NOTES_SEEN, VERSION);
   } catch { return; } // no storage: they'd show on every start
-  showNotes();
+  showNotes(seen?.replace(/^v/, ""));
 }
 
 export function Settings({ start = "main", security, onClose, onSecurityChange }: { start?: View; security: string; onClose: () => void; onSecurityChange: () => void }) {
@@ -226,7 +238,7 @@ export function Settings({ start = "main", security, onClose, onSecurityChange }
     if (v === "app") return page(t("set.app"), <>
       {isDesktop && <Autostart />}
       {canUpdate ? <Updates /> : <p className="muted">{t("app.name")} <span dir="ltr">{VERSION}</span></p>}
-      {notes && <Row icon="info" label={t("notes.row")} onClick={showNotes} />}
+      {notes && <Row icon="info" label={t("notes.row")} onClick={() => showNotes()} />}
       <h3>{t("set.dev")}</h3>
       <label className="switch-row"><span>{t("set.dev")}<small>{t("set.devHint")}</small></span>
         <input type="checkbox" role="switch" checked={prefs.dev} onChange={(e) => set({ dev: e.target.checked })} /></label>
