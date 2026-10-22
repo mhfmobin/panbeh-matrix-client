@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { SystemBars, SystemBarsStyle } from "@capacitor/core";
 import { ClientEvent, PushRuleActionName, PushRuleKind, RuleId, TweakName, type PushRuleAction } from "matrix-js-sdk";
 import { CryptoEvent, type DeviceVerificationStatus } from "matrix-js-sdk/lib/crypto-api/index.js";
-import { accountManageUrl, addAccount, client, sessions, switchAccount, deleteDevices, deviceManageUrl, isOAuth, logout, NeedsPassword, quickReaction, recoveryState, setBlocked, setMyAvatar, setQuickReaction, setShareLastSeen, setupRecovery, unlock, withPassword, type Quick } from "../matrix.ts";
+import { accountManageUrl, addAccount, client, sessions, switchAccount, deleteDevices, deviceManageUrl, isOAuth, logout, NeedsPassword, quickReaction, recoveryState, setBlocked, setMyAvatar, setQuickReaction, setShareLastSeen, applyIsolation, setupRecovery, unlock, withPassword, type Quick } from "../matrix.ts";
 import { useTick } from "../hooks.ts";
 import { Icon, type IconName } from "../icons.tsx";
 import { Avatar, errText, formatSize, me, Select, Sheet } from "./common.tsx";
@@ -26,7 +26,7 @@ import { pickerAt } from "./Message.tsx";
 import { matrixToLink } from "../uri.ts";
 import NOTES from "../releaseNotes.json";
 
-type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; notifyPreview: "all" | "name" | "none"; previews: boolean; shareLastSeen: boolean; searchIndex: boolean; dev: boolean; legacyCalls: boolean; enterSends: boolean; askSave: boolean;
+type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; notifyPreview: "all" | "name" | "none"; previews: boolean; shareLastSeen: boolean; signedOnly: boolean; searchIndex: boolean; dev: boolean; legacyCalls: boolean; enterSends: boolean; askSave: boolean;
   camQuality: "360" | "540" | "720" | "1080"; screenQuality: "720" | "1080" | "1080hi"; audioQuality: "low" | "normal" | "high";
   lowData: "off" | "auto" | "on";
   cacheMB: number; autoDl: AutoDl;
@@ -44,7 +44,7 @@ const CACHE_MB: [number, string][] = [[250, formatSize(250 << 20)], [500, format
 const LOW_DATA: [Prefs["lowData"], string][] = [["off", t("common.off")], ["auto", t("set.lowDataAuto")], ["on", t("packs.tintAlways")]];
 
 // the Android app defaults to notifying: it asks for permission on first start. The desktop app needs no permission.
-export const loadPrefs = (): Prefs => migrate({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, notifyPreview: "all", previews: true, shareLastSeen: true, searchIndex: true, dev: false, legacyCalls: false, enterSends: true, askSave: false, camQuality: "720", screenQuality: "1080hi", audioQuality: "high", lowData: "off", cacheMB: CACHE_MB_DEFAULT, recordMode: "voice", noteQuality: "640", ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
+export const loadPrefs = (): Prefs => migrate({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, notifyPreview: "all", previews: true, shareLastSeen: true, signedOnly: true, searchIndex: true, dev: false, legacyCalls: false, enterSends: true, askSave: false, camQuality: "720", screenQuality: "1080hi", audioQuality: "high", lowData: "off", cacheMB: CACHE_MB_DEFAULT, recordMode: "voice", noteQuality: "640", ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
 const migrate = (p: Prefs): Prefs => ({ ...p, autoDl: mergeAutoDl(p.autoDl), // nested: kinds added later get their defaults
   accent: p.accent === "#3390ec" ? ACCENTS[0] : p.accent }); // the old default blue
 
@@ -190,6 +190,13 @@ export function Settings({ start = "main", security, onClose, onSecurityChange }
       <Row icon="user" label={t("set.blocked")} onClick={() => setView("blocked")} />
       <h3>{t("set.encryption")}</h3>
       <Encryption onChange={onSecurityChange} />
+      <label className="switch-row"><span>{t("set.signedOnly")}<small>{t("set.signedOnlyHint")}</small></span>
+        <input type="checkbox" role="switch" checked={prefs.signedOnly} onChange={async (e) => {
+          const on = e.target.checked;
+          if (!on && !await confirmDialog(t("set.signedOnlyOffQ"), { danger: true, ok: t("common.off") })) return;
+          set({ signedOnly: on });
+          applyIsolation(on);
+        }} /></label>
       <Row icon="file" label={t("set.keys")} hint={t("set.keysHint")} onClick={() => setView("keys")} />
       <Row icon="screen" label={t("set.sessions")} hint={t("set.sessionsHint")} onClick={() => setView("devices")} />
     </>);

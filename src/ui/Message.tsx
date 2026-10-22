@@ -4,7 +4,8 @@ import { createPortal } from "react-dom";
 import DOMPurify from "dompurify";
 import { handleIncomingLink } from "../openTarget.ts";
 import { matrixToLink, parseMatrixLink, viaServers } from "../uri.ts";
-import { Direction, EventStatus, EventType, M_POLL_START, RelationType, RoomEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
+import { Direction, EventStatus, EventType, M_POLL_START, MatrixEventEvent, RelationType, RoomEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
+import { DecryptionFailureCode, EventShieldColour, EventShieldReason, type EventEncryptionInfo } from "matrix-js-sdk/lib/crypto-api/index.js";
 import { addToMyPack, avatarUrl, inMyPack, BLURHASH, client, isCached, isSavedGif, loadEvent, mediaUrl, pinnedIds, prefetch, quickReaction, seenBy, toggleGif, togglePin } from "../matrix.ts";
 import { abortSave, geoClick, isMetered, isNative, openSave, openSaved, rememberSave, writeSave, type SaveTarget } from "../native.ts";
 import { chainOf, usePromise } from "../hooks.ts";
@@ -23,6 +24,7 @@ import { thumbFor } from "./Media.tsx";
 import { alertDialog, confirmDialog, promptDialog } from "./dialog.tsx";
 import { loadPrefs } from "./Settings.tsx";
 import { emojiImg, emojiSplit, watch } from "../jsx/jsx-runtime.ts";
+import { useTrustVersion } from "./Verify.tsx";
 
 export type Actions = {
   reply: (ev: MatrixEvent) => void;
@@ -285,6 +287,7 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
           <span className="msg-meta" dir={rtl ? "rtl" : "ltr"}>
             {pinned && <Icon name="pin" size={12} />}
             {ev.replacingEvent() && <span>{t("msg.edited")}</span>}
+            {ev.isEncrypted() && <Shield ev={ev} onVerify={actions.profile} />}
             <span>{clock(ev.getTs())}</span>
             {mine && <Ticks ev={ev} room={room} />}
           </span>
@@ -369,7 +372,7 @@ function Body({ ev, room, onView, onUser, album }: { ev: MatrixEvent; room: Room
       : c.msgtype === "m.audio" ? (isVoice(c) ? "voice" : "files") : null;
     if (kind && autoDl(room, kind, c)) prefetch(c);
   }, [ev, room]);
-  if (ev.isDecryptionFailure()) return <p className="msg-text muted"><Icon name="lock" size={14} /> {t("msg.undecryptable")}</p>;
+  if (ev.isDecryptionFailure()) return <p className="msg-text muted"><Icon name="lock" size={14} /> {t(FAILURE_TEXT[ev.decryptionFailureReason!] ?? "msg.undecryptable")}</p>;
   if (ev.getType() === EventType.RoomMessageEncrypted) return <p className="msg-text muted">{t("preview.decrypting")}</p>;
   const c = ev.getContent();
   if (M_POLL_START.matches(ev.getType())) return <PollBody ev={ev} room={room} />;
@@ -397,6 +400,44 @@ function Body({ ev, room, onView, onUser, album }: { ev: MatrixEvent; room: Room
   }
   const text = emote + stripReplyFallback(String(c.body ?? ""));
   return <p dir={textDir(text)} className={"msg-text" + (isEmojiOnly(text) ? " jumbo" : "")}>{linkify(text)}</p>;
+}
+
+/** Messages refused for who sent them (Settings › Privacy › only verified devices), not for a missing key. */
+const FAILURE_TEXT: Partial<Record<DecryptionFailureCode, "msg.unsignedDevice" | "msg.identityChanged">> = {
+  [DecryptionFailureCode.UNSIGNED_SENDER_DEVICE]: "msg.unsignedDevice",
+  [DecryptionFailureCode.UNKNOWN_SENDER_DEVICE]: "msg.unsignedDevice",
+  [DecryptionFailureCode.SENDER_IDENTITY_PREVIOUSLY_VERIFIED]: "msg.identityChanged",
+};
+
+const SHIELD_TEXT = {
+  [EventShieldReason.UNVERIFIED_IDENTITY]: "shield.unverified",
+  [EventShieldReason.UNSIGNED_DEVICE]: "shield.unsigned",
+  [EventShieldReason.UNKNOWN_DEVICE]: "shield.unknownDevice",
+  [EventShieldReason.AUTHENTICITY_NOT_GUARANTEED]: "shield.authenticity",
+  [EventShieldReason.VERIFICATION_VIOLATION]: "shield.violation",
+  [EventShieldReason.MISMATCHED_SENDER]: "shield.mismatch",
+} as const;
+
+/** A warning on an encrypted message whose sender or device we can't vouch for; nothing at all when everything checks out.
+ *  Tapping says why, and offers to verify the sender when that would fix it. */
+function Shield({ ev, onVerify }: { ev: MatrixEvent; onVerify: (userId: string) => void }) {
+  const [info, setInfo] = useState<EventEncryptionInfo | null>(null);
+  const ver = useTrustVersion();
+  useEffect(() => {
+    const check = () => { client.getCrypto()?.getEncryptionInfoForEvent(ev).then(setInfo, () => {}); };
+    check();
+    ev.on(MatrixEventEvent.Decrypted, check);
+    return () => { ev.off(MatrixEventEvent.Decrypted, check); };
+  }, [ev, ver]);
+  if (!info || info.shieldColour === EventShieldColour.NONE) return null;
+  const why = t((info.shieldReason !== null && SHIELD_TEXT[info.shieldReason as keyof typeof SHIELD_TEXT]) || "shield.other");
+  const sender = ev.getSender()!, red = info.shieldColour === EventShieldColour.RED;
+  const open = (e: MouseEvent) => {
+    e.stopPropagation();
+    if (!red || sender === me()) return void alertDialog(why);
+    void confirmDialog(why, { ok: t("trust.verify") }).then((y) => { if (y) onVerify(sender); });
+  };
+  return <button className={"shield" + (red ? "" : " grey")} title={why} aria-label={why} onClick={open}><Icon name="shield" size={13} /></button>;
 }
 
 /** A formatted_body made safe to show, its reply fallback dropped; pills resolve against `room`. */
