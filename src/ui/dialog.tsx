@@ -1,15 +1,15 @@
 import { t } from "../i18n.ts";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { pushBack } from "../back.ts";
 import { reducedMotion } from "./useDismiss.ts";
 import type { Room } from "matrix-js-sdk";
 
-type Opts = { ok?: string; danger?: boolean };
+type Opts = { ok?: string; danger?: boolean; body?: ReactNode }; // body: shown instead of the text, which still names the dialog
 /** filter: applied as the user types, so disallowed characters never appear; hint: a line under the field. */
 type Input = { placeholder?: string; value?: string; filter?: (v: string) => string; hint?: string };
 
-function Dialog({ text, ok, danger, cancel, input, done }: Opts & { text: string; cancel: boolean; input?: Input; done: (v: boolean, value: string) => void }) {
+function Dialog({ text, ok, danger, body, cancel, input, done }: Opts & { text: string; cancel: boolean; input?: Input; done: (v: boolean, value: string) => void }) {
   const [closing, setClosing] = useState(false);
   const [value, setValue] = useState(input?.value ?? "");
   const left = useRef(false);
@@ -25,7 +25,7 @@ function Dialog({ text, ok, danger, cancel, input, done }: Opts & { text: string
     <div className={"modal-backdrop" + (closing ? " closing" : "")} onClick={() => finish(false)}>
       <div className="modal" role="dialog" aria-modal="true" aria-label={text} onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); finish(false); } }}>
-        <p dir="auto">{text}</p>
+        {body ?? <p dir="auto">{text}</p>}
         {input && <input dir="auto" autoFocus value={value} placeholder={input.placeholder} aria-label={text}
           // not mid-composition (IME keyboards): the composed text comes through again once it's done
           onChange={(e) => setValue(input.filter && !(e.nativeEvent as InputEvent).isComposing ? input.filter(e.target.value) : e.target.value)}
@@ -54,7 +54,7 @@ export const confirmDialog = (text: string, o?: Opts) => show(text, true, o).the
 /** In-app replacement for window.prompt: the trimmed text, "" if left empty, null if cancelled. */
 export const promptDialog = (text: string, o?: Opts & Input) => show(text, true, o, o ?? {}).then((v) => v?.trim() ?? null);
 /** In-app replacement for window.alert. */
-export const alertDialog = (text: string) => { void show(text, false); };
+export const alertDialog = (text: string, o?: Opts) => { void show(text, false, o); };
 
 /** Photos the editor takes: not GIFs (they'd stop moving) or SVGs. */
 export const editable = (f: File) => /^image\/(jpeg|png|webp|bmp|avif|heic|heif)$/.test(f.type);

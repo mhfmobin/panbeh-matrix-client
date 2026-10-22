@@ -194,8 +194,8 @@ export function Room({ room, onBack }: { room: SdkRoom; onBack: () => void }) {
                 {myShare && <button onClick={() => stopSharing(client, room.roomId).catch((e) => alertDialog(errText(e)))}>{t("loc.stop")}</button>}
               </div>
             )}
-            <IdentityBanner room={room} onVerify={actions.profile} />
             <PinnedBar room={room} onJump={jump} />
+            <IdentityBanner room={room} onVerify={actions.profile} />
             <Timeline room={room} actions={actions} jumpRef={jumper} />
             <Upgraded room={room}><Composer room={room} threadId={null} mode={mode} setMode={setMode} files={files} setFiles={setFiles} /></Upgraded>
           </DropZone>
