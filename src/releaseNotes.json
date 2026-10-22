@@ -1,4 +1,16 @@
 {
+  "0.11.1": {
+    "fa": [
+      "وقتی هویت یکی از اعضای چت عوض شود، اگر مطمئنید، می‌توانید هویت جدیدش را بپذیرید تا گفتگو ادامه پیدا کند؛ پیام‌هایی که پنهان مانده بودند هم بلافاصله نمایش داده می‌شوند",
+      "اعلان تغییر هویت حالا زیر پیام‌های سنجاق‌شده نمایش داده می‌شود",
+      "اگر چند نسخه را رد کرده باشید، بعد از به‌روزرسانی تغییرات همهٔ نسخه‌هایی که ندیده‌اید نمایش داده می‌شود"
+    ],
+    "en": [
+      "When a member's identity changes and you're sure it was them (a new phone, say), you can accept their new identity to keep chatting; any messages that were hidden show up right away",
+      "The identity-change banner now sits below pinned messages",
+      "If you skipped a few versions, the update notes now cover every version since the one you last opened"
+    ]
+  },
   "0.11.0": {
     "fa": [
       "امنیت رمزگذاری: به‌طور پیش‌فرض کلیدهای پیام فقط به دستگاه‌های تأییدشده فرستاده می‌شود و پیام دستگاه‌های تأییدنشده نمایش داده نمی‌شود (تنظیمات › حریم خصوصی و امنیت › فقط دستگاه‌های تأییدشده)",
