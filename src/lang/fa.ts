@@ -893,6 +893,8 @@ export default {
   "set.accent": "رنگ اصلی",
   "set.previews": "پیش‌نمایش پیوندها",
   "set.previewsHint": "سرور شما پیوندها را برای ساختن پیش‌نمایش باز می‌کند",
+  "set.previewsEncrypted": "پیش‌نمایش در گفت‌وگوهای رمزگذاری‌شده",
+  "set.previewsEncryptedHint": "پیوند پیام‌های رمزگذاری‌شده برای سرور فرستاده می‌شود",
   "set.enterSends": "ارسال با Enter",
   "set.enterSendsHint": "خاموش: Enter خط جدید می‌زند و Ctrl+Enter ارسال می‌کند",
   "set.quickReact": "واکنش سریع",

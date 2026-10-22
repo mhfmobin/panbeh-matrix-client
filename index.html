@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
+    <!-- F-06. Inline scripts only for Capacitor's bridge (injected into this page on Android) and Vite's dev server:
+         nginx.conf and desktop/main.cjs send this policy as a header without them, plus frame-ancestors (csp.test.ts).
+         connect-src stays open: the homeserver and the call servers can be anyone's. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https://cdn.jsdelivr.net https://tile.openstreetmap.org; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' blob: data: https: wss: http: ws:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'" />
     <link rel="icon" type="image/svg+xml" href="/src/logo.svg" />
     <title>پنبه</title>
   </head>

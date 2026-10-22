@@ -928,6 +928,8 @@ export default {
   "set.accent": "Accent color",
   "set.previews": "Link previews",
   "set.previewsHint": "Your server opens links to build the preview",
+  "set.previewsEncrypted": "Previews in encrypted chats",
+  "set.previewsEncryptedHint": "Links from encrypted messages are sent to your server",
   "set.enterSends": "Send with Enter",
   "set.enterSendsHint": "Off: Enter adds a new line and Ctrl+Enter sends",
   "set.quickReact": "Quick reaction",

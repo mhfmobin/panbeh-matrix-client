@@ -14,6 +14,7 @@ import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.content.pm.ProviderInfo;
 import android.database.Cursor;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
@@ -87,6 +88,16 @@ public class PanbehPlugin extends Plugin {
         return i != null && (Intent.ACTION_SEND.equals(i.getAction()) || Intent.ACTION_SEND_MULTIPLE.equals(i.getAction()));
     }
 
+    /** A URI another app handed us (share, clipboard) that's safe to read: content:// from someone else's provider only.
+     *  file:// paths and our own providers are read with our permissions, so another app could pick Panbeh's private
+     *  files (the session token, the crypto store) as the attachment (F-04). */
+    private boolean foreignContent(Uri u) {
+        String auth = u.getAuthority();
+        if (!ContentResolver.SCHEME_CONTENT.equals(u.getScheme()) || auth == null) return false;
+        ProviderInfo p = getContext().getPackageManager().resolveContentProvider(auth, 0);
+        return p == null || !getContext().getPackageName().equals(p.packageName); // null: another app's, hidden by package visibility
+    }
+
     /** "Share with Panbeh": text and content:// files for the page, which picks a chat and reads the files via convertFileSrc. */
     private boolean dispatchShare(Intent intent) {
         if (!isShare(intent)) return false;
@@ -101,6 +112,7 @@ public class PanbehPlugin extends Plugin {
         ContentResolver cr = getContext().getContentResolver();
         JSArray files = new JSArray();
         for (Uri u : uris) {
+            if (u == null || !foreignContent(u)) continue;
             String name = u.getLastPathSegment();
             try (Cursor c = cr.query(u, new String[] { OpenableColumns.DISPLAY_NAME }, null, null, null)) {
                 if (c != null && c.moveToFirst() && c.getString(0) != null) name = c.getString(0);
@@ -389,7 +401,7 @@ public class PanbehPlugin extends Plugin {
                 ClipData.Item it = clip.getItemAt(k);
                 Uri u = it.getUri();
                 if (u == null && it.getIntent() != null) u = it.getIntent().getParcelableExtra(Intent.EXTRA_STREAM); // "Copy" that carries a stream
-                if (u == null) continue;
+                if (u == null || !foreignContent(u)) continue;
                 String type = cr.getType(u);
                 if (type == null || !type.startsWith("image/")) continue;
                 String name = u.getLastPathSegment();

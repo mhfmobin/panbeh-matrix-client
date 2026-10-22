@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { IPreviewUrlResponse, MatrixEvent } from "matrix-js-sdk";
-import { client, mediaUrl } from "../matrix.ts";
+import { client, isEncrypted, mediaUrl } from "../matrix.ts";
 import { usePromise } from "../hooks.ts";
 import { stripReplyFallback } from "./common.tsx";
 import { LINK_SRC, linkHref } from "../logic.ts";
@@ -22,7 +22,11 @@ export function LinkPreview({ ev }: { ev: MatrixEvent }) {
   const c = ev.getContent();
   const url = TEXT.includes(c.msgtype ?? "") && !ev.isRedacted() ? firstUrl(c) : undefined;
   const p = useMemo(() => {
-    if (!url || !loadPrefs().previews) return null;
+    const prefs = loadPrefs();
+    // an encrypted chat's links would reach the homeserver in the clear: only when asked for (F-05). The room, not the
+    // event: our own message is still plain while it sends
+    const room = client.getRoom(ev.getRoomId());
+    if (!url || !prefs.previews || ((ev.isEncrypted() || (room && isEncrypted(room))) && !prefs.previewsEncrypted)) return null;
     let q = cache.get(url);
     if (!q) cache.set(url, (q = client.getUrlPreview(url, ev.getTs()).catch(() => null))); // no previews on this server: stays null
     return q;
