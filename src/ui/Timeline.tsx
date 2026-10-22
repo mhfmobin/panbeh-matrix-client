@@ -166,7 +166,10 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
     el.addEventListener("scroll", onScroll, { passive: true });
     const unpin = () => { stuck.current = false; };
     el.addEventListener("wheel", (e) => { if (e.deltaY < 0) unpin(); }, { passive: true });
-    el.addEventListener("touchstart", unpin, { passive: true });
+    // a finger dragging the list down (towards history), not any touch: a long-press to react mustn't unpin
+    let touchY = 0;
+    el.addEventListener("touchstart", (e) => { touchY = e.touches[0].clientY; }, { passive: true });
+    el.addEventListener("touchmove", (e) => { if (e.touches[0].clientY > touchY + 10) unpin(); }, { passive: true });
     el.addEventListener("mousedown", (e) => { // scrollbar drag; the scrollbar sits on the left in RTL
       const x = e.clientX - el.getBoundingClientRect().left - el.clientLeft;
       if (x < 0 || x > el.clientWidth) unpin();

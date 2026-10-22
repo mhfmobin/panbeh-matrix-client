@@ -274,6 +274,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 .timeline-wrap { position: relative; flex: 1; min-height: 0; }
 .timeline {
   height: 100%; overflow-x: hidden; /* a swiped row (translateX) mustn't scroll the RTL list sideways */
+  scroll-padding-bottom: var(--composer-h, 0px); /* scrollIntoView stops above the composer, not under it */
   -webkit-mask-image: linear-gradient(to top, transparent, #000 var(--composer-h, 0px)); mask-image: linear-gradient(to top, transparent, #000 var(--composer-h, 0px));
 }
 .row { max-width: 760px; margin: 0 auto; display: flow-root; } /* flow-root: child margins count toward the measured height */
@@ -409,19 +410,12 @@ div.msg-text blockquote { margin: 4px 0; padding-inline-start: 10px; border-inli
   background: var(--bubble-in); box-shadow: var(--shadow); color: var(--accent); font-size: 13px; font-weight: 600;
 }
 
-.msg-actions {
+.msg-actions { /* a failed message's resend/delete; everything else is in the right-click / long-press menu */
   position: relative; display: flex; gap: 2px; align-self: center; padding: 2px; border-radius: 18px;
-  background: var(--panel); box-shadow: var(--shadow); opacity: 0; pointer-events: none; transition: opacity 0.12s;
+  background: var(--panel); box-shadow: var(--shadow);
 }
-.msg:hover .msg-actions, .msg-actions:focus-within { opacity: 1; pointer-events: auto; }
 .msg-actions > button { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; color: var(--muted); }
 .msg-actions > button:hover { background: var(--hover); color: var(--text); }
-/* the bar takes room beside the bubble even while invisible: in a narrow chat it would squeeze photos and round videos.
-   There the right-click menu has the same actions. */
-.timeline { container-type: inline-size; }
-@media (hover: none) { .msg-actions { display: none; } }
-@container (max-width: 660px) { .msg-actions { display: none; } }
-.msg.failed .msg-actions { display: flex; opacity: 1; pointer-events: auto; }
 .tick.failed { color: #e53935; font-weight: 700; }
 .thread-link .badge { margin-inline-start: 4px; }
 .quick-react {
@@ -429,7 +423,6 @@ div.msg-text blockquote { margin: 4px 0; padding-inline-start: 10px; border-inli
   border-radius: 22px; background: var(--panel); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
   animation: pop 0.15s ease-out;
 }
-.msg.mine .quick-react { left: auto; right: 0; }
 .quick-react button { font-size: 22px; width: 36px; height: 36px; border-radius: 50%; transition: transform 0.12s; }
 @media (hover: hover) { .quick-react button:hover { transform: scale(1.25); } } /* touch: :hover sticks where the finger was */
 @keyframes pop { from { opacity: 0; transform: scale(0.9) translateY(4px); } }
