@@ -4,10 +4,10 @@ import { createPortal } from "react-dom";
 import DOMPurify from "dompurify";
 import { handleIncomingLink } from "../openTarget.ts";
 import { matrixToLink, parseMatrixLink, viaServers } from "../uri.ts";
-import { EventStatus, EventType, M_POLL_START, RelationType, type MatrixEvent, type Room } from "matrix-js-sdk";
+import { Direction, EventStatus, EventType, M_POLL_START, RelationType, RoomEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { addToMyPack, avatarUrl, inMyPack, BLURHASH, client, isCached, isSavedGif, loadEvent, mediaUrl, pinnedIds, prefetch, quickReaction, seenBy, toggleGif, togglePin } from "../matrix.ts";
 import { abortSave, geoClick, isMetered, isNative, openSave, openSaved, rememberSave, writeSave, type SaveTarget } from "../native.ts";
-import { usePromise } from "../hooks.ts";
+import { chainOf, usePromise } from "../hooks.ts";
 import { threadUnread } from "../chats.ts";
 import { HASHTAG_SRC, LINK_SRC, blurhashDecode, clock, fmtDuration, isEmojiOnly, isGif, linkHref, neshanUrl, num, parseGeoUri, shouldAutoDl, stamp, textDir, type DlKind, type Usage } from "../logic.ts";
 import { Icon, iconSvg, type IconName } from "../icons.tsx";
@@ -831,7 +831,41 @@ export function Ticks({ ev, room }: { ev: MatrixEvent; room: Room }) {
   return <span className={"tick" + (seen.length ? " read" : "") + (changed ? " changed" : "")} title={title}><Icon name={seen.length ? "checks" : "check"} size={15} /></span>;
 }
 
+// A message's reactions come after it, so a window opened around an old message (a jump, the unread divider) lacks the
+// ones sent past its end until paging forwards reaches them, and its counts came up short. Those messages ask the server.
+const fetchedReactions = new Map<string, MatrixEvent>(); // reaction id → our copy
+const askedReactions = new Set<string>(); // message ids
+async function fetchReactions(room: Room, ev: MatrixEvent) {
+  const id = ev.getId()!, set = room.getUnfilteredTimelineSet(), tl = set.getTimelineForEvent(id);
+  if (!id.startsWith("$") || !tl || chainOf(tl).at(-1) === room.getLiveTimeline() || askedReactions.has(id)) return;
+  if (!askedReactions.size) { // our copies aren't in a timeline, so the SDK can't find them to redact: un-reacting left the chip
+    client.on(RoomEvent.Timeline, (r, rm) => {
+      const x = r.isRedaction() && rm ? fetchedReactions.get(r.getAssociatedId()!) : undefined;
+      if (x && !x.isRedacted()) x.makeRedacted(r, rm!);
+    });
+  }
+  askedReactions.add(id);
+  const map = client.getEventMapper();
+  try {
+    let from: string | undefined;
+    do { // encrypted reactions aren't m.reaction to the server: ask for every annotation
+      const r = await client.fetchRelations(room.roomId, id, RelationType.Annotation, null, { dir: Direction.Backward, limit: 100, from });
+      for (const raw of r.chunk) {
+        if (fetchedReactions.has(raw.event_id)) continue;
+        const e = map(raw);
+        fetchedReactions.set(raw.event_id, e);
+        room.relations.aggregateChildEvent(e, set); // the SDK skips ones it has, and waits for decryption
+      }
+      from = r.next_batch ?? undefined;
+    } while (from);
+  } catch (e) {
+    askedReactions.delete(id); // try again when it's next shown
+    console.warn("reactions fetch failed", e);
+  }
+}
+
 function Reactions({ ev, room }: { ev: MatrixEvent; room: Room }) {
+  useEffect(() => { void fetchReactions(room, ev); }, [room, ev]);
   const rel = room.relations.getChildEventsForEvent(ev.getId()!, RelationType.Annotation, EventType.Reaction);
   const list = rel?.getSortedAnnotationsByKey()?.filter(([, set]) => set.size > 0);
   // chips present when the message mounted don't animate (scrolling a row back into view); ones added later pop in
