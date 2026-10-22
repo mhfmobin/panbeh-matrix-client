@@ -20,6 +20,9 @@ import androidx.core.app.NotificationManagerCompat;
 import androidx.core.app.Person;
 import androidx.core.graphics.drawable.IconCompat;
 import androidx.core.graphics.drawable.RoundedBitmapDrawable;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.util.Locale;
 
 /** Message notifications, shared by the app's WebView (plugin) and the headless one (JS interface). */
@@ -29,6 +32,10 @@ final class Notifier {
     static final String EXTRA_ROOM = "roomId";
     /** Incoming-call intents: "open" | "answer" | "decline", plus the ring's event id and whether it's a video call. */
     static final String EXTRA_CALL = "callAction", EXTRA_EVENT = "eventId", EXTRA_VIDEO = "video";
+    /** Our secret on every call intent we make: MainActivity is exported, so any app (or a browser intent: link) can send it
+     *  call extras; only ones carrying this are acted on. Kept in prefs: a ringing notification outlives the process. */
+    static final String EXTRA_TOKEN = "callToken";
+    private static String token;
     /** Notification id of an incoming call (tag = room id); messages use 1. */
     static final int CALL_ID = 2;
     private static final String GROUP = "ir.panbeh.app.MESSAGES";
@@ -105,17 +112,40 @@ final class Notifier {
         if (Build.VERSION.SDK_INT >= 26) CallConnectionService.ringEnded(roomId);
     }
 
+    static synchronized String callToken(Context ctx) {
+        if (token != null) return token;
+        android.content.SharedPreferences p = ctx.getSharedPreferences("calls", Context.MODE_PRIVATE);
+        token = p.getString("token", null);
+        if (token == null) {
+            byte[] b = new byte[16];
+            new SecureRandom().nextBytes(b);
+            StringBuilder sb = new StringBuilder();
+            for (byte x : b) sb.append(String.format("%02x", x));
+            token = sb.toString();
+            p.edit().putString("token", token).commit(); // before any intent carries it
+        }
+        return token;
+    }
+
+    /** A call intent we made ourselves (see EXTRA_TOKEN). */
+    static boolean isTrustedCall(Context ctx, Intent i) {
+        String t = i == null || i.getStringExtra(EXTRA_CALL) == null ? null : i.getStringExtra(EXTRA_TOKEN);
+        return t != null && MessageDigest.isEqual(t.getBytes(StandardCharsets.UTF_8), callToken(ctx).getBytes(StandardCharsets.UTF_8));
+    }
+
     /** "decline" goes to CallReceiver (no UI); the others open the app. */
     private static PendingIntent callIntent(Context ctx, String action, String roomId, String eventId, boolean video) {
         int code = (roomId + action).hashCode();
         if (action.equals("decline")) {
             Intent i = new Intent(ctx, CallReceiver.class)
-                .putExtra(EXTRA_CALL, action).putExtra(EXTRA_ROOM, roomId).putExtra(EXTRA_EVENT, eventId).putExtra(EXTRA_VIDEO, video);
+                .putExtra(EXTRA_CALL, action).putExtra(EXTRA_ROOM, roomId).putExtra(EXTRA_EVENT, eventId).putExtra(EXTRA_VIDEO, video)
+                .putExtra(EXTRA_TOKEN, callToken(ctx));
             return PendingIntent.getBroadcast(ctx, code, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         }
         Intent i = new Intent(ctx, MainActivity.class)
             .setAction(Intent.ACTION_VIEW)
             .putExtra(EXTRA_CALL, action).putExtra(EXTRA_ROOM, roomId).putExtra(EXTRA_EVENT, eventId).putExtra(EXTRA_VIDEO, video)
+            .putExtra(EXTRA_TOKEN, callToken(ctx))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         return PendingIntent.getActivity(ctx, code, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }

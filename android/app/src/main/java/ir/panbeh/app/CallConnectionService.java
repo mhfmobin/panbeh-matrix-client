@@ -68,7 +68,8 @@ public class CallConnectionService extends ConnectionService {
                 try {
                     ctx.startActivity(new Intent(ctx, MainActivity.class).setAction(Intent.ACTION_VIEW)
                         .putExtra(Notifier.EXTRA_CALL, "answer").putExtra(Notifier.EXTRA_ROOM, roomId).putExtra(Notifier.EXTRA_EVENT, eventId)
-                        .putExtra(Notifier.EXTRA_VIDEO, false).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP));
+                        .putExtra(Notifier.EXTRA_VIDEO, false).putExtra(Notifier.EXTRA_TOKEN, Notifier.callToken(ctx))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP));
                 } catch (RuntimeException e) {
                     // not allowed from the background
                 }
