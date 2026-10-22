@@ -731,6 +731,11 @@ export async function onNativeCall(a: CallAction) {
   if (!ev) return;
   const legacy = ev.getType() === EventType.CallInvite;
   if (legacy && !legacyCallsOn()) return nativeCancelCall(room.roomId); // a ring shown before legacy calls were turned off
+  // only a real ring for us, never just any event: a minute's grace for a tap at the end of the ring, then a cold start
+  const me = client.getSafeUserId(), then = Date.now() - 60_000;
+  const real = legacy ? isLegacyRing(ev.getContent<MCallInviteNegotiate>(), ev.getTs(), me, then)
+    : isRing(ev.getContent<IRTCNotificationContent>(), getCallNotificationExpiry(ev.getContent<IRTCNotificationContent>(), ev.getTs()), me, then);
+  if (ev.getSender() === me || !real) return;
   const mc = legacy ? await legacyCallFor(room, ev) : undefined;
   if (a.action === "decline") return declineEvent(room, ev, mc);
   if (a.action === "answer") return legacy ? mc && answerLegacy(room, mc, a.video) : call(room, a.video, false);

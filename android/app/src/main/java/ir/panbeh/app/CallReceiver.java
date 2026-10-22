@@ -10,7 +10,7 @@ public class CallReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context ctx, Intent i) {
         String roomId = i.getStringExtra(Notifier.EXTRA_ROOM);
-        if (roomId == null) return;
+        if (roomId == null || !Notifier.isTrustedCall(ctx, i)) return;
         Notifier.cancelCall(ctx, roomId);
         deliver(PanbehPlugin.callAction(i));
     }

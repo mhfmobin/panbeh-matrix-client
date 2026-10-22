@@ -156,7 +156,7 @@ public class PanbehPlugin extends Plugin {
 
     /** Answer / open from the call notification: stop the native ring, the page takes over. */
     private boolean dispatchCall(Intent intent) {
-        if (intent == null || intent.getStringExtra(Notifier.EXTRA_CALL) == null) return false;
+        if (!Notifier.isTrustedCall(getContext(), intent)) return false; // not from our notification: ignored (F-01)
         Notifier.cancelCall(getContext(), intent.getStringExtra(Notifier.EXTRA_ROOM));
         JSObject a = callAction(intent);
         if (!deliverCall(a)) launchCall = a;

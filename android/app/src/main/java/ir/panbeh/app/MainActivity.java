@@ -120,8 +120,8 @@ public class MainActivity extends BridgeActivity {
         super.onNewIntent(intent);
     }
 
-    private static boolean isCall(Intent i) {
-        return i != null && i.getStringExtra(Notifier.EXTRA_CALL) != null;
+    private boolean isCall(Intent i) {
+        return Notifier.isTrustedCall(this, i);
     }
 
     /** A ringing or answered call shows over the lock screen and wakes it; cleared when the call ends. */
