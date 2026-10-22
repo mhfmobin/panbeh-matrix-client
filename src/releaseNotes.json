@@ -1,4 +1,26 @@
 {
+  "0.11.0": {
+    "fa": [
+      "امنیت رمزگذاری: به‌طور پیش‌فرض کلیدهای پیام فقط به دستگاه‌های تأییدشده فرستاده می‌شود و پیام دستگاه‌های تأییدنشده نمایش داده نمی‌شود (تنظیمات › حریم خصوصی و امنیت › فقط دستگاه‌های تأییدشده)",
+      "اگر مشکلی در رمزگذاری یک پیام باشد، کنارش سپر نشان داده می‌شود؛ با لمس آن دلیلش را می‌بینید و می‌توانید فرستنده را تأیید کنید",
+      "وقتی هویت یکی از اعضای چت رمزگذاری‌شده عوض شود، بالای چت اطلاع داده می‌شود؛ اگر او را قبلاً تأیید کرده بودید، ارسال تا تأیید دوباره متوقف می‌شود",
+      "پیش‌نمایش لینک در چت‌های رمزگذاری‌شده به‌طور پیش‌فرض خاموش است تا لینک‌ها به سرور فرستاده نشوند (قابل روشن کردن در تنظیمات)",
+      "رفع چند مشکل امنیتی در نمایش پیام‌های قالب‌دار، تماس‌ها و اشتراک‌گذاری فایل",
+      "تعداد ری‌اکشن‌ها حتی وقتی مستقیم به یک پیام قدیمی پریده‌اید درست نمایش داده می‌شود",
+      "چتی که پیش‌نویس دارد با باز شدن یا تایپ کردن در فهرست جابه‌جا نمی‌شود، و ری‌اکشن تازهٔ شما زیر کادر نوشتن پنهان نمی‌ماند",
+      "اموجی‌های سفارشی هنگام بارگذاری سر جای خودشان در متن می‌مانند و اگر بارگذاری نشوند، کدشان نمایش داده می‌شود"
+    ],
+    "en": [
+      "Encryption security: by default, message keys go only to verified devices and messages from unverified devices are hidden (Settings › Privacy & security › Only verified devices)",
+      "A shield appears next to an encrypted message only when something is wrong; tap it to see why and verify the sender",
+      "Encrypted chats show a banner when a member's identity changes; if you had verified them, sending pauses until you verify them again",
+      "Link previews are off in encrypted chats by default so links aren't sent to your server (turn them on in Settings)",
+      "Fixed several security issues in formatted messages, calls and shared files",
+      "Reaction counts are right even when you jump straight to an older message",
+      "A chat with a draft no longer moves in the list when opened or while typing, and your new reaction no longer hides under the composer",
+      "Custom emoji stay in place in the text while loading, and show their :code: if they can't be loaded"
+    ]
+  },
   "0.10.0": {
     "fa": [
       "واکنش سریع: با دو ضربه روی پیام، اموجی دلخواهتان را بگذارید (در تنظیمات › گفتگوها و ظاهر قابل تغییر یا خاموش کردن است)",
