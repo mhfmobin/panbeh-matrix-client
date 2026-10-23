@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applyFolderOrder, moveFolder, byListOrder, endpointOf, inArchive, isUnread, parseStats, fmtStats, AUTO_DL_DEFAULT, mergeAutoDl, shouldAutoDl, blurhashEncode, blurhashDecode, scheduleDays, fmtSpan, scheduleLabel, deriveDraftKey, sealDraft, openDraft } from "./logic.ts";
-import { aliasLocalpart, buildRows, roomName, dayLabel, downsample, fmtDuration, inFolder, isUserId, formatMessage, parseGeoUri, spaceRooms, stamp, normalizeServer, normalize, matchRange, toEvict, hashPin, lockDelay, lastSeen, tallyPoll, fitSize, fitMenu, packImages, codeFrom, freeCode, cleanCode, padToRatio, isDarkMono, tintOf, toggleWrap, prefixLines, deleteBack, cachedSlice, hashtagsOf, soleHashtag, isEmojiOnly, unreadSince, type Msg } from "./logic.ts";
+import { aliasLocalpart, buildRows, roomName, dayLabel, downsample, fmtDuration, inFolder, isUserId, formatMessage, parseGeoUri, spaceRooms, stamp, normalizeServer, normalize, matchRange, toEvict, hashPin, lockDelay, lastSeen, tallyPoll, fitSize, fitMenu, packImages, codeFrom, freeCode, cleanCode, padToRatio, mediaBox, isDarkMono, tintOf, toggleWrap, prefixLines, deleteBack, cachedSlice, hashtagsOf, soleHashtag, isEmojiOnly, unreadSince, type Msg } from "./logic.ts";
 
 const T = new Date("2026-09-30T12:00:00").getTime();
 const m = (id: string, sender: string, min: number, kind: Msg["kind"] = "msg"): Msg => ({ id, sender, ts: T + min * 60_000, kind });
@@ -485,6 +485,16 @@ test("image packs: usage falls back image → pack → both; shortcodes from fil
   assert.deepEqual(padToRatio(200, 100), { w: 200, h: 100 });
   assert.equal(freeCode("cat", { cat: 1, cat_2: 1 }), "cat_3");
   assert.equal(freeCode("constructor", {}), "constructor");
+});
+
+test("mediaBox keeps odd shapes readable: clamped, then filled", () => {
+  assert.deepEqual(mediaBox(1200, 520), { w: 420, h: 182, fill: false });
+  assert.deepEqual(mediaBox(400, 1400), { w: 156, h: 546, fill: false });
+  assert.deepEqual(mediaBox(300, 2400), { w: 150, h: 546, fill: true }); // a strip widens to the minimum
+  assert.deepEqual(mediaBox(2400, 300), { w: 420, h: 100, fill: true }); // a sliver gets taller
+  assert.deepEqual(mediaBox(400, 1400, 220), { w: 220, h: 546, fill: true }); // a caption asks for more width
+  assert.deepEqual(mediaBox(300, 200), { w: 300, h: 200, fill: false }); // small: never upscaled
+  assert.deepEqual(mediaBox(undefined, undefined), { w: 420, h: 315, fill: false });
 });
 
 test("drafts: sealed per room, readable only with the same backup key and room", async () => {

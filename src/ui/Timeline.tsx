@@ -5,8 +5,8 @@ import { ClientEvent, EventStatus, EventTimeline, NotificationCountType, RoomEve
 import { cancelUpload, client, loadEvent, type Upload } from "../matrix.ts";
 import { chainOf, isMessage, useTick, useUploads } from "../hooks.ts";
 import { Icon } from "../icons.tsx";
-import { buildRows, dayLabel, isGif, num, type Msg, type Row } from "../logic.ts";
-import { Message, ProgressRing, type Actions } from "./Message.tsx";
+import { buildRows, dayLabel, isGif, mediaBox, num, type Msg, type Row } from "../logic.ts";
+import { FRAMED_MIN_W, Message, ProgressRing, boxStyle, type Actions } from "./Message.tsx";
 import { audioDuration, bdi, formatSize, isVoice, me, noticeText } from "./common.tsx";
 import { AudioPlayer } from "./Voice.tsx";
 import { captionOf } from "./Composer.tsx";
@@ -582,6 +582,8 @@ function PendingUpload({ u }: { u: Upload }) {
   const queued = !u.loaded && !u.error;
   const state = u.error ? t("upload.failed") : queued ? t("upload.queued") : `${formatSize(u.loaded)} / ${formatSize(u.total)}`;
   const voice = !!u.extra && isVoice(u.extra);
+  const [size, setSize] = useState<{ w: number; h: number }>(); // the preview's, so the bubble keeps the size it'll have once sent
+  const note = !!u.extra?.["app.panbeh.video_note"], b = mediaBox(size?.w, size?.h, u.framed ? FRAMED_MIN_W : undefined), fill = !note && b.fill;
   return (
     <div className="row"><div className={"msg mine first last" + (u.error ? " failed" : "")}><div className="msg-col">
       <div className={"bubble" + (u.previewUrl && !voice ? " media" : "")} dir="auto">
@@ -591,8 +593,10 @@ function PendingUpload({ u }: { u: Upload }) {
             waveform: (u.extra!["org.matrix.msc1767.audio"] as { waveform?: number[] } | undefined)?.waveform }}
             lead={u.error ? <span className="file-icon"><Icon name="mic" /></span> : <Ring u={u} />} />
         ) : u.previewUrl ? (
-          <div className={"media-box up-box" + (u.extra?.["app.panbeh.video_note"] ? " note" : "")}>
-            {u.file.type.startsWith("video/") ? <video src={u.previewUrl} preload="metadata" muted /> : <img src={u.previewUrl} alt="" />}
+          <div className={"media-box up-box" + (note ? " note" : "") + (fill ? " fill" : "")} style={note ? undefined : boxStyle(b)}>
+            {u.file.type.startsWith("video/")
+              ? <video src={u.previewUrl} preload="metadata" muted onLoadedMetadata={(e) => setSize({ w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight })} />
+              : <>{fill && <img className="media-blur" src={u.previewUrl} alt="" />}<img src={u.previewUrl} alt="" onLoad={(e) => setSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })} /></>}
             {!u.error && <Ring u={u} />}
             {u.error && <span className="up-state">{state}</span>}
           </div>

@@ -539,6 +539,7 @@ export async function sendFile(room: Room, file: File, threadId: string | null, 
 
 export type Upload = {
   id: number; roomId: string; threadId: string | null; file: File; previewUrl?: string; extra?: Record<string, unknown>;
+  framed?: boolean; // goes out with a caption or reply, so its bubble is sized as one
   loaded: number; total: number; error?: string; abort: AbortController; retry: () => void;
 };
 let uploads: Upload[] = [];
@@ -579,7 +580,7 @@ export function startUpload(room: Room, file: File, threadId: string | null, rep
     });
   };
   emit([...uploads, {
-    id, roomId: room.roomId, threadId, file, extra, previewUrl: preview ? URL.createObjectURL(file) : undefined,
+    id, roomId: room.roomId, threadId, file, extra, previewUrl: preview ? URL.createObjectURL(file) : undefined, framed: !!(caption || replyTo),
     loaded: 0, total: file.size, abort: new AbortController(), retry: run,
   }]);
   run();

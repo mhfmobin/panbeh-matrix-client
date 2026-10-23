@@ -380,6 +380,14 @@ export const PACK_CAP: Record<Usage, number> = { emoticon: 200, sticker: 120 };
 export function padToRatio(w: number, h: number, max = 2) {
   return w > h * max ? { w, h: Math.ceil(w / max) } : h > w * max ? { w: Math.ceil(h / max), h } : { w, h };
 }
+/** A single photo / video's box in the chat (Telegram's): scaled down into max × 1.3·max, kept at least minW × 100.
+ *  No size info: 4:3 until the picture tells. `fill`: clamping changed the shape, so the picture sits whole on a blurred copy. */
+export function mediaBox(w: number | undefined, h: number | undefined, minW = 150, max = 420) {
+  const iw = w || max, ih = h || max * 0.75, maxH = max * 1.3;
+  const s = Math.min(1, max / iw, maxH / ih);
+  const bw = Math.round(Math.min(max, Math.max(minW, iw * s))), bh = Math.round(Math.min(maxH, Math.max(100, ih * s)));
+  return { w: bw, h: bh, fill: Math.abs((bw * ih) / (bh * iw) - 1) > 0.03 };
+}
 /** `code`, or code_2, code_3… when the pack already has it. */
 export function freeCode(code: string, taken: Record<string, unknown>) {
   let c = code, n = 1;
