@@ -10,7 +10,7 @@ import { addToMyPack, avatarUrl, inMyPack, BLURHASH, client, isCached, isSavedGi
 import { abortSave, geoClick, isMetered, isNative, openSave, openSaved, rememberSave, writeSave, type SaveTarget } from "../native.ts";
 import { chainOf, usePromise } from "../hooks.ts";
 import { threadUnread } from "../chats.ts";
-import { HASHTAG_SRC, LINK_SRC, blurhashDecode, clock, fmtDuration, isEmojiOnly, isGif, linkHref, neshanUrl, num, parseGeoUri, shouldAutoDl, stamp, textDir, type DlKind, type Usage } from "../logic.ts";
+import { HASHTAG_SRC, LINK_SRC, blurhashDecode, clock, fmtDuration, isEmojiOnly, isGif, linkHref, mediaBox, neshanUrl, num, parseGeoUri, shouldAutoDl, stamp, textDir, type DlKind, type Usage } from "../logic.ts";
 import { Icon, iconSvg, type IconName } from "../icons.tsx";
 import { Avatar, colorFor, copyText, errText, formatSize, isGroupChat, me, senderMember, senderName, stripReplyFallback, toast, useChange, isVoice } from "./common.tsx";
 import { AudioPlayer, NoteRing, stopPlayer, trackFor } from "./Voice.tsx";
@@ -307,7 +307,7 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
             </button>
           )}
           {replyTo && <ReplyQuote room={room} id={replyTo} onJump={actions.jump} />}
-          <Body ev={ev} room={room} onView={actions.view} onUser={actions.profile} album={album} />
+          <Body ev={ev} room={room} onView={actions.view} onUser={actions.profile} album={album} framed={!!(replyTo || fwd || (!mine && group && first))} />
           <LinkPreview ev={ev} />
           <span className="msg-meta" dir={rtl ? "rtl" : "ltr"}>
             {pinned && <Icon name="pin" size={12} />}
@@ -370,7 +370,8 @@ const autoDl = (room: Room, kind: DlKind, c: Content) => {
   return shouldAutoDl(isMetered() ? p.mobile : p.wifi, kind, !isGroupChat(room), c.info?.size);
 };
 
-function Body({ ev, room, onView, onUser, album }: { ev: MatrixEvent; room: Room; onView: (ev: MatrixEvent) => void; onUser: (id: string) => void; album?: MatrixEvent[] }) {
+/** framed: a name / reply / forward header sits above the media. */
+function Body({ ev, room, onView, onUser, album, framed }: { ev: MatrixEvent; room: Room; onView: (ev: MatrixEvent) => void; onUser: (id: string) => void; album?: MatrixEvent[]; framed?: boolean }) {
   useEffect(() => { // auto-download: videos, files and voice go into the media cache, so opening them needs no network
     const c: Content = ev.getContent();
     const kind: DlKind | null = c.msgtype === "m.video" ? (isGif(c) ? null : "videos") : c.msgtype === "m.file" ? "files"
@@ -385,11 +386,12 @@ function Body({ ev, room, onView, onUser, album }: { ev: MatrixEvent; room: Room
   const caption = c.msgtype !== "m.audio" && captionOf(c) && (rich
     ? <div className="msg-text caption" dir={textDir(c.body)}><Html html={rich} room={room} onUser={onUser} /></div>
     : <p className="msg-text caption" dir={textDir(c.body)}>{linkify(c.body)}</p>);
+  const minW = framed || caption ? FRAMED_MIN_W : undefined;
   if (album) return <><AlbumGrid evs={album} room={room} onView={onView} />{caption}</>;
-  if (c.msgtype === "m.image" || ev.getType() === EventType.Sticker) return <><Image c={c} onView={() => onView(ev)} auto={ev.getType() === EventType.Sticker || autoDl(room, isGif(c) ? "gifs" : "photos", c)} />{caption}</>;
+  if (c.msgtype === "m.image" || ev.getType() === EventType.Sticker) return <><Image c={c} onView={() => onView(ev)} auto={ev.getType() === EventType.Sticker || autoDl(room, isGif(c) ? "gifs" : "photos", c)} minW={minW} />{caption}</>;
   if (c.msgtype === "m.video" && c["app.panbeh.video_note"]) return <VideoNote c={c} room={room} />;
-  if (c.msgtype === "m.video" && isGif(c)) return <><GifBox c={c} auto={autoDl(room, "gifs", c)} />{caption}</>;
-  if (c.msgtype === "m.video") return <><Video c={c} onView={() => onView(ev)} />{caption}</>;
+  if (c.msgtype === "m.video" && isGif(c)) return <><GifBox c={c} auto={autoDl(room, "gifs", c)} minW={minW} />{caption}</>;
+  if (c.msgtype === "m.video") return <><Video c={c} onView={() => onView(ev)} minW={minW} />{caption}</>;
   if (c.msgtype === "m.audio") return (
     <div onClick={(e) => e.stopPropagation()}>
       <AudioPlayer track={trackFor(ev)} />
@@ -606,11 +608,10 @@ function linkify(text: string) {
 
 type Content = Record<string, any>;
 
-function fit(info: Content | undefined, max = 320) {
-  const w = info?.w ?? max, h = info?.h ?? max * 0.75;
-  const s = Math.min(1, max / w, max / h);
-  return { width: Math.round(w * s), height: Math.round(h * s) };
-}
+/** A mediaBox as a width and a shape, so a bubble narrower than it shrinks it whole. */
+export const boxStyle = (b: { w: number; h: number }) => ({ width: b.w, aspectRatio: `${b.w} / ${b.h}` });
+/** Width a photo / video keeps when a caption or a name / reply / forward header has to fit above or under it. */
+export const FRAMED_MIN_W = 220;
 
 /** A download gated by auto-download: runs by itself when `auto` or already on the device, otherwise on start().
  *  A user-started one reports progress and can be cancelled; a failed one goes back to waiting. */
@@ -669,25 +670,30 @@ function Pending({ c, dl, label, noBg }: { c: Content; dl: ReturnType<typeof use
   );
 }
 
-/** tile: a cell of an album grid, sized by the grid. */
-function Image({ c, onView, auto, tile }: { c: Content; onView: () => void; auto: boolean; tile?: boolean }) {
-  const size = tile ? undefined : fit(c.info);
+/** tile: a cell of an album grid, sized by the grid. Sized from the sender's info, else from the picture once it loads. */
+function Image({ c, onView, auto, tile, minW }: { c: Content; onView: () => void; auto: boolean; tile?: boolean; minW?: number }) {
+  const [size, setSize] = useState<{ w: number; h: number } | undefined>(c.info?.w && c.info?.h ? c.info : undefined);
+  const b = mediaBox(size?.w, size?.h, minW), fill = !tile && b.fill;
+  const style = tile ? undefined : boxStyle(b);
   const own = c.info?.thumbnail_file; // the sender's thumbnail; else a server-side one (encrypted: the file itself)
   const dl = useMedia(own ? { file: own } : c, own ? undefined : { w: 640, h: 640 }, auto);
-  if (!dl.url) return <div className="media-box" style={size}><Pending c={c} dl={dl} /></div>;
+  if (!dl.url) return <div className="media-box" style={style}><Pending c={c} dl={dl} /></div>;
   return (
-    <button className="media-box" style={size} onClick={onView}>
-      <img src={dl.url} alt={c.body} />
+    <button className={"media-box" + (fill ? " fill" : "")} style={style} onClick={onView}>
+      {fill && <img className="media-blur" src={dl.url} alt="" />}
+      <img src={dl.url} alt={c.body} onLoad={size ? undefined : (e) => setSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })} />
     </button>
   );
 }
 
 /** Sized from the sender's info, then from the file itself: info may be missing (older Panbeh) or wrong. Plays by itself, looped and muted. */
-function GifBox({ c, auto }: { c: Content; auto: boolean }) {
+function GifBox({ c, auto, minW }: { c: Content; auto: boolean; minW?: number }) {
   const [size, setSize] = useState<{ w: number; h: number } | undefined>(c.info?.w && c.info?.h ? c.info : undefined);
   const dl = useMedia(c, undefined, auto);
+  const b = mediaBox(size?.w, size?.h, minW), blur = b.fill && dl.url && blurUrl(c.info?.[BLURHASH]);
   return (
-    <div className="media-box gif" style={fit(size)}>
+    <div className={"media-box gif" + (b.fill ? " fill" : "")} style={boxStyle(b)}>
+      {blur && <img className="media-blur" src={blur} alt="" />}
       {dl.url ? <video src={dl.url} autoPlay loop muted playsInline disablePictureInPicture onLoadedMetadata={(e) => setSize({ w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight })} />
         : <Pending c={c} dl={dl} label="GIF" />}
     </div>
@@ -695,11 +701,13 @@ function GifBox({ c, auto }: { c: Content; auto: boolean }) {
 }
 
 /** The poster frame with ▶ and the length; the video itself downloads once opened, or ahead of that by auto-download. */
-function Video({ c, onView, tile }: { c: Content; onView: () => void; tile?: boolean }) {
+function Video({ c, onView, tile, minW }: { c: Content; onView: () => void; tile?: boolean; minW?: number }) {
   const thumb = usePromise(thumbFor(c));
   const poster = thumb ?? blurUrl(c.info?.[BLURHASH]);
+  const b = mediaBox(c.info?.w, c.info?.h, minW), fill = !tile && b.fill && poster;
   return (
-    <button className="media-box video-box" style={tile ? undefined : fit(c.info)} onClick={onView} aria-label={t("media.playVideo")}>
+    <button className={"media-box video-box" + (fill ? " fill" : "")} style={tile ? undefined : boxStyle(b)} onClick={onView} aria-label={t("media.playVideo")}>
+      {fill && <img className="media-blur" src={poster} alt="" />}
       {poster && <img src={poster} alt="" />}
       <span className="play-badge"><Icon name="play" size={26} /></span>
       {c.info?.duration > 0 && <span className="dur-badge">{fmtDuration(c.info.duration)}</span>}
