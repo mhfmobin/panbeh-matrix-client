@@ -1,4 +1,20 @@
 {
+  "0.11.2": {
+    "fa": [
+      "«فقط دستگاه‌های تأییدشده» حالا به‌طور پیش‌فرض خاموش است؛ پیام دستگاه‌های تأییدنشده دوباره نمایش داده می‌شود و تغییر هویت یک نفر دیگر ارسال در کل گروه را متوقف نمی‌کند (روشن کردنش در تنظیمات › حریم خصوصی و امنیت، فقط روی دستگاه تأییدشده)",
+      "پیام‌هایی که به خاطر دستگاه تأییدنشدهٔ فرستنده پنهان مانده بودند، بعد از تأیید او خودبه‌خود نمایش داده می‌شوند",
+      "اگر پیامی فرستاده نشود، دلیلش نوشته می‌شود و می‌توانید از همان‌جا این دستگاه را تأیید کنید",
+      "عکس‌ها و ویدیوهای خیلی باریک یا خیلی پهن کامل و با پس‌زمینهٔ محو نمایش داده می‌شوند و دیگر به نوار باریک تبدیل نمی‌شوند",
+      "توضیح زیر عکس هم‌عرض خود عکس می‌شکند و حباب پیام را پهن نمی‌کند"
+    ],
+    "en": [
+      "\"Only verified devices\" is now off by default: messages from unverified devices show again, and one member's changed identity no longer stops sending in a whole group (turn it on in Settings › Privacy & security, from a verified device)",
+      "Messages hidden because the sender's device wasn't verified show up on their own once you verify them",
+      "If a message can't be sent, the app says why and lets you verify this device right there",
+      "Very tall or very wide photos and videos show whole on a blurred backdrop instead of shrinking to a thin strip",
+      "Captions wrap to the photo's width instead of stretching the bubble"
+    ]
+  },
   "0.11.1": {
     "fa": [
       "وقتی هویت یکی از اعضای چت عوض شود، اگر مطمئنید، می‌توانید هویت جدیدش را بپذیرید تا گفتگو ادامه پیدا کند؛ پیام‌هایی که پنهان مانده بودند هم بلافاصله نمایش داده می‌شوند",
