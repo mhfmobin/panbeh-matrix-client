@@ -26,7 +26,7 @@ import { pickerAt } from "./Message.tsx";
 import { matrixToLink } from "../uri.ts";
 import NOTES from "../releaseNotes.json";
 
-type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; notifyPreview: "all" | "name" | "none"; previews: boolean; previewsEncrypted: boolean; shareLastSeen: boolean; signedOnly: boolean; searchIndex: boolean; dev: boolean; legacyCalls: boolean; enterSends: boolean; askSave: boolean;
+type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: string; notify: boolean; notifyDMs: boolean; notifyGroups: boolean; notifyPreview: "all" | "name" | "none"; previews: boolean; previewsEncrypted: boolean; shareLastSeen: boolean; strictDevices: boolean; searchIndex: boolean; dev: boolean; legacyCalls: boolean; enterSends: boolean; askSave: boolean;
   camQuality: "360" | "540" | "720" | "1080"; screenQuality: "720" | "1080" | "1080hi"; audioQuality: "low" | "normal" | "high";
   lowData: "off" | "auto" | "on";
   cacheMB: number; autoDl: AutoDl;
@@ -44,7 +44,7 @@ const CACHE_MB: [number, string][] = [[250, formatSize(250 << 20)], [500, format
 const LOW_DATA: [Prefs["lowData"], string][] = [["off", t("common.off")], ["auto", t("set.lowDataAuto")], ["on", t("packs.tintAlways")]];
 
 // the Android app defaults to notifying: it asks for permission on first start. The desktop app needs no permission.
-export const loadPrefs = (): Prefs => migrate({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, notifyPreview: "all", previews: true, previewsEncrypted: false, shareLastSeen: true, signedOnly: true, searchIndex: true, dev: false, legacyCalls: false, enterSends: true, askSave: false, camQuality: "720", screenQuality: "1080hi", audioQuality: "high", lowData: "off", cacheMB: CACHE_MB_DEFAULT, recordMode: "voice", noteQuality: "640", ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
+export const loadPrefs = (): Prefs => migrate({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, notifyPreview: "all", previews: true, previewsEncrypted: false, shareLastSeen: true, strictDevices: false, searchIndex: true, dev: false, legacyCalls: false, enterSends: true, askSave: false, camQuality: "720", screenQuality: "1080hi", audioQuality: "high", lowData: "off", cacheMB: CACHE_MB_DEFAULT, recordMode: "voice", noteQuality: "640", ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
 const migrate = (p: Prefs): Prefs => ({ ...p, autoDl: mergeAutoDl(p.autoDl), // nested: kinds added later get their defaults
   accent: p.accent === "#3390ec" ? ACCENTS[0] : p.accent }); // the old default blue
 
@@ -73,6 +73,9 @@ export function applyPrefs(p = loadPrefs()) {
 export type View = "main" | "chats" | "notify" | "privacy" | "data" | "account" | "app"
   | "devices" | "password" | "keys" | "blocked" | "deactivate" | "link" | "lock" | "autodl" | "emoji";
 /** Where a sub-page's back goes; the rest go to the main page. */
+/** Opens Settings from anywhere (main.tsx owns it). */
+export let openSettings = (_v: View) => {};
+export const setSettingsOpener = (f: (v: View) => void) => { openSettings = f; };
 const PARENT: Partial<Record<View, View>> = { lock: "privacy", blocked: "privacy", keys: "privacy", devices: "privacy", autodl: "data", emoji: "chats", link: "account", password: "account", deactivate: "account" };
 const ACCOUNT: [View, IconName, string, string][] = [
   ["link", "link", t("set.myLinkQr"), t("set.myLinkHint")],
@@ -205,10 +208,14 @@ export function Settings({ start = "main", security, onClose, onSecurityChange }
       <h3>{t("set.encryption")}</h3>
       <Encryption onChange={onSecurityChange} />
       <label className="switch-row"><span>{t("set.signedOnly")}<small>{t("set.signedOnlyHint")}</small></span>
-        <input type="checkbox" role="switch" checked={prefs.signedOnly} onChange={async (e) => {
+        <input type="checkbox" role="switch" checked={prefs.strictDevices} onChange={async (e) => {
           const on = e.target.checked;
-          if (!on && !await confirmDialog(t("set.signedOnlyOffQ"), { danger: true, ok: t("common.off") })) return;
-          set({ signedOnly: on });
+          if (on) { // the SDK refuses to encrypt from an unverified device in this mode
+            const mine = await client.getCrypto()?.getDeviceVerificationStatus(me(), client.getDeviceId()!);
+            if (!mine?.signedByOwner) return void alertDialog(t("set.signedOnlyVerifyFirst"));
+            if (!await confirmDialog(t("set.signedOnlyOnQ"), { ok: t("common.on") })) return;
+          }
+          set({ strictDevices: on });
           applyIsolation(on);
         }} /></label>
       <Row icon="file" label={t("set.keys")} hint={t("set.keysHint")} onClick={() => setView("keys")} />

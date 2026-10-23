@@ -22,7 +22,7 @@ import { reducedMotion } from "./useDismiss.ts";
 import { MessageMenu } from "./MessageMenu.tsx";
 import { thumbFor } from "./Media.tsx";
 import { alertDialog, confirmDialog, promptDialog } from "./dialog.tsx";
-import { loadPrefs } from "./Settings.tsx";
+import { loadPrefs, openSettings } from "./Settings.tsx";
 import { emojiImg, emojiSplit, watch } from "../jsx/jsx-runtime.ts";
 import { useTrustVersion } from "./Verify.tsx";
 
@@ -329,6 +329,7 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
         <div className="msg-actions">
           <button title={t("msg.resend")} aria-label={t("msg.resend")} onClick={() => client.resendEvent(ev, room).catch(() => {})}><Icon name="send" size={17} /></button>
           <button title={t("common.delete")} aria-label={t("common.delete")} onClick={() => client.cancelPendingEvent(ev)}><Icon name="trash" size={17} /></button>
+          {blockedBy(ev) && <button className="shield" title={t(blockedBy(ev)!)} aria-label={t(blockedBy(ev)!)} onClick={() => explainBlock(ev)}><Icon name="shield" size={17} /></button>}
         </div>
       )}
       {menu && (
@@ -406,23 +407,37 @@ function Body({ ev, room, onView, onUser, album }: { ev: MatrixEvent; room: Room
   return <p dir={textDir(text)} className={"msg-text" + (isEmojiOnly(text) ? " jumbo" : "")}>{linkify(text)}</p>;
 }
 
-/** Messages refused for who sent them (Settings › Privacy › only verified devices), not for a missing key. */
-const FAILURE_TEXT: Partial<Record<DecryptionFailureCode, "msg.unsignedDevice" | "msg.identityChanged">> = {
+/** Messages refused for who sent them (Settings › Privacy › only verified devices), or kept from this unverified device. */
+const FAILURE_TEXT: Partial<Record<DecryptionFailureCode, "msg.unsignedDevice" | "msg.unknownDevice" | "msg.identityChanged" | "msg.verifyToRead">> = {
   [DecryptionFailureCode.UNSIGNED_SENDER_DEVICE]: "msg.unsignedDevice",
-  [DecryptionFailureCode.UNKNOWN_SENDER_DEVICE]: "msg.unsignedDevice",
+  [DecryptionFailureCode.UNKNOWN_SENDER_DEVICE]: "msg.unknownDevice",
   [DecryptionFailureCode.SENDER_IDENTITY_PREVIOUSLY_VERIFIED]: "msg.identityChanged",
+  [DecryptionFailureCode.MEGOLM_KEY_WITHHELD_FOR_UNVERIFIED_DEVICE]: "msg.verifyToRead",
 };
+
+/** Why the SDK wouldn't encrypt a message, from its error (only in Settings › Privacy › only verified devices). The SDK
+ *  gives these as text only. */
+function blockedBy(ev: MatrixEvent) {
+  const m = ev.error?.message ?? "";
+  return /cross-signing is not set up|your device is not verified/.test(m) ? "send.verifyDevice" as const
+    : /changed their identity/.test(m) ? "send.identityChanged" as const : null;
+}
+function explainBlock(ev: MatrixEvent) {
+  const why = blockedBy(ev)!;
+  if (why !== "send.verifyDevice") return void alertDialog(t(why));
+  void confirmDialog(t(why), { ok: t("trust.verifyDevice") }).then((y) => { if (y) openSettings("privacy"); });
+}
 
 const SHIELD_TEXT = {
   [EventShieldReason.UNVERIFIED_IDENTITY]: "shield.unverified",
   [EventShieldReason.UNSIGNED_DEVICE]: "shield.unsigned",
   [EventShieldReason.UNKNOWN_DEVICE]: "shield.unknownDevice",
-  [EventShieldReason.AUTHENTICITY_NOT_GUARANTEED]: "shield.authenticity",
   [EventShieldReason.VERIFICATION_VIOLATION]: "shield.violation",
   [EventShieldReason.MISMATCHED_SENDER]: "shield.mismatch",
 } as const;
 
-/** A warning on an encrypted message whose sender or device we can't vouch for; nothing at all when everything checks out.
+/** A red warning on an encrypted message whose sender or device we can't vouch for. Grey ones (a key from backup or
+ *  another of our devices, which every new login has for its history) aren't shown: nothing to act on, and they alarm.
  *  Tapping says why, and offers to verify the sender when that would fix it. */
 function Shield({ ev, onVerify }: { ev: MatrixEvent; onVerify: (userId: string) => void }) {
   const [info, setInfo] = useState<EventEncryptionInfo | null>(null);
@@ -433,15 +448,15 @@ function Shield({ ev, onVerify }: { ev: MatrixEvent; onVerify: (userId: string) 
     ev.on(MatrixEventEvent.Decrypted, check);
     return () => { ev.off(MatrixEventEvent.Decrypted, check); };
   }, [ev, ver]);
-  if (!info || info.shieldColour === EventShieldColour.NONE) return null;
+  if (info?.shieldColour !== EventShieldColour.RED) return null;
   const why = t((info.shieldReason !== null && SHIELD_TEXT[info.shieldReason as keyof typeof SHIELD_TEXT]) || "shield.other");
-  const sender = ev.getSender()!, red = info.shieldColour === EventShieldColour.RED;
+  const sender = ev.getSender()!;
   const open = (e: MouseEvent) => {
     e.stopPropagation();
-    if (!red || sender === me()) return void alertDialog(why);
+    if (sender === me()) return void alertDialog(why);
     void confirmDialog(why, { ok: t("trust.verify") }).then((y) => { if (y) onVerify(sender); });
   };
-  return <button className={"shield" + (red ? "" : " grey")} title={why} aria-label={why} onClick={open}><Icon name="shield" size={13} /></button>;
+  return <button className="shield" title={why} aria-label={why} onClick={open}><Icon name="shield" size={13} /></button>;
 }
 
 /** A formatted_body made safe to show, its reply fallback dropped; pills resolve against `room`. */
@@ -868,7 +883,7 @@ export function Ticks({ ev, room }: { ev: MatrixEvent; room: Room }) {
   const sending = !failed && !!ev.status;
   const seen = failed || sending ? [] : seenBy(room, ev);
   const changed = useChange(failed ? 0 : sending ? 1 : seen.length ? 3 : 2); // clock → check → checks pop when they change
-  if (failed) return <span className="tick failed" title={t("upload.failed")}>!</span>;
+  if (failed) return <span className="tick failed" title={t(blockedBy(ev) ?? "upload.failed")}>!</span>;
   if (sending) return <span className="tick"><Icon name="clock" size={13} /></span>;
   const title = !seen.length ? t("tick.sent")
     : isGroupChat(room) ? t("tick.seenByN", { count: seen.length })
