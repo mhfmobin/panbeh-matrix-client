@@ -20,7 +20,7 @@ import { Room } from "./ui/Room.tsx";
 import { ShareSheet } from "./ui/Forward.tsx";
 import { shareInto } from "./drafts.ts";
 import { NowPlaying } from "./ui/Voice.tsx";
-import { Settings, UpdateBanner, applyPrefs, loadPrefs, notesAfterUpdate, skipNotes, type View } from "./ui/Settings.tsx";
+import { Settings, UpdateBanner, applyPrefs, loadPrefs, notesAfterUpdate, setSettingsOpener, skipNotes, type View } from "./ui/Settings.tsx";
 import { VerificationListener } from "./ui/Verify.tsx";
 import { CallBar, CallLayer } from "./ui/Call.tsx";
 import { alertDialog } from "./ui/dialog.tsx";
@@ -92,6 +92,7 @@ function Shell() {
   useEffect(startSearchIndex, []);
   useEffect(startSendQueue, []);
   useEffect(notesAfterUpdate, []);
+  useEffect(() => setSettingsOpener(setSettings), []);
   useEffect(startCalls, []);
   // Android call notification buttons: answering may have cold-started the app, so wait for the rooms
   useEffect(() => (synced ? onCallAction((a) => void onNativeCall(a).catch((e) => alertDialog(errText(e)))) : undefined), [synced]);

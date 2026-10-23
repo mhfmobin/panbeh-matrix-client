@@ -1083,7 +1083,7 @@ img.tint {
 .trust.bad { color: #d32f2f; }
 /* an encrypted message we can't vouch for (Message.tsx Shield); nothing when all is well */
 .msg-meta .shield { display: inline-flex; padding: 0; color: #d32f2f; }
-.msg-meta .shield.grey { color: inherit; opacity: 0.8; }
+.msg-actions > button.shield { color: #d32f2f; }
 .user-row small.trust { display: block; }
 .row-btn { flex: none; padding: 6px 10px; border-radius: 10px; color: var(--accent); font-weight: 500; }
 .row-btn:hover { background: var(--hover); }

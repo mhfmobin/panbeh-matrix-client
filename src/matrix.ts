@@ -1,6 +1,6 @@
 import { t } from "./i18n.ts";
 import { ClientEvent, RoomStateEvent, createClient, UNSTABLE_MSC4140_DELAYED_EVENTS, Direction, EventTimeline, EventType, Filter, SearchOrderBy, HttpApiEvent, IndexedDBStore, MatrixEvent, Method, OAuth2, Preset, SetPresence, SyncState, Visibility, type ICreateRoomStateEvent, type MatrixClient, type MatrixError, type Room } from "matrix-js-sdk";
-import { AllDevicesIsolationMode, decodeRecoveryKey, deriveRecoveryKeyFromPassphrase, OnlySignedDevicesIsolationMode } from "matrix-js-sdk/lib/crypto-api/index.js";
+import { AllDevicesIsolationMode, CryptoEvent, DecryptionFailureCode, decodeRecoveryKey, deriveRecoveryKeyFromPassphrase, OnlySignedDevicesIsolationMode } from "matrix-js-sdk/lib/crypto-api/index.js";
 import { decryptAttachment, encryptAttachment, type IEncryptedFile } from "matrix-encrypt-attachment";
 import { blurhashEncode, cleanCode, endpointOf, fitSize, fmtSpan, freeCode, hasGif, isGif, normalizeServer, num, PACK_CAP, packImages, padToRatio, roomName, tintOf, withGif, withoutGif, type Gif, type PackContent, type PackImage, type Tint, type Usage } from "./logic.ts";
 import { isHeadless, isNative, nativeCancelAll, nativeLog, nativeSyncState, onKick, setBackgroundService } from "./native.ts";
@@ -152,6 +152,8 @@ export async function start(s: Session) {
   c.on(ClientEvent.Room, (r) => { if (r.getMyMembership() === "invite") r.recalculate(); });
   await c.initRustCrypto({ cryptoDatabasePrefix: dbNames(s).crypto });
   applyIsolation();
+  // the SDK never retries a message refused for its sender's device, even once that device turns out to be verified
+  for (const e of [CryptoEvent.UserTrustStatusChanged, CryptoEvent.DevicesUpdated] as const) c.on(e, () => retryHidden(true));
   firstSyncDone = false;
   c.on(ClientEvent.Sync, (state) => { if (state === SyncState.Prepared || state === SyncState.Syncing) firstSyncDone = true; });
   if (isNative) {
@@ -663,17 +665,25 @@ export function dmPeer(room: Room) {
     ?? room.getJoinedMembers().find((m) => m.userId !== client.getSafeUserId())?.userId;
 }
 
-/** MSC4153 "exclude insecure devices": message keys only go to, and messages are only shown from, devices their owner
- *  cross-signed, so a device a homeserver slips in reads nothing. Off (Settings › Privacy), keys go to every device, but
- *  sending still stops when a verified contact's identity changes. Kept in prefs (localStorage) for the headless page too. */
-export const signedOnly = () => { try { return JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}").signedOnly !== false; } catch { return true; } };
-export function applyIsolation(on = signedOnly()) {
+/** MSC4153 "exclude insecure devices", opt-in (Settings › Privacy): message keys only go to, and messages are only shown
+ *  from, devices their owner cross-signed, so a device a homeserver slips in reads nothing. Off by default, like Element:
+ *  keys go to every device and nothing blocks sending; red shields and the identity banner warn instead. A new pref name,
+ *  so everyone who had the old default-on `signedOnly` starts off. Kept in prefs (localStorage) for the headless page too. */
+export const strictDevices = () => { try { return JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}").strictDevices === true; } catch { return false; } };
+export function applyIsolation(on = strictDevices()) {
+  client.getCrypto()?.setDeviceIsolationMode(on ? new OnlySignedDevicesIsolationMode() : new AllDevicesIsolationMode(false));
+  retryHidden(); // messages the stricter mode hid show at once when it's turned off (the SDK only retries when new keys arrive)
+}
+
+/** Refused for who sent them, not for a missing key: worth another try whenever someone's trust or devices change. */
+const TRUST_FAILURES = new Set([DecryptionFailureCode.UNSIGNED_SENDER_DEVICE, DecryptionFailureCode.UNKNOWN_SENDER_DEVICE, DecryptionFailureCode.SENDER_IDENTITY_PREVIOUSLY_VERIFIED]);
+// ponytail: live timelines only; a hidden message in an older window or a thread comes back on the next start
+function retryHidden(trustOnly = false) {
   const crypto = client.getCrypto();
   if (!crypto) return;
-  crypto.setDeviceIsolationMode(on ? new OnlySignedDevicesIsolationMode() : new AllDevicesIsolationMode(true));
-  // messages the stricter mode hid show at once when it's turned off (the SDK only retries when new keys arrive)
   for (const r of client.getRooms()) for (const e of r.getLiveTimeline().getEvents())
-    if (e.isDecryptionFailure()) void e.attemptDecryption(crypto as Parameters<MatrixEvent["attemptDecryption"]>[0], { isRetry: true }).catch(() => {});
+    if (e.isDecryptionFailure() && (!trustOnly || TRUST_FAILURES.has(e.decryptionFailureReason!)))
+      void e.attemptDecryption(crypto as Parameters<MatrixEvent["attemptDecryption"]>[0], { isRetry: true }).catch(() => {});
 }
 
 // presence: others see us as offline when off. Kept in prefs (localStorage) so it applies at startup too.
