@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applyFolderOrder, moveFolder, byListOrder, endpointOf, inArchive, isUnread, parseStats, fmtStats, AUTO_DL_DEFAULT, mergeAutoDl, shouldAutoDl, blurhashEncode, blurhashDecode, scheduleDays, fmtSpan, scheduleLabel, deriveDraftKey, sealDraft, openDraft } from "./logic.ts";
-import { aliasLocalpart, buildRows, roomName, dayLabel, downsample, fmtDuration, inFolder, isUserId, formatMessage, parseGeoUri, spaceRooms, stamp, normalizeServer, normalize, matchRange, toEvict, hashPin, lockDelay, lastSeen, tallyPoll, fitSize, fitMenu, packImages, codeFrom, freeCode, cleanCode, padToRatio, mediaBox, isDarkMono, tintOf, toggleWrap, prefixLines, deleteBack, cachedSlice, hashtagsOf, soleHashtag, isEmojiOnly, unreadSince, type Msg } from "./logic.ts";
+import { aliasLocalpart, buildRows, roomName, dayLabel, downsample, fmtDuration, inFolder, isUserId, formatMessage, parseGeoUri, spaceRooms, stamp, normalizeServer, normalize, matchRange, toEvict, hashPin, lockDelay, lastSeen, tallyPoll, fitSize, fitMenu, packImages, codeFrom, freeCode, cleanCode, padToRatio, mediaBox, isDarkMono, tintOf, toggleWrap, prefixLines, deleteBack, cachedSlice, hashtagsOf, soleHashtag, isEmojiOnly, unreadSince, textScale, type Msg } from "./logic.ts";
 
 const T = new Date("2026-09-30T12:00:00").getTime();
 const m = (id: string, sender: string, min: number, kind: Msg["kind"] = "msg"): Msg => ({ id, sender, ts: T + min * 60_000, kind });
@@ -547,4 +547,17 @@ test("unreadSince: counted replies after the newest read one; null when the read
   assert.equal(run([...rs, { read: true, n: true }], false), 0); // read to the end
   assert.equal(run(rs.slice(1), false), null); // read point further back than what's loaded
   assert.equal(run(rs.slice(1), true), 2); // all loaded, none read
+});
+
+test("textScale: 14 is 1×, clamped to 12–22, junk falls back, the phone's font scale multiplies", () => {
+  assert.equal(textScale(14), 1);
+  assert.equal(textScale(21), 1.5);
+  assert.equal(textScale(40), 22 / 14);
+  assert.equal(textScale(-3), 12 / 14);
+  assert.equal(textScale(16.4), 16 / 14);
+  for (const junk of [undefined, null, NaN, "big", {}]) assert.equal(textScale(junk), 1, String(junk));
+  assert.equal(textScale("18"), 18 / 14); // hand-edited storage
+  assert.equal(textScale(14, 1.3), 1.3);
+  assert.equal(textScale(21, 2), 3);
+  for (const bad of [0, -1, NaN, "x", 99]) assert.equal(textScale(14, bad), 1, String(bad));
 });

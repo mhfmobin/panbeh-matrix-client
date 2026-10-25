@@ -1,7 +1,7 @@
 import { lang, t } from "./i18n.ts";
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import { downloadPath, openDownload, setUpdater, type Update } from "./desktop.ts";
-import { loadPrefs } from "./ui/Settings.tsx";
+import { applyPrefs, loadPrefs } from "./ui/Settings.tsx";
 import { toast } from "./ui/common.tsx";
 
 /** body: the one-line form (older app builds); sender (in groups), text and ts make the conversation-style notification.
@@ -58,6 +58,7 @@ interface PanbehPlugin {
   biometricUnlock(p: { title: string; cancel: string }): Promise<{ ok: boolean }>;
   metered(): Promise<{ metered: boolean }>;
   setLanguage(p: { lang: string }): Promise<void>;
+  fontScale(): Promise<{ scale: number }>;
   updateDownload(p: { url: string }): Promise<void>;
   updateInstall(): Promise<void>;
   bazaarCheck(): Promise<{ newer: boolean }>;
@@ -83,6 +84,14 @@ export const isNative = !!headless || Capacitor.isNativePlatform();
 export const isHeadless = !!headless && new URLSearchParams(location.search).has("headless");
 // notifications and their channels in the page's language (older app builds: the phone's)
 if (isNative && !isHeadless) plugin.setLanguage({ lang }).catch(() => {});
+// the phone's font size scales the app's text (applyPrefs); cached for the next start's first paint. A change restarts the activity.
+const FONT_SCALE = "panbeh.sysFontScale";
+export const sysFontScale = () => { try { return localStorage.getItem(FONT_SCALE) ?? 1; } catch { return 1; } };
+if (isNative && !isHeadless) plugin.fontScale().then(({ scale }) => {
+  if (String(scale) === String(sysFontScale())) return;
+  try { localStorage.setItem(FONT_SCALE, String(scale)); } catch { /* no storage */ }
+  applyPrefs();
+}, () => {}); // older app builds: no method, 1×
 
 export function nativeNotify(p: Payload) {
   if (headless) headless.showNotification(JSON.stringify(p));

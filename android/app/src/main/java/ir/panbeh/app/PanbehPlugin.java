@@ -265,6 +265,14 @@ public class PanbehPlugin extends Plugin {
         call.resolve();
     }
 
+    /** The phone's font size (accessibility): the page scales its text by it, on top of its own setting; the WebView itself ignores it (setTextZoom). */
+    @PluginMethod
+    public void fontScale(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("scale", getContext().getResources().getConfiguration().fontScale);
+        call.resolve(r);
+    }
+
     @PluginMethod
     public void takeLaunchRoom(PluginCall call) {
         JSObject r = new JSObject();
