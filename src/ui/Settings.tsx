@@ -295,7 +295,8 @@ export function Settings({ start = "main", security, onClose, onSecurityChange }
   return <>{chain.reduceRight<ReactNode>((child, v) => render(v, child), null)}</>;
 }
 
-/** Message text size: a slider (sizes grow toward the page's end) over the real bubbles on the wallpaper, live. The slider comes first: the preview grows under it, not under the finger. */
+/** Text size: a slider (sizes grow toward the page's end) over a live preview — a chat-list row above the real bubbles on the wallpaper.
+ *  The slider comes first: the preview grows under it, not under the finger. */
 function TextSize({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const v = Math.round(textScale(value) * TEXT_SIZE.base); // what's stored may be junk
   const shown = v === TEXT_SIZE.base ? t("set.textSizeDefault", { n: num(v) }) : num(v);
@@ -318,6 +319,14 @@ function TextSize({ value, onChange }: { value: number; onChange: (v: number) =>
       </span>
     </label>
     <div className="text-size-preview wallpaper" aria-hidden inert>
+      <div className="room-item">
+        <Avatar name={t("set.textSizeName")} id="@preview" size={50} />
+        <div className="room-item-body">
+          <div className="room-item-top"><span className="room-name">{t("set.textSizeName")}</span>
+            <span className="room-time"><span className="tick read"><Icon name="checks" size={15} /></span>{time}</span></div>
+          <div className="room-item-bottom"><span className="room-preview">{t("common.you")}: {t("set.textSizeMine")}</span></div>
+        </div>
+      </div>
       {bubble(false, t("set.textSizeTheirs"))}
       {bubble(true, t("set.textSizeMine"))}
     </div>

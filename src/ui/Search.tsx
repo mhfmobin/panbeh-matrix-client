@@ -35,7 +35,7 @@ function ResultRow({ ev, term, showRoom, onClick }: { ev: MatrixEvent; term: str
   const hit = matchRange(text, term.trim());
   const name = senderName(ev);
   return (
-    <button className="user-row" onClick={onClick}>
+    <button className="user-row result-row" onClick={onClick}>
       <Avatar mxc={senderMember(ev)?.getMxcAvatarUrl()} name={name} id={ev.getSender()!} size={42} />
       <span>
         <b>{showRoom ? `${client.getRoom(ev.getRoomId())?.name} · ${name}` : name}</b>
