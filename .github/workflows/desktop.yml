@@ -73,6 +73,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: panbeh-${{ runner.os }}
+          retention-days: 3
           path: |
             release/Panbeh-*
             release/latest*.yml
