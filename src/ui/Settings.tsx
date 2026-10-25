@@ -1,5 +1,5 @@
-import { LANGS, LOCALE, lang, setLang, t } from "../i18n.ts";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { LANGS, LOCALE, lang, rtl, setLang, t } from "../i18n.ts";
+import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { SystemBars, SystemBarsStyle } from "@capacitor/core";
 import { ClientEvent, PushRuleActionName, PushRuleKind, RuleId, TweakName, type PushRuleAction } from "matrix-js-sdk";
@@ -13,11 +13,11 @@ import { dropIndex, indexLoaded } from "../searchIndex.ts";
 import { LockSettings } from "./Lock.tsx";
 import { lockConf } from "../lock.ts";
 import { useSlider } from "./useSlider.ts";
-import { mergeAutoDl, num, stamp, type AutoDl, type DlKind } from "../logic.ts";
+import { clock, mergeAutoDl, num, stamp, textScale, TEXT_SIZE, type AutoDl, type DlKind } from "../logic.ts";
 import { decryptKeyFile, encryptKeyFile } from "../keyfile.ts";
 import { showVerification } from "./Verify.tsx";
 import { appVersion, canUpdate, checkUpdate, downloadUpdate, getAutostart, getAutoUpdate, installUpdate, isDesktop, setAutostart, setAutoUpdate, useUpdate, type Update } from "../desktop.ts";
-import { isBazaar, isNative, nativeCancelAll, nativeStatus, openNotifySettings, requestBatteryExemption, requestFullScreen, requestNotifyPermission, saveFile, setBackgroundInterval, setBackgroundService } from "../native.ts";
+import { isBazaar, isNative, nativeCancelAll, nativeStatus, openNotifySettings, requestBatteryExemption, requestFullScreen, requestNotifyPermission, saveFile, setBackgroundInterval, setBackgroundService, sysFontScale } from "../native.ts";
 import { alertDialog, confirmDialog, editAvatar } from "./dialog.tsx";
 import { LinkSheet } from "./LinkSheet.tsx";
 import { MyPacks } from "./Packs.tsx";
@@ -30,7 +30,7 @@ type Prefs = { theme: "system" | "light" | "dark"; accent: string; wallpaper: st
   camQuality: "360" | "540" | "720" | "1080"; screenQuality: "720" | "1080" | "1080hi"; audioQuality: "low" | "normal" | "high";
   lowData: "off" | "auto" | "on";
   cacheMB: number; autoDl: AutoDl;
-  recordMode: "voice" | "video"; noteQuality: "384" | "480" | "640" }; // the mic button records voice or round video; video message size (px) // media kept on the device (mediaCache.ts reads it from localStorage too) // calls: everyone's video at its lowest layer (auto = while our connection is poor)
+  recordMode: "voice" | "video"; noteQuality: "384" | "480" | "640"; textSize: number }; // the mic button records voice or round video; video message size (px) // media kept on the device (mediaCache.ts reads it from localStorage too) // calls: everyone's video at its lowest layer (auto = while our connection is poor)
 const ACCENTS = ["#007ded", "#8774e1", "#40a7a0", "#e5864a", "#e0578b", "#4fae4e"];
 const WALLPAPERS = { doodle: t("set.wpDoodle"), gradient: t("set.wpGradient"), plain: t("set.wpPlain") };
 const THEMES = { system: t("set.themeSystem"), light: t("set.themeLight"), dark: t("set.themeDark") };
@@ -44,7 +44,7 @@ const CACHE_MB: [number, string][] = [[250, formatSize(250 << 20)], [500, format
 const LOW_DATA: [Prefs["lowData"], string][] = [["off", t("common.off")], ["auto", t("set.lowDataAuto")], ["on", t("packs.tintAlways")]];
 
 // the Android app defaults to notifying: it asks for permission on first start. The desktop app needs no permission.
-export const loadPrefs = (): Prefs => migrate({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, notifyPreview: "all", previews: true, previewsEncrypted: false, shareLastSeen: true, strictDevices: false, searchIndex: true, dev: false, legacyCalls: false, enterSends: true, askSave: false, camQuality: "720", screenQuality: "1080hi", audioQuality: "high", lowData: "off", cacheMB: CACHE_MB_DEFAULT, recordMode: "voice", noteQuality: "640", ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
+export const loadPrefs = (): Prefs => migrate({ theme: "system", accent: ACCENTS[0], wallpaper: "doodle", notify: isNative || isDesktop, notifyDMs: true, notifyGroups: true, notifyPreview: "all", previews: true, previewsEncrypted: false, shareLastSeen: true, strictDevices: false, searchIndex: true, dev: false, legacyCalls: false, enterSends: true, askSave: false, camQuality: "720", screenQuality: "1080hi", audioQuality: "high", lowData: "off", cacheMB: CACHE_MB_DEFAULT, recordMode: "voice", noteQuality: "640", textSize: TEXT_SIZE.base, ...JSON.parse(localStorage.getItem("panbeh.prefs") ?? "{}") });
 const migrate = (p: Prefs): Prefs => ({ ...p, autoDl: mergeAutoDl(p.autoDl), // nested: kinds added later get their defaults
   accent: p.accent === "#3390ec" ? ACCENTS[0] : p.accent }); // the old default blue
 
@@ -55,14 +55,19 @@ export const isSendKey = (e: { key: string; shiftKey: boolean; ctrlKey: boolean;
 /** Answering legacy m.call.* calls: developer options only. */
 export const legacyCallsOn = () => { const p = loadPrefs(); return p.dev && p.legacyCalls; };
 
-let prefsApplied = false;
+let look = ""; // the colours last applied
 export function applyPrefs(p = loadPrefs()) {
-  const root = document.documentElement;
-  if (prefsApplied) { // colours fade between themes instead of snapping
+  const root = document.documentElement, next = [p.theme, p.accent, p.wallpaper].join();
+  if (look && look !== next) { // colours fade between themes instead of snapping
     root.classList.add("theme-switching");
     setTimeout(() => root.classList.remove("theme-switching"), 350);
   }
-  prefsApplied = true;
+  look = next;
+  const scale = String(textScale(p.textSize, sysFontScale()));
+  if (root.style.getPropertyValue("--msg-scale") !== scale) {
+    dispatchEvent(new Event("panbeh-textsize")); // first: the timeline notes its place before the rows resize
+    root.style.setProperty("--msg-scale", scale);
+  }
   if (p.theme === "system") delete root.dataset.theme; else root.dataset.theme = p.theme;
   root.dataset.wallpaper = p.wallpaper;
   root.style.setProperty("--accent", p.accent);
@@ -153,6 +158,7 @@ export function Settings({ start = "main", security, onClose, onSecurityChange }
 
     if (v === "chats") return page(t("set.chats"), <>
       <h3>{t("set.appearance")}</h3>
+      <TextSize value={prefs.textSize} onChange={(v) => set({ textSize: v })} />
       <div className="segmented" data-pill ref={pill}>
         {(Object.keys(THEMES) as Prefs["theme"][]).map((t) => (
           <button key={t} className={prefs.theme === t ? "on" : ""} onClick={() => set({ theme: t })}>{THEMES[t]}</button>
@@ -287,6 +293,35 @@ export function Settings({ start = "main", security, onClose, onSecurityChange }
   const chain: View[] = [view];
   while (chain[0] !== "main") chain.unshift(PARENT[chain[0]] ?? "main");
   return <>{chain.reduceRight<ReactNode>((child, v) => render(v, child), null)}</>;
+}
+
+/** Message text size: a slider (sizes grow toward the page's end) over the real bubbles on the wallpaper, live. The slider comes first: the preview grows under it, not under the finger. */
+function TextSize({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const v = Math.round(textScale(value) * TEXT_SIZE.base); // what's stored may be junk
+  const shown = v === TEXT_SIZE.base ? t("set.textSizeDefault", { n: num(v) }) : num(v);
+  const time = clock(Date.now());
+  const bubble = (mine: boolean, text: string) => (
+    <div className={`msg ${mine ? "mine" : "theirs"} first last`}><div className="msg-col"><div className="bubble" dir="auto">
+      <p className="msg-text" dir={rtl ? "rtl" : "ltr"}>{text}</p>
+      <span className="msg-meta" dir={rtl ? "rtl" : "ltr"}><span>{time}</span>{mine && <span className="tick read"><Icon name="checks" size={15} /></span>}</span>
+    </div></div></div>
+  );
+  return <>
+    <label className="text-size">
+      <span>{t("set.textSize")}<b>{shown}</b></span>
+      <span className="text-size-row">
+        <span className="a-small" aria-hidden>A</span>
+        <input type="range" min={TEXT_SIZE.min} max={TEXT_SIZE.max} step={1} value={v} aria-valuetext={shown}
+          style={{ "--p": ((v - TEXT_SIZE.min) / (TEXT_SIZE.max - TEXT_SIZE.min)) * 100 + "%" } as CSSProperties}
+          onChange={(e) => onChange(+e.target.value)} />
+        <span className="a-big" aria-hidden>A</span>
+      </span>
+    </label>
+    <div className="text-size-preview wallpaper" aria-hidden inert>
+      {bubble(false, t("set.textSizeTheirs"))}
+      {bubble(true, t("set.textSizeMine"))}
+    </div>
+  </>;
 }
 
 function Notifications(props: { prefs: Prefs; set: (p: Partial<Prefs>) => void }) {

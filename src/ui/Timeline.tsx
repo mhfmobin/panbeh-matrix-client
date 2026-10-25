@@ -378,6 +378,29 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   const latest = useRef({ rows, byId });
   latest.current = { rows, byId };
   const indexOf = (id: string) => latest.current.rows.findIndex((r) => rowEvents(r).some((x) => latest.current.byId.get(x)?.getId() === id));
+  // a new text size (Settings) resizes every row and Virtuoso keeps the scroll offset, so the reader's place drifts:
+  // put the row at the top back where it was once they're measured. Pinned to the bottom: totalListHeightChanged keeps it there.
+  useEffect(() => {
+    let hold: { index: string; at: number; until: number } | null = null; // the slider moving on keeps the first size's row
+    const follow = () => {
+      const sc = scroller.current, row = hold && sc?.querySelector(`[data-index="${hold.index}"]`);
+      if (!hold || !sc || !row || performance.now() > hold.until) return void (hold = null);
+      sc.scrollTop += row.getBoundingClientRect().top - hold.at; // Virtuoso re-measures over a few frames: follow it
+      requestAnimationFrame(follow);
+    };
+    const keep = () => {
+      const sc = scroller.current;
+      if (stuck.current || !sc) return;
+      if (hold) return void (hold.until = performance.now() + 500);
+      const top = sc.getBoundingClientRect().top;
+      const row = [...sc.querySelectorAll<HTMLElement>("[data-index]")].find((r) => r.getBoundingClientRect().bottom > top);
+      if (!row) return;
+      hold = { index: row.dataset.index!, at: row.getBoundingClientRect().top, until: performance.now() + 500 };
+      requestAnimationFrame(follow);
+    };
+    addEventListener("panbeh-textsize", keep);
+    return () => removeEventListener("panbeh-textsize", keep);
+  }, []);
   useEffect(() => {
     if (!target || indexOf(target) < 0) return; // not rendered yet
     stuck.current = false;
