@@ -194,7 +194,7 @@ export function fmtDuration(ms: number) {
 
 /** Message text size (Settings): px of a phone bubble's text; the rest of a bubble scales with it. */
 export const TEXT_SIZE = { min: 12, max: 22, base: 14 };
-/** --msg-scale: the chosen size (a stored value may be anything) times the phone's font scale. */
+/** --text-scale: the chosen size (a stored value may be anything) times the phone's font scale. */
 export function textScale(size: unknown, sys: unknown = 1) {
   const n = Math.round(parseFloat(String(size))), f = parseFloat(String(sys));
   return (Number.isFinite(n) ? Math.min(TEXT_SIZE.max, Math.max(TEXT_SIZE.min, n)) : TEXT_SIZE.base) / TEXT_SIZE.base * (f > 0 && f < 5 ? f : 1);

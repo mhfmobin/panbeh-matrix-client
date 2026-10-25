@@ -64,9 +64,9 @@ export function applyPrefs(p = loadPrefs()) {
   }
   look = next;
   const scale = String(textScale(p.textSize, sysFontScale()));
-  if (root.style.getPropertyValue("--msg-scale") !== scale) {
+  if (root.style.getPropertyValue("--text-scale") !== scale) {
     dispatchEvent(new Event("panbeh-textsize")); // first: the timeline notes its place before the rows resize
-    root.style.setProperty("--msg-scale", scale);
+    root.style.setProperty("--text-scale", scale);
   }
   if (p.theme === "system") delete root.dataset.theme; else root.dataset.theme = p.theme;
   root.dataset.wallpaper = p.wallpaper;
@@ -314,7 +314,12 @@ function TextSize({ value, onChange }: { value: number; onChange: (v: number) =>
         <span className="a-small" aria-hidden>A</span>
         <input type="range" min={TEXT_SIZE.min} max={TEXT_SIZE.max} step={1} value={v} aria-valuetext={shown}
           style={{ "--p": ((v - TEXT_SIZE.min) / (TEXT_SIZE.max - TEXT_SIZE.min)) * 100 + "%" } as CSSProperties}
-          onChange={(e) => onChange(+e.target.value)} />
+          onChange={(e) => {
+            const el = e.currentTarget, at = el.getBoundingClientRect().top;
+            onChange(+el.value); // the whole app resizes at once (applyPrefs), this page's headings above too
+            const sheet = el.closest(".sheet");
+            if (sheet) sheet.scrollTop += el.getBoundingClientRect().top - at; // keep the slider under the finger
+          }} />
         <span className="a-big" aria-hidden>A</span>
       </span>
     </label>

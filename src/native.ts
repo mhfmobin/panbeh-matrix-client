@@ -84,7 +84,7 @@ export const isNative = !!headless || Capacitor.isNativePlatform();
 export const isHeadless = !!headless && new URLSearchParams(location.search).has("headless");
 // notifications and their channels in the page's language (older app builds: the phone's)
 if (isNative && !isHeadless) plugin.setLanguage({ lang }).catch(() => {});
-// the phone's font size scales message text (applyPrefs); cached for the next start's first paint. A change restarts the activity.
+// the phone's font size scales the app's text (applyPrefs); cached for the next start's first paint. A change restarts the activity.
 const FONT_SCALE = "panbeh.sysFontScale";
 export const sysFontScale = () => { try { return localStorage.getItem(FONT_SCALE) ?? 1; } catch { return 1; } };
 if (isNative && !isHeadless) plugin.fontScale().then(({ scale }) => {
