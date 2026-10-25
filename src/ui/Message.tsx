@@ -46,6 +46,15 @@ const LONG_PRESS = 450, SWIPE_AT = 60, SWIPE_MAX = 80;
 let touched = false;
 addEventListener("pointerdown", (e) => { touched = e.pointerType === "touch"; }, true);
 
+/** (x, y) is on a glyph of some text, not a bubble's padding or the row around it. */
+function onGlyph(x: number, y: number): boolean {
+  const n = document.caretPositionFromPoint?.(x, y)?.offsetNode ?? document.caretRangeFromPoint?.(x, y)?.startContainer;
+  if (n?.nodeType !== Node.TEXT_NODE) return false;
+  const r = document.createRange();
+  r.selectNodeContents(n);
+  return [...r.getClientRects()].some((b) => x >= b.left && x <= b.right && y >= b.top && y <= b.bottom);
+}
+
 /** Text a copy should give: body without the reply fallback; media only their caption. */
 export function copyTextOf(ev: MatrixEvent): string {
   if (ev.isDecryptionFailure() || ev.getType() === EventType.RoomMessageEncrypted || M_POLL_START.matches(ev.getType())) return "";
@@ -166,6 +175,7 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
   const swallow = useRef(false); // the click that follows a swipe / hold
   const textSel = useRef(false); // touch: this press began while text in a selected message was selected; its tap only clears that
   const tap = useRef<{ x: number; y: number; timer: number } | null>(null); // touch: a first tap, waiting to see if it's a double
+  const [held, setHeld] = useState(false); // touch: the finger that selected it is still down; its text waits for the next hold
   useEffect(() => () => clearTimeout(tap.current?.timer), []);
   const openMenu = (x: number, y: number) => { setSel(selectedText(row.current!)); setMenu((m) => m ?? { x, y }); };
   const mine = ev.getSender() === me();
@@ -205,6 +215,7 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
 
   const setX = (px: number) => { row.current!.style.setProperty("--sx", `${-px}px`); row.current!.style.setProperty("--sp", String(Math.min(1, px / SWIPE_AT))); };
   const end = (cancel: boolean) => {
+    setHeld(false);
     if (swallow.current) setTimeout(() => { swallow.current = false; }, 350); // eat only the click this finger-up brings
     const s = g.current;
     g.current = null;
@@ -233,7 +244,7 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
       g.current = null; // held: no swipe after this
       swallow.current = true;
       navigator.vibrate?.(15);
-      if (actions.select) select(); else openMenu(x, y); // a thread has no selection: its hold still opens the menu
+      if (actions.select) { setHeld(true); select(); } else openMenu(x, y); // a thread has no selection: its hold still opens the menu
     }, LONG_PRESS) };
   };
   const move = (e: PointerEvent) => {
@@ -257,13 +268,13 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
   };
 
   return (
-    <div ref={row} className={`msg ${mine ? "mine" : "theirs"}${first ? " first" : ""}${last ? " last" : ""}${failed ? " failed" : ""}${flash ? " flash" : ""}${enter ? " enter" : ""}${deleting ? " deleting" : ""}${selecting ? " selecting" : ""}${selected ? " selected" : ""}`}
+    <div ref={row} className={`msg ${mine ? "mine" : "theirs"}${first ? " first" : ""}${last ? " last" : ""}${failed ? " failed" : ""}${flash ? " flash" : ""}${enter ? " enter" : ""}${deleting ? " deleting" : ""}${selecting ? " selecting" : ""}${selected ? " selected" : ""}${held ? " held" : ""}`}
       onPointerDown={down} onPointerMove={move} onPointerUp={() => end(false)} onPointerCancel={() => end(true)}
       onContextMenu={(e) => {
         if (!inside(e)) return;
         // Android's own long-press: our hold timer has it. Except on a selected message's text: that's where the system's
         // text selection starts (Telegram's), with its own Copy and Select all.
-        if (touched) return void (selected && (e.target as HTMLElement).closest(".msg-text") || e.preventDefault());
+        if (touched) return void (selected && !held && (e.target as HTMLElement).closest(".msg-text") || e.preventDefault());
         if (!live || selecting) return;
         e.preventDefault();
         openMenu(e.clientX, e.clientY);
@@ -285,8 +296,9 @@ export function Message({ ev, room, first, last, actions, flash, enter, album }:
         if (p && Math.hypot(x - p.x, y - p.y) < 30) return quick();
         tap.current = { x, y, timer: window.setTimeout(() => { tap.current = null; openMenu(x, y); }, DOUBLE_TAP) };
       }}
-      onMouseDown={(e) => { if (e.detail === 2 && !touched && !selecting && onBody(e) && !quickReaction().off) e.preventDefault(); }} // the double-click reacts: no word selected
-      onDoubleClick={(e) => { if (!touched && !selecting && onBody(e)) quick(); }}>
+      // double-click: on text it selects a word (the browser's); elsewhere on the bubble or row it reacts (Telegram's)
+      onMouseDown={(e) => { if (e.detail === 2 && !touched && !selecting && onBody(e) && !quickReaction().off && !onGlyph(e.clientX, e.clientY)) e.preventDefault(); }}
+      onDoubleClick={(e) => { if (!touched && !selecting && onBody(e) && getSelection()?.isCollapsed !== false) quick(); }}>
       {selecting && <span className="sel-check" aria-hidden>{selected && <Icon name="check" size={14} />}</span>}
       {swipeOk && <span className="swipe-ico" aria-hidden><Icon name="reply" size={20} /></span>}
       {!mine && group && (
