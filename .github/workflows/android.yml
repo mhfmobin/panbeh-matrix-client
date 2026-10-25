@@ -92,6 +92,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           path: Panbeh*.apk
+          retention-days: 3
           archive: false # the artifact is the raw Panbeh.apk, not a zip
 
       # Pishkhan API: drop a leftover draft, create a release, add the APK, send it for review; it publishes once approved
