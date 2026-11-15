@@ -9,7 +9,7 @@ import { confirmDialog } from "./ui/dialog.tsx";
 import { CACHE_MAX_FILE, cacheClear, cacheGet, cacheHas, cachePut } from "./mediaCache.ts";
 import { clearStaleBeacons, stopAll } from "./liveLocation.ts";
 import { syncDrafts } from "./drafts.ts";
-import { cachedPage, historyName, startHistoryCache } from "./historyCache.ts";
+import { cachedEvent, cachedPage, historyName, keepEvent, startHistoryCache } from "./historyCache.ts";
 
 type Session = { baseUrl: string; userId: string; deviceId: string; accessToken: string; refreshToken?: string; oauthClientId?: string; legacy?: boolean };
 // several accounts, one running client at a time; switching reloads the page so every cache starts clean
@@ -86,6 +86,12 @@ const netFetch: typeof fetch = (input, init) => {
   const url = input instanceof Request ? input.url : String(input);
   // paging a chat back: what's kept on the device first (offline too)
   if (!isHeadless && /\/rooms\/[^/]+\/messages\?/.test(url)) return cachedPage(url).then((r) => r ?? plainFetch(url, input, init));
+  // an event by id: while the sync cache loads, from the device (historyCache.ts cachedEvent); the server's answer is kept
+  const ev = isHeadless ? null : url.match(/\/rooms\/([^/]+)\/event\/([^/?]+)/);
+  if (ev) return (firstSyncDone ? Promise.resolve(null) : cachedEvent(decodeURIComponent(ev[2]))).then((r) => r ?? plainFetch(url, input, init).then((res) => {
+    void keepEvent(decodeURIComponent(ev[1]), decodeURIComponent(ev[2]), res.clone()).catch(() => {});
+    return res;
+  }));
   return plainFetch(url, input, init);
 };
 const plainFetch = (url: string, input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {

@@ -173,7 +173,7 @@ export function Sidebar({ loading, selected, onSelect, onSettings, banner }: Pro
         </div>
       ) : (
         <div className="list-swipe" {...(inArchiveView ? {} : swipe)}>
-          {shown.length === 0 && loading
+          {loading // not a list still filling in from the sync cache: chats would land between the ones already shown
             ? <div className="skeleton-list" aria-busy aria-label={t("sidebar.syncing")}>{[0, 1, 2, 3, 4, 5, 6].map((i) => <div key={i} className="skeleton-row" style={{ animationDelay: i * 0.06 + "s" }}><i className="skeleton avatar-sk" /><span><i className="skeleton" style={{ width: 55 - (i % 3) * 8 + "%" }} /><i className="skeleton" style={{ width: 85 - (i % 4) * 10 + "%" }} /></span></div>)}</div>
             : shown.length === 0 ? <p className="empty-list">{t("sidebar.empty")}</p>
             : <Virtuoso className="room-list" data={shown} computeItemKey={(_, r) => r.id} itemContent={(_, r) => item(r)} />}

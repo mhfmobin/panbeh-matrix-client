@@ -164,6 +164,24 @@ export function startHistoryCache() {
 
 // ---------- serving ----------
 
+/** One event by id, as the server would answer; null: not kept. The SDK asks for the target of every reaction and edit
+ *  whose target isn't loaded, one request at a time, before it goes on to the next chat: on every start, for the cached
+ *  events too, so the chat list filled in chat by chat at the network's pace. */
+export async function cachedEvent(id: string): Promise<Response | null> {
+  const x = await get<Row>("events", id).catch(() => undefined);
+  if (!x) return null;
+  // raw {}: the server had no such event for us
+  return new Response(JSON.stringify(x.raw.event_id ? x.raw : { errcode: "M_NOT_FOUND" }), { status: x.raw.event_id ? 200 : 404, headers: { "Content-Type": "application/json" } });
+}
+
+/** The server's answer for an event that wasn't kept, for next time. A run of its own: the chat's history isn't known to
+ *  continue on either side of it. add, not put: a row the timeline wrote meanwhile stands. */
+export async function keepEvent(roomId: string, id: string, res: Response) {
+  if (!res.ok && res.status !== 404) return;
+  const raw: Partial<IEvent> = res.ok ? await res.json() : {};
+  (await open()).transaction("events", "readwrite").objectStore("events").add({ id, roomId, run: "lookup:" + id, seq: 0, raw } satisfies Row).onerror = (e) => e.preventDefault();
+}
+
 /** The SDK paging a chat back from where we have its history: that page, from here. null: ask the server. */
 export async function cachedPage(url: string): Promise<Response | null> {
   const u = new URL(url);
