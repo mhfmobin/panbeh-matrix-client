@@ -456,6 +456,9 @@ export const inArchive = (r: RoomInfo) => !!r.archived && !(r.unread > 0 && !r.m
 /** Chat list order: invites, then pinned, then newest. */
 export const byListOrder = (a: { invite: boolean; pinned?: boolean; ts: number }, b: typeof a) =>
   +b.invite - +a.invite || +!!b.pinned - +!!a.pinned || b.ts - a.ts;
+/** The time a chat sorts by. While its newest event is still decrypting (it may turn out a reaction) the time it sorted
+ *  by last, if kept, so the list doesn't jump on open; a newer draft still brings it up. */
+export const chatTs = (last: number, draft: number, pending: boolean, kept?: number) => Math.max(pending ? kept ?? last : last, draft);
 /** A looping, silent video (mautrix's flags, also set by the Telegram bridge) or an animated gif image. */
 export const isGif = (c: { msgtype?: string; info?: Record<string, unknown> }) =>
   !!c.info?.["fi.mau.gif"] || (c.msgtype === "m.image" && c.info?.mimetype === "image/gif");

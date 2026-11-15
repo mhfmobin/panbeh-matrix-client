@@ -1,4 +1,18 @@
 {
+  "0.12.0": {
+    "fa": [
+      "اندازهٔ متن را می‌توانید در تنظیمات › گفتگوها و ظاهر › «اندازه‌ی متن» با یک لغزنده و پیش‌نمایش زنده عوض کنید؛ کل برنامه از آن پیروی می‌کند، از پیام‌ها و فهرست گفتگوها تا منوها و تنظیمات",
+      "روی اندروید، اندازهٔ فونت گوشی هم در نظر گرفته می‌شود",
+      "نگه داشتن انگشت روی پیام فقط پیام را انتخاب می‌کند و دیگر یک کلمه را هم هم‌زمان انتخاب نمی‌کند؛ نگه داشتن بعدی متن را انتخاب می‌کند",
+      "با موس، دوبار کلیک روی متن پیام کلمه را انتخاب می‌کند؛ دوبار کلیک روی خود حباب یا کنار آن همچنان واکنش سریع می‌گذارد"
+    ],
+    "en": [
+      "Text size: a slider with a live preview in Settings › Chats & appearance › Text size; the whole app follows it, from messages and the chat list to menus and settings",
+      "On Android, the phone's own font size is taken into account too",
+      "Holding a message selects just the message, without also picking a word; the next hold selects text",
+      "With a mouse, double-clicking a message's text selects the word; double-clicking the bubble or beside it still quick-reacts"
+    ]
+  },
   "0.11.2": {
     "fa": [
       "«فقط دستگاه‌های تأییدشده» حالا به‌طور پیش‌فرض خاموش است؛ پیام دستگاه‌های تأییدنشده دوباره نمایش داده می‌شود و تغییر هویت یک نفر دیگر ارسال در کل گروه را متوقف نمی‌کند (روشن کردنش در تنظیمات › حریم خصوصی و امنیت، فقط روی دستگاه تأییدشده)",
