@@ -88,11 +88,25 @@ export function unreadMentions(room: Room) {
   return [...main, ...inThreads].filter(isMention).sort((a, b) => a.getTs() - b.getTs());
 }
 
+/** Zero the SDK's own count (the thread's, with `threadId`) in an encrypted chat. There it counts decrypted events itself, some
+ *  already read, and only the server saying zero resets it; but no receipt goes out for what's already read. Elsewhere the
+ *  server's count stands (on Conduit it includes thread replies the chat view doesn't show). */
+export function clearLocalUnread(room: Room, threadId?: string) {
+  if (!room.hasEncryptionStateEvent()) return;
+  for (const type of [NotificationCountType.Total, NotificationCountType.Highlight]) {
+    if (threadId ? room.getThreadUnreadNotificationCount(threadId, type) : room.getRoomUnreadNotificationCount(type))
+      threadId ? room.setThreadUnreadNotificationCount(threadId, type, 0) : room.setUnreadNotificationCount(type, 0);
+  }
+}
+
 /** Receipts on the newest event and on each unread thread's newest reply + clear the manual mark. */
 export async function markRead(room: Room) {
   const last = room.getLiveTimeline().getEvents().filter((e) => !e.status).at(-1);
-  const threads = room.getThreads().filter((th) => threadUnread(th, undefined, true) > 0).map((th) => repliesOf(th).filter((e) => !e.status).at(-1));
+  const unread = room.getThreads().filter((th) => threadUnread(th, undefined, true) > 0);
+  const threads = unread.map((th) => repliesOf(th).filter((e) => !e.status).at(-1));
   await Promise.all([last, ...threads].map((e) => e && client.sendReadReceipt(e)));
+  clearLocalUnread(room);
+  unread.forEach((th) => clearLocalUnread(room, th.id));
   if (isMarkedUnread(room)) await setMarkedUnread(room, false);
 }
 

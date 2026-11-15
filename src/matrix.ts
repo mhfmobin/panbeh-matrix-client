@@ -103,6 +103,14 @@ const plainFetch = (url: string, input: RequestInfo | URL, init?: RequestInit): 
 let firstSyncDone = false;
 export const pastFirstSync = () => firstSyncDone;
 
+// the SDK writes the sync cache at most every 5 minutes and never on close: a short session would reopen on a stale
+// list and replay it all. Past the first sync only, so a half-loaded state is never written; one listener for every account
+if (!isHeadless) {
+  const saveStore = () => { if (firstSyncDone) client.store.save(true).catch(() => {}); };
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") saveStore(); });
+  addEventListener("pagehide", saveStore);
+}
+
 /** Native nudge (network back, watchdog, interval alarm): reconnect now rather than when the frozen timers get to it.
  *  newNetwork: a pending /sync went out on the old network and will never answer, however young it is. */
 function kick(newNetwork = false) {
@@ -142,6 +150,7 @@ export async function start(s: Session) {
       cacheSecretStorageKey: (keyId, _info, key) => { ssKey = [keyId, key]; },
     },
   });
+  firstSyncDone = false; // before client changes: the save on hide mustn't hit a store that hasn't started
   client = c;
   tints = null;
   c.on(ClientEvent.AccountData, (e) => { if (e.getType() === USER_EMOTES) tints = null; });
@@ -154,7 +163,6 @@ export async function start(s: Session) {
   applyIsolation();
   // the SDK never retries a message refused for its sender's device, even once that device turns out to be verified
   for (const e of [CryptoEvent.UserTrustStatusChanged, CryptoEvent.DevicesUpdated] as const) c.on(e, () => retryHidden(true));
-  firstSyncDone = false;
   c.on(ClientEvent.Sync, (state) => { if (state === SyncState.Prepared || state === SyncState.Syncing) firstSyncDone = true; });
   if (isNative) {
     c.on(ClientEvent.Sync, (state) => nativeSyncState(state));
@@ -318,6 +326,7 @@ export async function logout() {
   if (current) localStorage.removeItem(`panbeh.drafts:${current.userId}`);
   if (current) localStorage.removeItem(`panbeh.profile:${current.userId}`);
   if (current) localStorage.removeItem(`panbeh.outbox:${current.userId}`); // sendQueue.ts
+  if (current) localStorage.removeItem(`panbeh.sortTs:${current.userId}`); // hooks.ts
   if (current) indexedDB.deleteDatabase(`panbeh-search:${current.userId}`); // searchIndex.ts's local message index
   if (current) indexedDB.deleteDatabase(historyName(current.userId));
   setSessions(left);
@@ -350,6 +359,7 @@ export async function logoutAll() {
     localStorage.removeItem(`panbeh.drafts:${s.userId}`);
     localStorage.removeItem(`panbeh.profile:${s.userId}`);
     localStorage.removeItem(`panbeh.outbox:${s.userId}`);
+    localStorage.removeItem(`panbeh.sortTs:${s.userId}`);
   }
   await logout();
 }

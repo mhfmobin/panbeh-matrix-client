@@ -11,7 +11,7 @@ import { audioDuration, bdi, formatSize, isVoice, me, noticeText } from "./commo
 import { AudioPlayer } from "./Voice.tsx";
 import { captionOf } from "./Composer.tsx";
 import { useAttentive } from "../desktop.ts";
-import { replyRead, unreadCount, unreadMentions, unreadThreads } from "../chats.ts";
+import { clearLocalUnread, replyRead, unreadCount, unreadMentions, unreadThreads } from "../chats.ts";
 import { pendingIn } from "../sendQueue.ts";
 import { pendingJump } from "./Search.tsx";
 
@@ -341,7 +341,9 @@ export function Timeline({ room, thread, actions, jumpRef }: Props) {
   const attentive = useAttentive();
   const lastEv = events.at(-1);
   useEffect(() => {
-    if (!atBottom || !settled || !atLive || !lastEv || lastEv.status || !attentive || lastEv.getSender() === me()) return;
+    if (!atBottom || !settled || !atLive || !lastEv || lastEv.status || !attentive) return;
+    clearLocalUnread(room, thread?.id); // even when no receipt follows: the server never gets to say zero
+    if (lastEv.getSender() === me()) return;
     if (room.hasUserReadEvent(me(), lastEv.getId()!)) return;
     client.sendReadReceipt(lastEv).catch(() => {});
     // fully-read marker (where the divider goes next time) only; the receipt above keeps its thread semantics

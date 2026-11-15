@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ClientEvent, EventTimeline, EventType, M_POLL_START, RoomEvent, RoomMemberEvent, RoomStateEvent, UserEvent, type Room, type RoomMember, type MatrixEvent } from "matrix-js-sdk";
 import { client, getFolderOrder, spaceChildren, getUploads, setFolderOrder, subscribeUploads } from "./matrix.ts";
-import { byListOrder, lastSeen, spaceRooms, type RoomInfo } from "./logic.ts";
+import { byListOrder, chatTs, lastSeen, spaceRooms, type RoomInfo } from "./logic.ts";
 import { ARCHIVED, hasTag, isMarkedUnread, PINNED, unreadCount } from "./chats.ts";
 import { isMuted } from "./notify.ts";
 import { draftPreview, draftTs, useDrafts, type Draft } from "./drafts.ts";
@@ -126,17 +126,21 @@ export function useRooms() {
   const topSpaces = spaces.filter((s) => !nested.has(s.roomId));
   for (const s of topSpaces) for (const id of spaceRooms(s.roomId, spaceChildren)) membership.set(id, [...(membership.get(id) ?? []), s.roomId]);
 
+  const kept = sortTimes(), seen: [string, number][] = [];
   // space invites are listed like any invite; joined spaces become folders instead
   const rows: RoomRow[] = all.filter((r) => !r.isSpaceRoom() || r.getMyMembership() === "invite").map((room) => {
     const last = lastMessage(room);
     const invite = room.getMyMembership() === "invite";
     const draft = invite ? undefined : draftPreview(room.roomId);
+    const lastTs = last?.getTs() ?? room.getLastActiveTimestamp();
+    const pending = last?.getType() === EventType.RoomMessageEncrypted && !last.isDecryptionFailure();
+    if (!pending) seen.push([room.roomId, lastTs]);
     return {
       id: room.roomId,
       room,
       last,
       // a draft newer than the last message brings the chat up, like Telegram
-      ts: Math.max(last?.getTs() ?? room.getLastActiveTimestamp(), invite ? 0 : draftTs(room.roomId)),
+      ts: chatTs(lastTs, invite ? 0 : draftTs(room.roomId), pending, kept.ts[room.roomId]),
       invite,
       draft,
       isDM: dmIds.has(room.roomId) || !!room.getDMInviter(),
@@ -149,14 +153,37 @@ export function useRooms() {
     };
   });
   rows.sort(byListOrder);
+  keepSortTimes(seen);
   return { rows, spaces: topSpaces };
+}
+
+// roomId → the time each chat last sorted by, for the events that decrypt again on every open (the sync cache holds
+// ciphertext). Times and room ids only: message content stays encrypted at rest. Cleared on logout (matrix.ts)
+let sortKept: { key: string; ts: Record<string, number> } | undefined, sortSave = 0;
+function sortTimes() {
+  const key = `panbeh.sortTs:${client.getUserId()}`;
+  if (sortKept?.key !== key) {
+    let ts = {};
+    try { ts = JSON.parse(localStorage.getItem(key) ?? "{}"); } catch { /* blocked or corrupt: sort as before */ }
+    sortKept = { key, ts };
+  }
+  return sortKept;
+}
+// ponytail: merged, never pruned; a left room's entry stays until logout
+function keepSortTimes(seen: [string, number][]) {
+  const k = sortTimes();
+  if (seen.every(([id, ts]) => k.ts[id] === ts)) return;
+  for (const [id, ts] of seen) k.ts[id] = ts;
+  clearTimeout(sortSave);
+  sortSave = window.setTimeout(() => { try { localStorage.setItem(k.key, JSON.stringify(k.ts)); } catch { /* full: keep the old one */ } }, 2000);
 }
 
 // getType() is the decrypted type once decrypted; m.room.encrypted = still pending or failed
 const MESSAGE_TYPES: string[] = [EventType.RoomMessage, EventType.Sticker, EventType.RoomMessageEncrypted, M_POLL_START.name, M_POLL_START.altName];
 // blocked senders are hidden here too: some servers (Conduit) ignore m.ignored_user_list and keep sending their events
 export const isMessage = (e: MatrixEvent) =>
-  MESSAGE_TYPES.includes(e.getType()) && !e.isRedacted() && !e.isRelation("m.replace") && !client.isUserIgnored(e.getSender()!)
+  MESSAGE_TYPES.includes(e.getType()) && !e.isRedacted() && !e.isRelation("m.replace") && !e.isRelation("m.annotation") // relations stay readable while encrypted
+  && !client.isUserIgnored(e.getSender()!)
   && e.getContent().msgtype !== "m.key.verification.request"; // shown as a notice
 
 /** Calls count too: calling someone brings the chat to the top, like a message. */

@@ -178,6 +178,14 @@ test("archive, marked unread and list order", () => {
   assert.deepEqual(rows.sort(byListOrder).map((r) => r.id), ["inv", "pin", "new", "old"]);
 });
 
+import { chatTs } from "./logic.ts";
+test("a chat still decrypting its newest event keeps the time it last sorted by", () => {
+  assert.equal(chatTs(9, 0, true, 5), 5, "pending: the kept time, not the undecrypted event's");
+  assert.equal(chatTs(9, 0, true), 9, "nothing kept: as before");
+  assert.equal(chatTs(9, 0, false, 5), 9, "decrypted: its own time");
+  assert.equal(chatTs(9, 7, true, 5), 7, "a newer draft still wins");
+});
+
 import { isGif, withGif, withoutGif, hasGif } from "./logic.ts";
 
 test("gifs: mau flag or gif image; saving moves to the front without duplicates", () => {
